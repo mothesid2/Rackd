@@ -1,0 +1,20 @@
+# Dependencies (rebuilt per-machine with `npm install`)
+node_modules/
+
+# Build output
+dist/
+release/
+
+# Logs / OS cruft
+*.log
+.DS_Store
+Thumbs.db
+
+# Local databases / runtime artifacts
+*.db
+*.db-shm
+*.db-wal
+
+# Editor
+.vscode/
+.idea/

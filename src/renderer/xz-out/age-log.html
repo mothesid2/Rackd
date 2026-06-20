@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Age Verification Log</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <style>
+    .page-layout { padding: 24px; padding-bottom: 80px; max-width: 1000px; margin: 0 auto;
+      height: calc(100vh - 32px); overflow-y: auto; }
+    .top-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+    .log-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .log-table th { text-align: left; padding: 8px 10px; font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.04em; color: #888; border-bottom: 2px solid #eee; position: sticky; top: 0; background: #fff; }
+    .log-table td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
+    .res { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+    .res.PASS { background: #dcfce7; color: #166534; }
+    .res.OVERRIDE { background: #fef3c7; color: #92400e; }
+    .res.FAIL { background: #fee2e2; color: #991b1b; }
+    .empty { text-align: center; color: #888; padding: 30px; }
+    @media print { .page-header, .top-bar, .status-bar { display: none !important; } body { background: #fff; } }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('xz-out')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Age Verification Log</h1>
+    </div>
+
+    <div id="mgrBlock" style="display:none;background:#fee2e2;border-radius:8px;padding:14px;color:#991b1b">
+      This log is restricted to management.
+    </div>
+
+    <div id="logBlock">
+      <div class="top-bar">
+        <div id="summary" style="font-size:13px;color:#666"></div>
+        <div class="spacer"></div>
+        <button class="btn btn-navy" onclick="window.api.printPage()">Print Log</button>
+      </div>
+      <div class="card">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Date / Time</th><th>Customer</th><th>DOB</th><th>Age</th>
+              <th>Min</th><th>Result</th><th>Method</th><th>Cashier</th><th>Txn</th>
+            </tr>
+          </thead>
+          <tbody id="logBody"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar"><div class="status-left" id="status-left">Loading…</div><div class="status-right" id="status-right"></div></div>
+
+  <script src="../shared.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      const session = (await window.api.getSession()).session;
+      if (session?.role !== 'manager') {
+        document.getElementById('mgrBlock').style.display = 'block';
+        document.getElementById('logBlock').style.display = 'none';
+        document.getElementById('status-left').textContent = 'Restricted';
+        return;
+      }
+      const res = await window.api.getAgeLog({ limit: 500 });
+      const body = document.getElementById('logBody');
+      if (!res.success) { body.innerHTML = `<tr><td colspan="9" class="empty">${esc(res.error || 'failed')}</td></tr>`; return; }
+
+      const log = res.log;
+      document.getElementById('summary').innerHTML =
+        `<strong>${log.length}</strong> verifications · ` +
+        `<strong>${log.filter(l => l.result === 'OVERRIDE').length}</strong> overrides`;
+
+      body.innerHTML = log.length === 0
+        ? '<tr><td colspan="9" class="empty">No age-restricted sales recorded yet</td></tr>'
+        : log.map(l => {
+            const d = new Date(l.created_at);
+            const when = isNaN(d) ? l.created_at : d.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' });
+            return `<tr>
+              <td>${esc(when)}</td>
+              <td>${esc(l.customer_name || '—')}</td>
+              <td>${esc(l.dob || '—')}</td>
+              <td>${l.age_at_sale ?? '—'}</td>
+              <td>${l.min_age ?? '—'}</td>
+              <td><span class="res ${esc(l.result || '')}">${esc(l.result || '—')}</span></td>
+              <td>${esc((l.method || '—').replace(/_/g, ' '))}</td>
+              <td>${esc(l.cashier_name || '—')}</td>
+              <td>${l.transaction_id ? '#' + l.transaction_id : '—'}</td>
+            </tr>`;
+          }).join('');
+      document.getElementById('status-left').textContent = 'Age verification log';
+    });
+  </script>
+</body>
+</html>

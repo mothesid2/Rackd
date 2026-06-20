@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Audit Report</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <style>
+    .page-layout { padding: 24px; padding-bottom: 80px; max-width: 900px; margin: 0 auto; height: calc(100vh - 32px); overflow-y: auto; }
+    .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+    .controls input { border: 1px solid #ddd; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+    .controls label { font-size: 13px; color: #555; }
+
+    .ref-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
+    .ref-tile { background: #f5f5f5; border-radius: 10px; padding: 14px 16px; }
+    .ref-tile .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #888; }
+    .ref-tile .val { font-size: 22px; font-weight: 800; margin-top: 4px; }
+    .ref-tile .val.green { color: #2e7d32; }
+
+    .sec-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; color: #888; margin: 18px 0 8px; }
+    .rtable { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .rtable th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #888; padding: 6px 8px; border-bottom: 2px solid #eee; }
+    .rtable td { padding: 7px 8px; border-bottom: 1px solid #f0f0f0; }
+    .rtable td.num, .rtable th.num { text-align: right; }
+    .rtable tr.total td { font-weight: 800; border-top: 2px solid #ddd; border-bottom: none; }
+
+    /* ============ PRINT DOCUMENT ============ */
+    .print-only { display: none; }
+    @media print {
+      .screen-only, .status-bar { display: none !important; }
+      body { background: #fff !important; color: #000; }
+      .print-only { display: block !important; }
+      @page { size: letter; margin: 0.55in; }
+    }
+    .doc { font-family: 'Courier New', ui-monospace, monospace; color: #000; }
+    .doc .store { text-align: center; }
+    .doc .store .name { font-size: 22px; font-weight: 800; letter-spacing: 1px; }
+    .doc .store .sub { font-size: 12px; }
+    .doc .rule { border: none; border-top: 2px solid #000; margin: 10px 0; }
+    .doc .title-row { display: flex; justify-content: space-between; align-items: baseline; font-weight: 800; font-size: 15px; }
+    .doc .meta { font-size: 11px; margin-top: 4px; }
+    .doc h2 { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin: 16px 0 6px; border-bottom: 1px solid #000; padding-bottom: 3px; }
+    .doc table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .doc th, .doc td { padding: 3px 6px; }
+    .doc th { text-align: left; border-bottom: 1px solid #000; font-size: 11px; text-transform: uppercase; }
+    .doc td.num, .doc th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .doc tr.sub td { border-top: 1px solid #000; font-weight: 700; }
+    .doc tr.grand td { border-top: 2px solid #000; border-bottom: 3px double #000; font-weight: 800; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <!-- ============ SCREEN VIEW ============ -->
+  <div class="page-layout screen-only">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('xz-out')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Audit Report</h1>
+    </div>
+
+    <div id="mgrBlock" style="display:none;background:#fee2e2;border-radius:8px;padding:14px;color:#991b1b">This report is restricted to management.</div>
+
+    <div id="reportBlock">
+      <div class="controls">
+        <label>From</label><input type="date" id="startDate" />
+        <label>To</label><input type="date" id="endDate" />
+        <button class="btn btn-navy" onclick="run()">View</button>
+        <div class="spacer"></div>
+        <button class="btn btn-navy" onclick="window.api.printPage()">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Print Report
+        </button>
+      </div>
+
+      <div class="ref-grid">
+        <div class="ref-tile"><div class="lbl">Total Collected</div><div class="val green" id="rTotal">—</div></div>
+        <div class="ref-tile"><div class="lbl">Transactions</div><div class="val" id="rCount">—</div></div>
+        <div class="ref-tile"><div class="lbl">Units / Transaction</div><div class="val" id="rUPT">—</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title" id="periodTitle">—</div>
+
+        <div class="sec-title">Sales Summary</div>
+        <table class="rtable"><tbody id="sumRows"></tbody></table>
+
+        <div class="sec-title">Payments Received</div>
+        <table class="rtable">
+          <thead><tr><th>Method</th><th class="num"># Sales</th><th class="num">Amount</th></tr></thead>
+          <tbody id="payRows"></tbody>
+        </table>
+
+        <div class="sec-title">Sales by Department</div>
+        <table class="rtable">
+          <thead><tr><th>Department</th><th class="num">Units</th><th class="num">Sales</th><th class="num">% of Net</th></tr></thead>
+          <tbody id="deptRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PRINT DOCUMENT ============ -->
+  <div class="print-only"><div class="doc" id="printDoc"></div></div>
+
+  <div class="status-bar"><div class="status-left" id="status-left">Loading…</div><div class="status-right" id="status-right"></div></div>
+
+  <script src="../shared.js"></script>
+  <script>
+    let storeCfg = { store_name: 'My Store', address: '', phone: '' };
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const session = (await window.api.getSession()).session;
+      if (session?.role !== 'manager') {
+        document.getElementById('mgrBlock').style.display = 'block';
+        document.getElementById('reportBlock').style.display = 'none';
+        document.getElementById('status-left').textContent = 'Restricted';
+        return;
+      }
+      try { const cfg = await window.api.getReceiptConfig(); if (cfg?.success && cfg.config) storeCfg = cfg.config; } catch {}
+
+      // Default: first of this month → today
+      const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      const today = now.toISOString().slice(0, 10);
+      const first = today.slice(0, 8) + '01';
+      document.getElementById('startDate').value = first;
+      document.getElementById('endDate').value = today;
+
+      run();
+    });
+
+    async function run() {
+      const start = document.getElementById('startDate').value;
+      const end = document.getElementById('endDate').value;
+      const res = await window.api.getPeriodReport({ start, end });
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      render(res);
+    }
+
+    function pct(part, whole) { return whole > 0 ? (part / whole * 100).toFixed(1) + '%' : '—'; }
+    function row(label, val) { return `<tr><td>${esc(label)}</td><td class="num">${val}</td></tr>`; }
+    function payRow(label, cnt, amt) { return `<tr><td>${esc(label)}</td><td class="num">${cnt}</td><td class="num">${fmt(amt)}</td></tr>`; }
+
+    function render(r) {
+      const s = r.summary, p = r.payments;
+      document.getElementById('periodTitle').textContent = r.period.label;
+      document.getElementById('rTotal').textContent = fmt(s.total_collected);
+      document.getElementById('rCount').textContent = s.count;
+      document.getElementById('rUPT').textContent = s.units_per_txn.toFixed(2);
+
+      const netPreTax = s.gross - s.discounts;
+      document.getElementById('sumRows').innerHTML = `
+        ${row('Gross Sales', fmt(s.gross))}
+        ${row('Less Discounts', '−' + fmt(s.discounts))}
+        ${row('Net Sales', fmt(netPreTax))}
+        ${row('Sales Tax', fmt(s.tax))}
+        <tr class="total"><td>Total Collected</td><td class="num">${fmt(s.total_collected)}</td></tr>
+        ${row('Average Sale', fmt(s.avg))}
+        ${row('Units / Transaction', s.units_per_txn.toFixed(2))}
+      `;
+
+      const payLines = [
+        ...p.brands.map(b => payRow(b.brand, b.count, b.amount)),
+        ...(p.other_card.amount > 0 ? [payRow('Other Card', p.other_card.count, p.other_card.amount)] : []),
+        `<tr class="total"><td>Card Subtotal</td><td class="num">—</td><td class="num">${fmt(p.card_total)}</td></tr>`,
+        payRow('Cash', p.cash_count, p.cash),
+        `<tr class="total"><td>Total</td><td class="num">${s.count}</td><td class="num">${fmt(p.card_total + p.cash)}</td></tr>`,
+      ];
+      document.getElementById('payRows').innerHTML = payLines.join('');
+
+      const deptRev = r.by_category.reduce((a, c) => a + c.revenue, 0);
+      document.getElementById('deptRows').innerHTML = r.by_category.length === 0
+        ? '<tr><td colspan="4" style="color:#999;text-align:center;padding:14px">No sales in this period</td></tr>'
+        : r.by_category.map(c => `<tr><td>${esc(c.category)}</td><td class="num">${c.qty}</td><td class="num">${fmt(c.revenue)}</td><td class="num">${pct(c.revenue, deptRev)}</td></tr>`).join('')
+          + `<tr class="total"><td>Total</td><td class="num">${r.by_category.reduce((a,c)=>a+c.qty,0)}</td><td class="num">${fmt(deptRev)}</td><td class="num">100%</td></tr>`;
+
+      buildPrintDoc(r);
+      document.getElementById('status-left').textContent = `Audit · ${r.period.label}`;
+    }
+
+    function buildPrintDoc(r) {
+      const s = r.summary, p = r.payments;
+      const netPreTax = s.gross - s.discounts;
+      const deptRev = r.by_category.reduce((a, c) => a + c.revenue, 0);
+      const genDate = new Date(r.generated_at);
+      const genStr = isNaN(genDate) ? r.generated_at : genDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+
+      const brandRows = p.brands.map(b => `<tr><td>${b.brand}</td><td class="num">${b.count}</td><td class="num">${fmt(b.amount)}</td></tr>`).join('')
+        + (p.other_card.amount > 0 ? `<tr><td>Other Card</td><td class="num">${p.other_card.count}</td><td class="num">${fmt(p.other_card.amount)}</td></tr>` : '');
+
+      const deptRows = r.by_category.length === 0
+        ? '<tr><td colspan="4">— No sales —</td></tr>'
+        : r.by_category.map(c => `<tr><td>${esc(c.category)}</td><td class="num">${c.qty}</td><td class="num">${fmt(c.revenue)}</td><td class="num">${pct(c.revenue, deptRev)}</td></tr>`).join('');
+
+      document.getElementById('printDoc').innerHTML = `
+        <div class="store">
+          <div class="name">${esc(storeCfg.store_name || 'My Store')}</div>
+          ${storeCfg.address ? `<div class="sub">${esc(storeCfg.address)}</div>` : ''}
+          ${storeCfg.phone ? `<div class="sub">${esc(storeCfg.phone)}</div>` : ''}
+        </div>
+        <hr class="rule" />
+        <div class="title-row"><span>SALES REPORT</span><span>${esc(r.period.label)}</span></div>
+        <div class="meta">Prepared by ${esc(r.generated_by)} &nbsp;•&nbsp; Generated ${esc(genStr)}</div>
+        <div class="meta">Period: ${r.period.start} to ${r.period.end}</div>
+
+        <h2>Sales Summary</h2>
+        <table>
+          <tr><td>Gross Sales</td><td class="num">${fmt(s.gross)}</td></tr>
+          <tr><td>Less Discounts</td><td class="num">−${fmt(s.discounts)}</td></tr>
+          <tr><td>Net Sales</td><td class="num">${fmt(netPreTax)}</td></tr>
+          <tr><td>Sales Tax</td><td class="num">${fmt(s.tax)}</td></tr>
+          <tr class="grand"><td>TOTAL COLLECTED</td><td class="num">${fmt(s.total_collected)}</td></tr>
+          <tr><td>Transactions</td><td class="num">${s.count}</td></tr>
+          <tr><td>Average Sale</td><td class="num">${fmt(s.avg)}</td></tr>
+          <tr><td>Units / Transaction</td><td class="num">${s.units_per_txn.toFixed(2)}</td></tr>
+        </table>
+
+        <h2>Payments Received</h2>
+        <table>
+          <tr><th>Tender</th><th class="num"># Sales</th><th class="num">Amount</th></tr>
+          ${brandRows}
+          <tr class="sub"><td>Card Subtotal</td><td class="num"></td><td class="num">${fmt(p.card_total)}</td></tr>
+          <tr><td>Cash</td><td class="num">${p.cash_count}</td><td class="num">${fmt(p.cash)}</td></tr>
+          <tr class="grand"><td>TOTAL</td><td class="num">${s.count}</td><td class="num">${fmt(p.card_total + p.cash)}</td></tr>
+        </table>
+
+        <h2>Sales by Department</h2>
+        <table>
+          <tr><th>Department</th><th class="num">Units</th><th class="num">Sales</th><th class="num">% of Net</th></tr>
+          ${deptRows}
+          <tr class="grand"><td>TOTAL</td><td class="num">${r.by_category.reduce((a,c)=>a+c.qty,0)}</td><td class="num">${fmt(deptRev)}</td><td class="num">100%</td></tr>
+        </table>
+      `;
+    }
+  </script>
+</body>
+</html>

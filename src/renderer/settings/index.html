@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Settings</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <style>
+    .page-layout {
+      padding: 24px;
+      padding-bottom: 80px;
+      max-width: 700px;
+      height: calc(100vh - 32px);
+      overflow-y: auto;
+    }
+    .settings-section { margin-bottom: 20px; }
+
+    /* User management */
+    .user-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      border: 1px solid #eee;
+      margin-bottom: 6px;
+      background: #fafafa;
+    }
+    .user-row:last-child { margin-bottom: 0; }
+    .user-name { font-weight: 700; font-size: 14px; flex: 1; }
+    .user-role-badge {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+    .user-role-badge.manager { background: #dbeafe; color: #1e40af; }
+    .user-role-badge.cashier { background: #f0fdf4; color: #166534; }
+    .must-change-badge {
+      font-size: 11px;
+      background: #fef3c7;
+      color: #92400e;
+      border-radius: 20px;
+      padding: 2px 8px;
+      font-weight: 600;
+    }
+    .btn-delete-user {
+      background: none;
+      border: 1px solid #fca5a5;
+      color: #dc2626;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-delete-user:hover { background: #fee2e2; }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('main-menu')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Settings</h1>
+    </div>
+
+    <!-- User Management -->
+    <div class="card settings-section">
+      <div class="card-title">User Management</div>
+
+      <!-- Existing users list -->
+      <div id="userList" style="margin-bottom:18px">
+        <div style="font-size:13px;color:#999">Loading users…</div>
+      </div>
+
+      <!-- Create new user form -->
+      <div style="border-top:2px solid #eee;padding-top:16px">
+        <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#888;margin-bottom:12px">Create New User</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="newUsername" autocomplete="off" placeholder="e.g. john_doe" />
+          </div>
+          <div class="form-group" style="max-width:160px">
+            <label>Role</label>
+            <select id="newRole">
+              <option value="cashier">Cashier</option>
+              <option value="manager">Manager</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="max-width:280px">
+          <label>Temporary Password</label>
+          <input type="password" id="newPassword" autocomplete="new-password" placeholder="Min. 4 characters" />
+        </div>
+        <p style="font-size:12px;color:#888;margin-top:-8px;margin-bottom:12px">
+          The user will be required to change their password on first login.
+        </p>
+        <button class="btn btn-navy" onclick="createUser()">Create User</button>
+      </div>
+    </div>
+
+    <!-- Receipt Config -->
+    <div class="card settings-section">
+      <div class="card-title">Receipt Configuration</div>
+      <div class="form-row">
+        <div class="form-group"><label>Store Name</label><input type="text" id="storeName" /></div>
+        <div class="form-group"><label>Phone</label><input type="text" id="storePhone" /></div>
+      </div>
+      <div class="form-group"><label>Address</label><input type="text" id="storeAddress" /></div>
+      <div class="form-group"><label>Footer Message</label><input type="text" id="storeFooter" /></div>
+      <div class="form-row">
+        <div class="form-group" style="max-width:180px">
+          <label>Tax Rate (%)</label>
+          <input type="number" id="taxRate" step="0.1" min="0" max="25" />
+        </div>
+        <div class="form-group" style="max-width:220px">
+          <label>Minimum Purchase Age</label>
+          <select id="minAge">
+            <option value="0">No age restriction</option>
+            <option value="18">18+</option>
+            <option value="21">21+</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-navy" onclick="saveReceiptConfig()">Save Receipt Settings</button>
+    </div>
+
+    <!-- Terminal Config -->
+    <div class="card settings-section">
+      <div class="card-title">Card Terminal</div>
+      <div class="form-group" style="max-width:280px">
+        <label>Terminal Type</label>
+        <select id="terminalType" onchange="onTerminalTypeChange()">
+          <option value="valor_vp100">Valor VP100</option>
+          <option value="mock">Mock (Testing)</option>
+        </select>
+      </div>
+
+      <!-- Valor VP100 credential fields — greyed out in mock mode -->
+      <div id="valorFields">
+        <p style="font-size:12px;color:#666;margin:0 0 12px">
+          The VP100 connects <strong>to this computer</strong>. Set this PC's IP
+          (<strong>11.11.20.50</strong>) and the port below in the Valor Portal under
+          Device Management → EPI → Edit Parameter → Valor Connect, then do a Param Download on the terminal.
+        </p>
+        <div class="form-row">
+          <div class="form-group" style="max-width:160px">
+            <label>Listen Port</label>
+            <input type="number" id="terminalPort" placeholder="5000" />
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <button class="btn btn-gray" onclick="testTerminal()" id="testTerminalBtn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            Test Connection
+          </button>
+          <span id="testResult" style="font-size:13px;font-weight:600"></span>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-navy" onclick="saveTerminalSettings()">Save Terminal Settings</button>
+      </div>
+    </div>
+
+    <!-- Printer Config -->
+    <div class="card settings-section">
+      <div class="card-title">Receipt Printer</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Printer Type</label>
+          <select id="printerType">
+            <option value="star">Star (mC-Print, TSP100, TSP650)</option>
+            <option value="epson">Epson (TM-T20, TM-T88)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Printer Interface</label>
+          <input type="text" id="printerInterface" placeholder="e.g. printer or \\\\host\\printer" />
+        </div>
+      </div>
+      <p style="font-size:12px;color:#888;margin-top:-8px;margin-bottom:12px">
+        Windows: use "printer" for the default printer, or the exact printer name. If offline, receipt is saved as a .txt file.
+      </p>
+      <button class="btn btn-navy" onclick="savePrinterSettings()">Save Printer Settings</button>
+    </div>
+
+    <!-- Zebra Printer -->
+    <div class="card settings-section">
+      <div class="card-title">Zebra Barcode Printer</div>
+      <p style="font-size:13px;color:#666;margin-bottom:12px">
+        For printing 2.25" × 1.25" barcode tags from Inventory and Invoices.
+        Connect via TCP/IP (Zebra Z8, Z11, ZD220, GK420d, etc.).
+      </p>
+      <div class="form-row">
+        <div class="form-group"><label>Zebra IP Address</label><input type="text" id="zebraIp" placeholder="192.168.1.200" /></div>
+        <div class="form-group" style="max-width:160px"><label>Port</label><input type="number" id="zebraPort" placeholder="9100" /></div>
+      </div>
+      <button class="btn btn-navy" onclick="saveZebraSettings()">Save Zebra Settings</button>
+    </div>
+
+    <!-- Twilio Config -->
+    <div class="card settings-section">
+      <div class="card-title">Twilio SMS</div>
+      <div class="form-group"><label>Account SID</label><input type="text" id="twilioSid" /></div>
+      <div class="form-group">
+        <label>Auth Token</label>
+        <input type="password" id="twilioToken" placeholder="Leave blank to keep current" />
+      </div>
+      <div class="form-group"><label>From Phone Number</label><input type="text" id="twilioFrom" placeholder="+15550000000" /></div>
+      <button class="btn btn-navy" onclick="saveTwilioSettings()">Save Twilio Settings</button>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-left" id="status-left">Loading…</div>
+    <div class="status-right" id="status-right"></div>
+  </div>
+
+  <script src="../shared.js"></script>
+  <script>
+    // ---- User Management ----
+    async function loadUsers() {
+      const res = await window.api.listUsers();
+      const el = document.getElementById('userList');
+      if (!res.success || !res.users.length) {
+        el.innerHTML = '<div style="font-size:13px;color:#999">No users found</div>';
+        return;
+      }
+      el.innerHTML = res.users.map(u => `
+        <div class="user-row">
+          <span class="user-name">${esc(u.username)}</span>
+          <span class="user-role-badge ${u.role}">${u.role}</span>
+          ${u.must_change_password ? '<span class="must-change-badge">Must change password</span>' : ''}
+          <button class="btn-delete-user" onclick="deleteUser(${u.id}, '${esc(u.username)}')">Delete</button>
+        </div>
+      `).join('');
+    }
+
+    function esc(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    async function createUser() {
+      const username = document.getElementById('newUsername').value.trim();
+      const password = document.getElementById('newPassword').value;
+      const role = document.getElementById('newRole').value;
+
+      if (!username || !password) {
+        showToast('Username and password are required', 'warning');
+        return;
+      }
+
+      const res = await window.api.createUser(username, password, role);
+      if (res.success) {
+        showToast(`User "${username}" created — they must change password on first login`, 'success');
+        document.getElementById('newUsername').value = '';
+        document.getElementById('newPassword').value = '';
+        document.getElementById('newRole').value = 'cashier';
+        loadUsers();
+      } else {
+        showToast(res.error || 'Failed to create user', 'error');
+      }
+    }
+
+    async function deleteUser(id, username) {
+      if (!confirm(`Delete user "${username}"? This cannot be undone.`)) return;
+      const res = await window.api.deleteUser(id);
+      if (res.success) {
+        showToast(`User "${username}" deleted`, 'success');
+        loadUsers();
+      } else {
+        showToast(res.error || 'Failed to delete user', 'error');
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Manager-only page
+      const { session } = await window.api.getSession();
+      if (session?.role !== 'manager') {
+        showToast('Settings requires manager access', 'error');
+        setTimeout(() => navigate('main-menu'), 1500);
+        return;
+      }
+
+      loadUsers();
+
+      const [settingsRes, configRes, termCfgRes] = await Promise.all([
+        window.api.getSettings(),
+        window.api.getReceiptConfig(),
+        window.api.getTerminalConfig(),
+      ]);
+
+      if (settingsRes.success) {
+        const s = settingsRes.settings;
+        document.getElementById('printerType').value = s.printer_type || 'star';
+        document.getElementById('printerInterface').value = s.printer_interface || 'printer';
+        document.getElementById('twilioSid').value = s.twilio_account_sid || '';
+        document.getElementById('twilioFrom').value = s.twilio_from_number || '';
+        document.getElementById('zebraIp').value = s.zebra_ip || '';
+        document.getElementById('zebraPort').value = s.zebra_port || '9100';
+      }
+
+      if (termCfgRes.success) {
+        const c = termCfgRes.config;
+        document.getElementById('terminalType').value = c.terminal_type || 'valor_vp100';
+        document.getElementById('terminalPort').value = c.terminal_port || '5000';
+        onTerminalTypeChange();
+      }
+
+      if (configRes.success && configRes.config) {
+        const c = configRes.config;
+        document.getElementById('storeName').value = c.store_name || '';
+        document.getElementById('storePhone').value = c.phone || '';
+        document.getElementById('storeAddress').value = c.address || '';
+        document.getElementById('storeFooter').value = c.footer_message || '';
+        document.getElementById('taxRate').value = ((c.tax_rate || 0.0825) * 100).toFixed(2);
+        document.getElementById('minAge').value = String(c.min_age ?? 21);
+      }
+    });
+
+    async function saveReceiptConfig() {
+      const data = {
+        store_name: document.getElementById('storeName').value.trim(),
+        phone: document.getElementById('storePhone').value.trim(),
+        address: document.getElementById('storeAddress').value.trim(),
+        footer_message: document.getElementById('storeFooter').value.trim(),
+        tax_rate: parseFloat(document.getElementById('taxRate').value) / 100,
+        min_age: parseInt(document.getElementById('minAge').value, 10) || 0,
+      };
+      const res = await window.api.updateReceiptConfig(data);
+      showToast(res.success ? 'Receipt settings saved!' : (res.error || 'Failed'), res.success ? 'success' : 'error');
+    }
+
+    function onTerminalTypeChange() {
+      const isMock = document.getElementById('terminalType').value === 'mock';
+      const fields = document.getElementById('valorFields');
+      const inputs = fields.querySelectorAll('input');
+      fields.style.opacity = isMock ? '0.45' : '1';
+      inputs.forEach(el => { el.disabled = isMock; });
+      document.getElementById('testTerminalBtn').disabled = isMock;
+    }
+
+    async function testTerminal() {
+      const btn = document.getElementById('testTerminalBtn');
+      const resultEl = document.getElementById('testResult');
+      btn.disabled = true;
+      resultEl.textContent = 'Testing…';
+      resultEl.style.color = '#888';
+
+      // Save first so the test uses the current field values
+      await saveTerminalSettings(true);
+
+      const res = await window.api.testTerminalConnection();
+      btn.disabled = false;
+
+      if (res.success) {
+        resultEl.textContent = '✓ ' + (res.message || 'Connected');
+        resultEl.style.color = '#2e7d32';
+      } else {
+        resultEl.textContent = '✗ ' + (res.message || 'Unreachable');
+        resultEl.style.color = '#c0392b';
+      }
+    }
+
+    async function saveTerminalSettings(silent = false) {
+      const config = {
+        terminal_type: document.getElementById('terminalType').value,
+        terminal_port: document.getElementById('terminalPort').value.trim() || '5000',
+      };
+      const res = await window.api.saveTerminalConfig(config);
+      if (!silent) {
+        showToast(res.success ? 'Terminal settings saved!' : (res.error || 'Save failed'), res.success ? 'success' : 'error');
+      }
+    }
+
+    async function savePrinterSettings() {
+      await Promise.all([
+        window.api.updateSetting('printer_type', document.getElementById('printerType').value),
+        window.api.updateSetting('printer_interface', document.getElementById('printerInterface').value),
+      ]);
+      showToast('Printer settings saved!', 'success');
+    }
+
+    async function saveZebraSettings() {
+      await Promise.all([
+        window.api.updateSetting('zebra_ip', document.getElementById('zebraIp').value.trim()),
+        window.api.updateSetting('zebra_port', document.getElementById('zebraPort').value.trim() || '9100'),
+      ]);
+      showToast('Zebra settings saved!', 'success');
+    }
+
+    async function saveTwilioSettings() {
+      const saves = [
+        window.api.updateSetting('twilio_account_sid', document.getElementById('twilioSid').value),
+        window.api.updateSetting('twilio_from_number', document.getElementById('twilioFrom').value),
+      ];
+      const token = document.getElementById('twilioToken').value;
+      if (token) saves.push(window.api.updateSetting('twilio_auth_token', token));
+      await Promise.all(saves);
+      showToast('Twilio settings saved!', 'success');
+    }
+  </script>
+</body>
+</html>

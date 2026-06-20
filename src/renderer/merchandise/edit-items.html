@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Edit Items</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <style>
+    .page-layout {
+      padding: 24px;
+      padding-bottom: 56px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .edit-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .table-wrap {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .edit-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .edit-table th {
+      text-align: left;
+      padding: 8px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #555;
+      border-bottom: 2px solid #eee;
+      position: sticky;
+      top: 0;
+      background: #fff;
+      z-index: 1;
+    }
+
+    .edit-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .edit-table td input {
+      border: 1px solid transparent;
+      border-radius: 5px;
+      padding: 5px 7px;
+      font-size: 13px;
+      width: 100%;
+      background: transparent;
+      outline: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .edit-table td input:focus {
+      border-color: #2c4a6e;
+      background: #f0f5ff;
+    }
+
+    .edit-table tr:hover td { background: #fafafa; }
+    .edit-table tr.dirty td { background: #fffbeb !important; }
+
+    .save-row-btn {
+      background: #2c4a6e;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      padding: 5px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .save-row-btn:hover { filter: brightness(1.1); }
+    .save-row-btn:disabled { background: #ccc; cursor: default; }
+
+    .bulk-save {
+      position: sticky;
+      bottom: 0;
+      background: #fff;
+      padding: 10px 0;
+      border-top: 1px solid #eee;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('merchandise')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Edit Items</h1>
+      <div class="spacer"></div>
+      <div class="search-wrap" style="width:240px">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="searchInput" placeholder="Filter products…" />
+      </div>
+    </div>
+
+    <div class="card edit-card">
+      <div class="table-wrap">
+        <table class="edit-table" id="editTable">
+          <thead>
+            <tr>
+              <th>Barcode</th>
+              <th style="min-width:180px">Name</th>
+              <th>Category</th>
+              <th>Vendor</th>
+              <th>Price ($)</th>
+              <th>Cost ($)</th>
+              <th>Stock</th>
+              <th>Min Stock</th>
+              <th style="text-align:center" title="Age restricted">Age</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="editBody">
+            <tr><td colspan="10" style="text-align:center;color:#888;padding:24px">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="bulk-save">
+        <span id="dirtyCount" style="font-size:13px;color:#888;align-self:center"></span>
+        <button class="btn btn-navy" id="saveAllBtn" disabled>Save All Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-left" id="status-left">Loading…</div>
+    <div class="status-right" id="status-right"></div>
+  </div>
+
+  <script src="../shared.js"></script>
+  <script>
+    let products = [];
+    let dirtyRows = new Set();
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadProducts();
+      document.getElementById('searchInput').addEventListener('input', renderTable);
+      document.getElementById('saveAllBtn').addEventListener('click', saveAll);
+    });
+
+    async function loadProducts() {
+      const res = await window.api.getProducts();
+      if (!res.success) { showToast(res.error, 'error'); return; }
+      products = res.products;
+      renderTable();
+    }
+
+    function renderTable() {
+      const query = document.getElementById('searchInput').value.toLowerCase();
+      const filtered = products.filter(p =>
+        !query ||
+        (p.name || '').toLowerCase().includes(query) ||
+        (p.barcode || '').includes(query)
+      );
+
+      const tbody = document.getElementById('editBody');
+      if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#888;padding:24px">No products found</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(p => `
+        <tr data-id="${p.id}" class="${dirtyRows.has(p.id) ? 'dirty' : ''}">
+          <td><input type="text" data-field="barcode" value="${esc(p.barcode || '')}" onchange="markDirty(${p.id})" /></td>
+          <td><input type="text" data-field="name" value="${esc(p.name)}" onchange="markDirty(${p.id})" /></td>
+          <td><input type="text" data-field="category" value="${esc(p.category || '')}" onchange="markDirty(${p.id})" /></td>
+          <td><input type="text" data-field="vendor" value="${esc(p.vendor || '')}" onchange="markDirty(${p.id})" /></td>
+          <td><input type="number" step="0.01" data-field="price" value="${Number(p.price).toFixed(2)}" onchange="markDirty(${p.id})" /></td>
+          <td><input type="number" step="0.01" data-field="cost" value="${Number(p.cost).toFixed(2)}" onchange="markDirty(${p.id})" /></td>
+          <td><input type="number" data-field="stock_qty" value="${p.stock_qty}" onchange="markDirty(${p.id})" /></td>
+          <td><input type="number" data-field="low_stock_threshold" value="${p.low_stock_threshold}" onchange="markDirty(${p.id})" /></td>
+          <td style="text-align:center"><input type="checkbox" data-field="age_restricted" style="width:auto" ${p.age_restricted ? 'checked' : ''} onchange="markDirty(${p.id})" /></td>
+          <td style="white-space:nowrap">
+            <button class="save-row-btn" onclick="saveRow(${p.id})" ${dirtyRows.has(p.id) ? '' : 'disabled'}>Save</button>
+            <button class="save-row-btn" style="background:#6d28d9" onclick="openVariants(${p.id}, '${esc(p.name).replace(/'/g,"\\'")}')">Variants</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function markDirty(id) {
+      dirtyRows.add(id);
+      const row = document.querySelector(`tr[data-id="${id}"]`);
+      if (row) {
+        row.classList.add('dirty');
+        const btn = row.querySelector('.save-row-btn');
+        if (btn) btn.disabled = false;
+      }
+      document.getElementById('dirtyCount').textContent = `${dirtyRows.size} unsaved change${dirtyRows.size !== 1 ? 's' : ''}`;
+      document.getElementById('saveAllBtn').disabled = dirtyRows.size === 0;
+    }
+
+    function openVariants(id, name) {
+      localStorage.setItem('variantProductId', id);
+      localStorage.setItem('variantProductName', name);
+      navigate('merchandise/variants');
+    }
+
+    async function saveRow(id) {
+      const row = document.querySelector(`tr[data-id="${id}"]`);
+      if (!row) return;
+
+      const data = {};
+      row.querySelectorAll('input[data-field]').forEach(input => {
+        const field = input.dataset.field;
+        const val = input.value;
+        if (input.type === 'checkbox') data[field] = input.checked ? 1 : 0;
+        else if (['price', 'cost'].includes(field)) data[field] = parseFloat(val) || 0;
+        else if (['stock_qty', 'low_stock_threshold'].includes(field)) data[field] = parseInt(val) || 0;
+        else data[field] = val;
+      });
+
+      const res = await window.api.updateProduct(id, data);
+      if (res.success) {
+        dirtyRows.delete(id);
+        row.classList.remove('dirty');
+        const btn = row.querySelector('.save-row-btn');
+        if (btn) btn.disabled = true;
+
+        // Update local data
+        const p = products.find(x => x.id === id);
+        if (p) Object.assign(p, data);
+
+        document.getElementById('dirtyCount').textContent =
+          dirtyRows.size > 0 ? `${dirtyRows.size} unsaved change${dirtyRows.size !== 1 ? 's' : ''}` : '';
+        document.getElementById('saveAllBtn').disabled = dirtyRows.size === 0;
+        showToast('Saved!', 'success');
+      } else {
+        showToast(res.error || 'Save failed', 'error');
+      }
+    }
+
+    async function saveAll() {
+      const ids = [...dirtyRows];
+      let saved = 0;
+      for (const id of ids) {
+        await saveRow(id);
+        saved++;
+      }
+      showToast(`Saved ${saved} product${saved !== 1 ? 's' : ''}`, 'success');
+    }
+  </script>
+</body>
+</html>

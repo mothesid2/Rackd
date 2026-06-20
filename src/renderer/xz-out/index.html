@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — X/Z Out</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <style>
+    .page-layout { padding: 24px; padding-bottom: 80px; max-width: 860px; margin: 0 auto; height: calc(100vh - 32px); overflow-y: auto; }
+
+    .report-section { margin-bottom: 18px; }
+    .report-section-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; color: #888; margin-bottom: 10px; }
+
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+    .grid-pay { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+
+    .metric-tile { background: #f5f5f5; border-radius: 10px; padding: 14px 16px; }
+    .metric-tile .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 4px; }
+    .metric-tile .val { font-size: 20px; font-weight: 800; color: #1a1a1a; }
+    .metric-tile .val.green { color: #2e7d32; } .metric-tile .val.blue { color: #1565c0; } .metric-tile .val.amber { color: #b45309; }
+
+    .report-divider { border: none; border-top: 2px solid #eee; margin: 14px 0; }
+    .report-total-row { display: flex; justify-content: space-between; align-items: center; font-size: 20px; font-weight: 800; padding: 8px 0; }
+    .report-line-row { display: flex; justify-content: space-between; font-size: 14px; padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
+    .report-line-row:last-child { border-bottom: none; }
+    .report-line-row .lbl { color: #555; }
+    .report-line-row .val { font-weight: 600; }
+    .rank-badge { display: inline-block; background: #1c2a4a; color: #fff; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 700; margin-right: 6px; }
+    .since-badge { display: inline-block; background: #e8f0fe; color: #1a56db; border-radius: 20px; padding: 3px 12px; font-size: 12px; font-weight: 600; }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .date-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .date-bar input { border: 1px solid #ddd; border-radius: 8px; padding: 7px 10px; font-size: 14px; }
+    .date-bar label { font-size: 13px; color: #555; }
+
+    .z-warning { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 14px 16px; font-size: 14px; color: #9a3412; margin-bottom: 16px; display: flex; align-items: flex-start; gap: 10px; }
+    .z-warning svg { width: 20px; height: 20px; flex-shrink: 0; margin-top: 1px; }
+    .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+
+    @media print {
+      body { background: #fff !important; }
+      .status-bar, .btn-row, .page-header, .date-bar, #zReportCard, .print-hide { display: none !important; }
+      .page-layout { padding: 0 !important; max-width: 100% !important; height: auto !important; overflow: visible !important; }
+      .card { box-shadow: none !important; border: 1px solid #ccc !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('main-menu')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">X / Z Out</h1>
+      <div class="spacer"></div>
+      <button class="btn btn-navy" id="ageLogBtn" style="display:none" onclick="navigate('xz-out/age-log')">Age Verification Log</button>
+      <button class="btn btn-navy" id="auditBtn" style="display:none" onclick="navigate('xz-out/monthly')">Audit</button>
+    </div>
+
+    <!-- X REPORT CARD -->
+    <div class="card" id="xReportCard">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div class="card-title" style="margin:0">X Report</div>
+        <span class="since-badge" id="rangeBadge"></span>
+      </div>
+
+      <div class="date-bar print-hide" style="margin-top:12px">
+        <label>From</label><input type="date" id="startDate" />
+        <label>To</label><input type="date" id="endDate" />
+        <button class="btn btn-navy" onclick="loadX()">View</button>
+        <div class="spacer"></div>
+        <button class="btn btn-gray" onclick="setToday()">Today</button>
+      </div>
+
+      <div class="report-section">
+        <div class="report-section-title">Sales Summary</div>
+        <div class="grid-4">
+          <div class="metric-tile"><div class="lbl">Gross Sales</div><div class="val" id="xGross">—</div></div>
+          <div class="metric-tile"><div class="lbl">Less Discounts</div><div class="val amber" id="xDiscount">—</div></div>
+          <div class="metric-tile"><div class="lbl">Net Sales</div><div class="val green" id="xNet">—</div></div>
+          <div class="metric-tile"><div class="lbl">Tax</div><div class="val" id="xTax">—</div></div>
+        </div>
+      </div>
+
+      <div class="report-section">
+        <div class="report-section-title">Payment Breakdown</div>
+        <div class="grid-pay" id="xPayTiles"></div>
+        <div style="margin-top:12px">
+          <div class="report-line-row"><span class="lbl">Transactions</span><span class="val" id="xCount">—</span></div>
+          <div class="report-line-row"><span class="lbl">Units / Transaction</span><span class="val" id="xUPT">—</span></div>
+          <div class="report-line-row"><span class="lbl">Average Sale</span><span class="val" id="xAvg">—</span></div>
+        </div>
+      </div>
+
+      <div class="report-section">
+        <div class="report-section-title">Refunds</div>
+        <div id="xRefunds" class="report-line-row"><span class="lbl">Refunds</span><span class="val">—</span></div>
+      </div>
+
+      <div class="two-col">
+        <div class="report-section">
+          <div class="report-section-title">By Department</div>
+          <div id="xCatRows"></div>
+        </div>
+        <div class="report-section">
+          <div class="report-section-title">Top Products</div>
+          <div id="xTopRows"></div>
+        </div>
+      </div>
+
+      <hr class="report-divider" />
+      <div class="report-total-row"><span>Total Collection</span><span id="xTotal">—</span></div>
+
+      <div class="btn-row">
+        <button class="btn btn-navy" onclick="loadX()">Refresh</button>
+        <button class="btn btn-navy" onclick="window.api.printPage()">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Print X Report
+        </button>
+      </div>
+    </div>
+
+    <!-- Z REPORT CARD -->
+    <div class="card" id="zReportCard">
+      <div class="card-title">Z Report — End of Day</div>
+      <div class="z-warning">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div><strong>Warning:</strong> Running a Z Report closes the current shift and resets all shift totals. This cannot be undone. Manager password required.</div>
+      </div>
+      <div id="zManagerMsg" style="display:none;background:#fee2e2;border-radius:8px;padding:12px;font-size:14px;color:#991b1b;margin-bottom:12px">Z Report requires manager access.</div>
+      <div id="zPinSection">
+        <div class="form-group" style="max-width:280px"><label>Manager Password</label><input type="password" id="zPin" placeholder="Enter manager password" /></div>
+        <button class="btn btn-red" id="runZBtn">Run Z Report &amp; Close Shift</button>
+      </div>
+      <div id="zResults" style="display:none">
+        <div style="font-size:15px;font-weight:700;color:#2e7d32;margin-bottom:14px">✓ Z Report Complete — Shift Closed &amp; Reset</div>
+        <div id="zReportContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Z Confirm Modal -->
+  <div class="modal-overlay" id="zConfirmModal" style="display:none">
+    <div class="modal" style="max-width:460px">
+      <div class="modal-header"><div class="modal-title">Confirm Z Report</div><button class="modal-close" onclick="closeModal('zConfirmModal')">&times;</button></div>
+      <div class="modal-body">
+        <div style="font-size:15px;margin-bottom:18px">Running the <strong>Z Report</strong> saves it, closes the current shift, and resets totals. <strong>This cannot be undone.</strong> Continue?</div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="btn" onclick="closeModal('zConfirmModal')">Cancel</button>
+          <button class="btn btn-red" id="confirmZBtn">Yes, Run Z Report</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar"><div class="status-left" id="status-left">Loading…</div><div class="status-right" id="status-right"></div></div>
+
+  <script src="../shared.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      setToday();
+      loadX();
+
+      const session = (await window.api.getSession()).session;
+      if (session?.role !== 'manager') {
+        document.getElementById('zManagerMsg').style.display = 'block';
+        document.getElementById('zPinSection').style.display = 'none';
+      } else {
+        document.getElementById('auditBtn').style.display = 'inline-flex';
+        document.getElementById('ageLogBtn').style.display = 'inline-flex';
+      }
+
+      document.getElementById('runZBtn').addEventListener('click', () => {
+        if (!document.getElementById('zPin').value) { showToast('Enter manager password', 'warning'); return; }
+        openModal('zConfirmModal');
+      });
+      document.getElementById('confirmZBtn').addEventListener('click', () => { closeModal('zConfirmModal'); runZReport(); });
+      document.getElementById('zPin').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('runZBtn').click(); });
+    });
+
+    function setToday() {
+      const t = new Date(); t.setMinutes(t.getMinutes() - t.getTimezoneOffset());
+      const iso = t.toISOString().slice(0, 10);
+      document.getElementById('startDate').value = iso;
+      document.getElementById('endDate').value = iso;
+    }
+
+    async function loadX() {
+      const start = document.getElementById('startDate').value;
+      const end = document.getElementById('endDate').value;
+      const res = await window.api.getPeriodReport({ start, end });
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      renderX(res);
+    }
+
+    function renderX(r) {
+      const s = r.summary, p = r.payments;
+      document.getElementById('rangeBadge').textContent = r.period.label;
+      document.getElementById('xGross').textContent = fmt(s.gross);
+      document.getElementById('xDiscount').textContent = '-' + fmt(s.discounts);
+      document.getElementById('xNet').textContent = fmt(s.gross - s.discounts);
+      document.getElementById('xTax').textContent = fmt(s.tax);
+      document.getElementById('xCount').textContent = s.count;
+      document.getElementById('xUPT').textContent = s.units_per_txn.toFixed(2);
+      document.getElementById('xAvg').textContent = fmt(s.avg);
+      document.getElementById('xTotal').textContent = fmt(s.total_collected);
+
+      const tiles = [{ lbl: 'Cash', val: p.cash, cls: 'green' }]
+        .concat(p.brands.map(b => ({ lbl: b.brand, val: b.amount, cls: 'blue' })));
+      if (p.other_card.amount > 0) tiles.push({ lbl: 'Other Card', val: p.other_card.amount, cls: 'blue' });
+      document.getElementById('xPayTiles').innerHTML = tiles.map(t =>
+        `<div class="metric-tile"><div class="lbl">${esc(t.lbl)}</div><div class="val ${t.cls}">${fmt(t.val)}</div></div>`).join('');
+
+      document.getElementById('xRefunds').innerHTML = r.refunds.count
+        ? `<span class="lbl">${r.refunds.count} refund${r.refunds.count !== 1 ? 's' : ''}</span><span class="val" style="color:#991b1b">${fmt(r.refunds.total)}</span>`
+        : '<span class="lbl">Refunds</span><span class="val">None</span>';
+
+      document.getElementById('xCatRows').innerHTML = r.by_category.length === 0
+        ? '<div style="font-size:13px;color:#999">No sales</div>'
+        : r.by_category.map(c => `<div class="report-line-row"><span class="lbl">${esc(c.category)}</span><span class="val">${fmt(c.revenue)} <span style="color:#aaa;font-size:12px;font-weight:400">(${c.qty})</span></span></div>`).join('');
+
+      document.getElementById('xTopRows').innerHTML = r.top_products.length === 0
+        ? '<div style="font-size:13px;color:#999">No sales</div>'
+        : r.top_products.map((t, i) => `<div class="report-line-row"><span class="lbl"><span class="rank-badge">#${i + 1}</span>${esc(t.name)}</span><span class="val">${fmt(t.revenue)}</span></div>`).join('');
+
+      document.getElementById('status-left').textContent = `X Report · ${r.period.label}`;
+    }
+
+    function buildLineRow(label, val) {
+      return `<div class="report-line-row"><span class="lbl">${esc(String(label))}</span><span class="val">${esc(String(val))}</span></div>`;
+    }
+
+    function renderZResults(r) {
+      document.getElementById('zReportContent').innerHTML = `
+        <div class="report-section">
+          <div class="report-section-title">Sales Summary</div>
+          <div class="grid-4">
+            <div class="metric-tile"><div class="lbl">Gross</div><div class="val">${fmt(r.gross_sales)}</div></div>
+            <div class="metric-tile"><div class="lbl">Discounts</div><div class="val amber">-${fmt(r.discount_total)}</div></div>
+            <div class="metric-tile"><div class="lbl">Tax</div><div class="val">${fmt(r.tax_total)}</div></div>
+            <div class="metric-tile"><div class="lbl">Net</div><div class="val green">${fmt(r.net_sales)}</div></div>
+          </div>
+        </div>
+        <div class="report-section">
+          <div class="report-section-title">Payment Breakdown</div>
+          ${buildLineRow('Cash', fmt(r.cash_total))}
+          ${buildLineRow('Card', fmt(r.card_total))}
+          ${buildLineRow('Transactions', r.sale_count)}
+        </div>
+        <hr class="report-divider" />
+        <div class="report-total-row"><span>Total Net Sales</span><span>${fmt(r.net_sales)}</span></div>`;
+    }
+
+    async function runZReport() {
+      const pin = document.getElementById('zPin').value;
+      const btn = document.getElementById('runZBtn');
+      btn.disabled = true; btn.textContent = 'Processing…';
+      let res;
+      try { res = await window.api.runZReport(pin); }
+      catch (e) { showToast('Error: ' + e.message, 'error'); btn.disabled = false; btn.textContent = 'Run Z Report & Close Shift'; return; }
+      btn.disabled = false; btn.textContent = 'Run Z Report & Close Shift';
+      if (!res.success) { showToast(res.error || 'Z Report failed', 'error'); return; }
+      document.getElementById('zPinSection').style.display = 'none';
+      document.getElementById('zResults').style.display = 'block';
+      renderZResults(res.report);
+      showToast('Z Report saved. Shift closed and reset.', 'success');
+      loadX();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Variants</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <style>
+    .page-layout { padding: 24px; padding-bottom: 56px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    .cols { display: grid; grid-template-columns: 1fr 360px; gap: 16px; flex: 1; overflow: hidden; }
+    .panel { display: flex; flex-direction: column; overflow: hidden; }
+    .table-wrap { flex: 1; overflow-y: auto; }
+    .v-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .v-table th { text-align: left; padding: 7px 8px; font-size: 11px; text-transform: uppercase; color: #888; border-bottom: 2px solid #eee; position: sticky; top: 0; background: #fff; }
+    .v-table td { padding: 5px 6px; border-bottom: 1px solid #f0f0f0; }
+    .v-table input { border: 1px solid #e3e3e3; border-radius: 5px; padding: 4px 6px; font-size: 12px; width: 100%; }
+    .v-table input.short { width: 64px; }
+    .mini { font-size: 11px; padding: 4px 8px; border-radius: 5px; border: none; cursor: pointer; color: #fff; }
+    .mini.save { background: #2c4a6e; } .mini.del { background: #dc2626; }
+    .dim-row { display: flex; gap: 6px; margin-bottom: 8px; }
+    .dim-row input { border: 1px solid #ddd; border-radius: 6px; padding: 7px 9px; font-size: 13px; }
+    .dim-name { width: 90px; } .dim-vals { flex: 1; }
+    .gen-preview { font-size: 12px; color: #555; max-height: 180px; overflow-y: auto; margin: 8px 0; border: 1px solid #eee; border-radius: 8px; padding: 8px; }
+    .empty { text-align: center; color: #888; padding: 24px; }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('merchandise/edit-items')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Variants — <span id="prodName"></span></h1>
+    </div>
+
+    <div class="cols">
+      <!-- Existing variants -->
+      <div class="card panel">
+        <div class="card-title">Existing Variants</div>
+        <div class="table-wrap">
+          <table class="v-table">
+            <thead><tr><th>Label</th><th>SKU</th><th>Barcode</th><th>Price</th><th>Cost</th><th>Stock</th><th>On</th><th></th></tr></thead>
+            <tbody id="vBody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Matrix builder -->
+      <div class="card panel">
+        <div class="card-title">Generate Variant Matrix</div>
+        <div style="overflow-y:auto;flex:1">
+          <p style="font-size:12px;color:#888;margin-bottom:10px">Enter up to 3 dimensions (e.g. Flavor: Mint, Berry). SKUs auto-generate.</p>
+          <div class="dim-row"><input class="dim-name" id="d1n" placeholder="Flavor" /><input class="dim-vals" id="d1v" placeholder="Mint, Berry, Mango" /></div>
+          <div class="dim-row"><input class="dim-name" id="d2n" placeholder="Nicotine" /><input class="dim-vals" id="d2v" placeholder="3mg, 6mg" /></div>
+          <div class="dim-row"><input class="dim-name" id="d3n" placeholder="Size" /><input class="dim-vals" id="d3v" placeholder="" /></div>
+
+          <div class="form-row">
+            <div class="form-group"><label>SKU prefix</label><input type="text" id="skuPrefix" /></div>
+            <div class="form-group"><label>Base price</label><input type="number" step="0.01" id="basePrice" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Base cost</label><input type="number" step="0.01" id="baseCost" /></div>
+            <div class="form-group"><label>Start stock</label><input type="number" id="baseStock" value="0" /></div>
+          </div>
+
+          <button class="btn btn-gray" style="width:100%;margin-bottom:8px" onclick="generate()">Preview Combinations</button>
+          <div class="gen-preview" id="preview" style="display:none"></div>
+          <button class="btn btn-navy" id="addAllBtn" style="width:100%;display:none" onclick="addAll()">Add All Variants</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar"><div class="status-left" id="status-left">Loading…</div><div class="status-right" id="status-right"></div></div>
+
+  <script src="../shared.js"></script>
+  <script>
+    const productId = parseInt(localStorage.getItem('variantProductId') || '0', 10);
+    const productName = localStorage.getItem('variantProductName') || 'Product';
+    let generated = [];
+
+    function clean(s) { return (s || '').toUpperCase().replace(/[^A-Z0-9]+/g, ''); }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!productId) { document.getElementById('status-left').textContent = 'No product selected'; return; }
+      document.getElementById('prodName').textContent = productName;
+      document.getElementById('skuPrefix').value = clean(productName).slice(0, 10);
+      loadVariants();
+    });
+
+    async function loadVariants() {
+      const res = await window.api.getVariants(productId);
+      const body = document.getElementById('vBody');
+      if (!res.success) { body.innerHTML = `<tr><td colspan="8" class="empty">${esc(res.error)}</td></tr>`; return; }
+      if (res.variants.length === 0) { body.innerHTML = '<tr><td colspan="8" class="empty">No variants yet</td></tr>'; return; }
+      body.innerHTML = res.variants.map(v => `
+        <tr data-id="${v.id}">
+          <td><input data-f="label" value="${esc(v.label)}" /></td>
+          <td><input data-f="sku" value="${esc(v.sku || '')}" /></td>
+          <td><input data-f="barcode" value="${esc(v.barcode || '')}" /></td>
+          <td><input class="short" type="number" step="0.01" data-f="price" value="${Number(v.price).toFixed(2)}" /></td>
+          <td><input class="short" type="number" step="0.01" data-f="cost" value="${Number(v.cost).toFixed(2)}" /></td>
+          <td><input class="short" type="number" data-f="stock_qty" value="${v.stock_qty}" /></td>
+          <td style="text-align:center"><input type="checkbox" data-f="is_active" ${v.is_active ? 'checked' : ''} /></td>
+          <td style="white-space:nowrap">
+            <button class="mini save" onclick="saveVariant(${v.id})">Save</button>
+            <button class="mini del" onclick="delVariant(${v.id})">×</button>
+          </td>
+        </tr>`).join('');
+    }
+
+    async function saveVariant(id) {
+      const row = document.querySelector(`tr[data-id="${id}"]`);
+      const data = {};
+      row.querySelectorAll('[data-f]').forEach(el => {
+        const f = el.dataset.f;
+        if (el.type === 'checkbox') data[f] = el.checked ? 1 : 0;
+        else if (['price', 'cost'].includes(f)) data[f] = parseFloat(el.value) || 0;
+        else if (f === 'stock_qty') data[f] = parseInt(el.value) || 0;
+        else data[f] = el.value.trim();
+      });
+      const res = await window.api.updateVariant(id, data);
+      showToast(res.success ? 'Saved' : (res.error || 'Failed'), res.success ? 'success' : 'error');
+    }
+
+    async function delVariant(id) {
+      const res = await window.api.deleteVariant(id);
+      if (res.success) { showToast('Deleted', 'success'); loadVariants(); }
+      else showToast(res.error || 'Failed', 'error');
+    }
+
+    function generate() {
+      const dims = [['d1n','d1v'],['d2n','d2v'],['d3n','d3v']]
+        .map(([n,v]) => ({
+          name: document.getElementById(n).value.trim(),
+          vals: document.getElementById(v).value.split(',').map(s => s.trim()).filter(Boolean),
+        }))
+        .filter(d => d.vals.length);
+
+      if (dims.length === 0) { showToast('Enter at least one dimension', 'warning'); return; }
+
+      // Cartesian product
+      let combos = [[]];
+      for (const d of dims) combos = combos.flatMap(c => d.vals.map(v => [...c, v]));
+
+      const prefix = clean(document.getElementById('skuPrefix').value) || 'SKU';
+      const price = parseFloat(document.getElementById('basePrice').value) || 0;
+      const cost = parseFloat(document.getElementById('baseCost').value) || 0;
+      const stock = parseInt(document.getElementById('baseStock').value) || 0;
+
+      generated = combos.map(parts => ({
+        label: parts.join(' / '),
+        sku: [prefix, ...parts.map(clean)].join('-'),
+        barcode: '', price, cost, stock_qty: stock,
+      }));
+
+      document.getElementById('preview').style.display = 'block';
+      document.getElementById('preview').innerHTML = generated
+        .map(v => `<div>${esc(v.label)} <span style="color:#999">· ${esc(v.sku)}</span></div>`).join('');
+      document.getElementById('addAllBtn').style.display = 'block';
+      document.getElementById('addAllBtn').textContent = `Add ${generated.length} Variants`;
+    }
+
+    async function addAll() {
+      if (!generated.length) return;
+      const res = await window.api.addVariants(productId, generated);
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      showToast(`Added ${res.added}${res.skipped.length ? `, ${res.skipped.length} duplicates skipped` : ''}`, 'success');
+      document.getElementById('preview').style.display = 'none';
+      document.getElementById('addAllBtn').style.display = 'none';
+      generated = [];
+      loadVariants();
+    }
+  </script>
+</body>
+</html>

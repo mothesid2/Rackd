@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd — Customer Display</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      background: #1a2a3f;
+      color: #fff;
+      overflow: hidden;
+    }
+
+    /* IDLE STATE */
+    .idle-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      gap: 24px;
+    }
+
+    .logo-icon {
+      width: 120px;
+      height: 120px;
+      border-radius: 24px;
+      background: #243552;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+    }
+
+    .logo-icon svg { width: 80px; height: 80px; }
+
+    .brand-name {
+      font-size: 48px;
+      font-weight: 900;
+      color: #fff;
+      letter-spacing: -1px;
+    }
+
+    .welcome-msg {
+      font-size: 22px;
+      color: rgba(255,255,255,0.6);
+      font-weight: 400;
+    }
+
+    /* CART STATE */
+    .cart-screen {
+      display: none;
+      flex-direction: column;
+      height: 100vh;
+      padding: 32px 40px;
+    }
+
+    .cart-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .cart-header .small-logo svg { width: 48px; height: 48px; border-radius: 10px; background: #243552; padding: 8px; }
+    .cart-header span { font-size: 24px; font-weight: 700; color: rgba(255,255,255,0.85); }
+
+    .cart-items { flex: 1; overflow-y: auto; }
+
+    .cart-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      font-size: 18px;
+    }
+
+    .cart-item:last-child { border: none; }
+    .cart-item .item-name { font-weight: 500; color: rgba(255,255,255,0.9); }
+    .cart-item .item-qty { color: rgba(255,255,255,0.5); margin-left: 8px; font-size: 15px; }
+    .cart-item .item-total { font-weight: 700; font-size: 20px; }
+
+    .totals-section {
+      border-top: 2px solid rgba(255,255,255,0.15);
+      padding-top: 20px;
+      margin-top: 12px;
+    }
+
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 18px;
+      padding: 6px 0;
+      color: rgba(255,255,255,0.7);
+    }
+
+    .total-row.grand {
+      font-size: 48px;
+      font-weight: 900;
+      color: #fff;
+      padding: 16px 0;
+    }
+
+    /* CARD PROCESSING STATE */
+    .card-screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      gap: 24px;
+    }
+
+    .card-icon {
+      width: 100px;
+      height: 100px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .card-icon svg { width: 52px; height: 52px; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.7; transform: scale(1.08); }
+    }
+
+    .card-title { font-size: 32px; font-weight: 700; text-align: center; }
+    .card-sub { font-size: 18px; color: rgba(255,255,255,0.6); text-align: center; }
+
+    .dot-dots { display: inline-block; }
+    .dot-dots::after {
+      content: '...';
+      animation: dots 1.5s steps(3, end) infinite;
+    }
+
+    @keyframes dots {
+      0%   { content: ''; }
+      33%  { content: '.'; }
+      66%  { content: '..'; }
+      100% { content: '...'; }
+    }
+
+    /* Total bar at bottom of cart screen */
+    .amount-bar {
+      background: rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .amount-bar .label { font-size: 16px; color: rgba(255,255,255,0.6); }
+    .amount-bar .amount { font-size: 36px; font-weight: 900; }
+  </style>
+</head>
+<body>
+  <!-- IDLE -->
+  <div class="idle-screen" id="idleScreen">
+    <div class="logo-icon">
+      <svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+        <path d="M30 34 C30 22 50 22 50 34" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+        <path d="M26 32 H54 a4 4 0 0 1 4 3.6 l2.4 24 a4.5 4.5 0 0 1 -4.5 5 H24.1 a4.5 4.5 0 0 1 -4.5 -5 l2.4 -24 A4 4 0 0 1 26 32 Z" fill="#fff"/>
+      </svg>
+    </div>
+    <div class="brand-name" data-brand>rackd</div>
+    <div class="welcome-msg"><span data-welcome>Welcome!</span></div>
+  </div>
+
+  <!-- CART -->
+  <div class="cart-screen" id="cartScreen">
+    <div class="cart-header">
+      <div class="small-logo">
+        <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+          <path d="M18 20 C18 13 30 13 30 20" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/>
+          <path d="M15.5 19 H32.5 a2.5 2.5 0 0 1 2.5 2.2 l1.5 15 a2.8 2.8 0 0 1 -2.8 3 H14.3 a2.8 2.8 0 0 1 -2.8 -3 l1.5 -15 A2.5 2.5 0 0 1 15.5 19 Z" fill="#fff"/>
+        </svg>
+      </div>
+      <span data-brand>rackd</span>
+    </div>
+
+    <div class="cart-items" id="cartItems"></div>
+
+    <div class="totals-section">
+      <div class="total-row"><span>Subtotal</span><span id="cartSubtotal">$0.00</span></div>
+      <div class="total-row"><span>Tax</span><span id="cartTax">$0.00</span></div>
+      <div id="cartDiscountRow" class="total-row" style="display:none"><span>Discount</span><span id="cartDiscount">-$0.00</span></div>
+    </div>
+
+    <div class="amount-bar">
+      <span class="label">TOTAL</span>
+      <span class="amount" id="cartTotal">$0.00</span>
+    </div>
+  </div>
+
+  <!-- CARD PROCESSING — shows itemised cart + "follow prompts" -->
+  <div class="cart-screen" id="cardScreen" style="display:none">
+    <div class="cart-header">
+      <div class="small-logo">
+        <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+          <path d="M18 20 C18 13 30 13 30 20" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/>
+          <path d="M15.5 19 H32.5 a2.5 2.5 0 0 1 2.5 2.2 l1.5 15 a2.8 2.8 0 0 1 -2.8 3 H14.3 a2.8 2.8 0 0 1 -2.8 -3 l1.5 -15 A2.5 2.5 0 0 1 15.5 19 Z" fill="#fff"/>
+        </svg>
+      </div>
+      <span data-brand>rackd</span>
+    </div>
+
+    <div class="cart-items" id="cardCartItems"></div>
+
+    <div class="totals-section">
+      <div class="total-row"><span>Subtotal</span><span id="cardSubtotal">$0.00</span></div>
+      <div class="total-row"><span>Tax</span><span id="cardTax">$0.00</span></div>
+      <div id="cardDiscountRow" class="total-row" style="display:none"><span>Discount</span><span id="cardDiscount">-$0.00</span></div>
+    </div>
+
+    <div class="amount-bar" style="margin-bottom:0">
+      <span class="label">TOTAL</span>
+      <span class="amount" id="cardTotal">$0.00</span>
+    </div>
+
+    <!-- "Follow prompts" footer bar -->
+    <div style="
+      margin-top:16px;
+      background:rgba(255,255,255,0.1);
+      border-radius:12px;
+      padding:14px 20px;
+      display:flex;
+      align-items:center;
+      gap:14px;
+    ">
+      <div style="animation:pulse 1.5s ease-in-out infinite">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+             style="width:32px;height:32px;flex-shrink:0">
+          <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
+          <line x1="1" y1="10" x2="23" y2="10"/>
+        </svg>
+      </div>
+      <div>
+        <div style="font-size:18px;font-weight:700">Please follow prompts on the card reader</div>
+        <div style="font-size:14px;color:rgba(255,255,255,0.6);margin-top:2px">
+          Select tip if prompted, then tap or insert your card<span class="dot-dots"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function fmt(n) { return '$' + Number(n || 0).toFixed(2); }
+
+    // White-label: show the shop's own store name across the customer display
+    (async () => {
+      try {
+        const cfg = await window.api.getReceiptConfig();
+        const name = cfg?.config?.store_name;
+        if (name) {
+          document.querySelectorAll('[data-brand]').forEach(el => { el.textContent = name; });
+          document.querySelectorAll('[data-welcome]').forEach(el => { el.textContent = `Welcome to ${name}!`; });
+        }
+      } catch { /* keep defaults */ }
+    })();
+
+    function showState(state) {
+      document.getElementById('idleScreen').style.display = state === 'idle' ? 'flex' : 'none';
+      document.getElementById('cartScreen').style.display = state === 'cart' ? 'flex' : 'none';
+      document.getElementById('cardScreen').style.display = state === 'card_processing' ? 'flex' : 'none';
+    }
+
+    window.api.on('update-display', (data) => {
+      if (!data) { showState('idle'); return; }
+
+      if (data.state === 'idle') {
+        showState('idle');
+        return;
+      }
+
+      if (data.state === 'card_processing') {
+        document.getElementById('cardAmount').textContent = fmt(data.total);
+        showState('card_processing');
+        return;
+      }
+
+      if (data.state === 'cart' || data.cart) {
+        const items = data.cart || [];
+        document.getElementById('cartItems').innerHTML = items.map(item => `
+          <div class="cart-item">
+            <span>
+              <span class="item-name">${item.name}</span>
+              <span class="item-qty">× ${item.qty}</span>
+            </span>
+            <span class="item-total">${fmt(item.total)}</span>
+          </div>
+        `).join('');
+
+        document.getElementById('cartSubtotal').textContent = fmt(data.subtotal);
+        document.getElementById('cartTax').textContent = fmt(data.tax);
+        document.getElementById('cartTotal').textContent = fmt(data.total);
+
+        if (data.discount > 0) {
+          document.getElementById('cartDiscountRow').style.display = 'flex';
+          document.getElementById('cartDiscount').textContent = `-${fmt(data.discount)}`;
+        } else {
+          document.getElementById('cartDiscountRow').style.display = 'none';
+        }
+
+        showState('cart');
+      }
+    });
+
+    // Start in idle
+    showState('idle');
+  </script>
+</body>
+</html>

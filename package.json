@@ -1,0 +1,52 @@
+{
+  "name": "sei-vape-pos",
+  "version": "1.0.0",
+  "description": "rackd Point of Sale System",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "start": "npm run build:main && electron .",
+    "build:main": "tsc -p tsconfig.json",
+    "build": "npm run build:main && electron-builder",
+    "seed": "electron dist/main/db/seed.js",
+    "dev": "npm run build:main && electron . --dev",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
+  },
+  "build": {
+    "appId": "com.rackd.pos",
+    "productName": "rackd POS",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "src/renderer/**/*",
+      "assets/**/*",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^12.8.0",
+    "luxon": "^3.7.2",
+    "mqtt": "^5.15.1",
+    "node-thermal-printer": "^4.3.3",
+    "twilio": "^5.0.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/luxon": "^3.7.1",
+    "@types/node": "^20.19.39",
+    "electron": "^41.2.0",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.3.3"
+  }
+}

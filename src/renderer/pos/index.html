@@ -1,0 +1,1869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — New Sale</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <style>
+    body { overflow: hidden; }
+
+    .pos-layout {
+      display: grid;
+      grid-template-columns: 55% 1fr;
+      gap: 16px;
+      padding: 16px;
+      padding-bottom: 56px;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* LEFT - CART */
+    .cart-col {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .cart-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      background: linear-gradient(160deg, #1e2e48 0%, #2c3e5a 100%);
+      border-radius: 12px;
+      padding: 9px 12px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
+    }
+
+    .cart-header h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .customer-tag {
+      background: rgba(255,255,255,0.18);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 20px;
+      padding: 3px 12px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .cart-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .cart-items-wrap { flex: 1; overflow-y: auto; }
+
+    .cart-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    .cart-table th {
+      text-align: left;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #666;
+      border-bottom: 2px solid #eee;
+      position: sticky;
+      top: 0;
+      background: #fff;
+    }
+
+    .cart-table td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
+
+    .qty-input {
+      width: 56px;
+      text-align: center;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 4px;
+      font-size: 14px;
+    }
+
+    .remove-item-btn {
+      background: #fee2e2;
+      color: #991b1b;
+      border: none;
+      border-radius: 6px;
+      width: 28px;
+      height: 28px;
+      cursor: pointer;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .remove-item-btn:hover { background: #fecaca; }
+
+    .empty-cart {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      color: #aaa;
+      gap: 8px;
+    }
+
+    .empty-cart svg { width: 48px; height: 48px; opacity: 0.3; }
+    .empty-cart p { font-size: 15px; }
+
+    /* Totals section */
+    .cart-totals {
+      border-top: 2px solid #eee;
+      padding-top: 12px;
+      margin-top: 8px;
+    }
+
+    .discount-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .discount-row label { font-size: 13px; font-weight: 600; color: #555; white-space: nowrap; }
+    .discount-row input {
+      width: 80px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 14px;
+      text-align: right;
+    }
+
+    .discount-row select {
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 14px;
+    }
+
+    .totals-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .total-line { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; }
+    .total-line.grand { font-size: 22px; font-weight: 800; border-top: 2px solid #eee; padding-top: 10px; margin-top: 6px; color: #1a1a1a; }
+
+    /* Tender buttons */
+    .tender-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .tender-btn {
+      height: 52px;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: filter 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .tender-btn:hover { filter: brightness(1.1); }
+    .tender-btn:active { filter: brightness(0.9); }
+    .tender-btn:disabled { opacity: 0.4; cursor: not-allowed; filter: none; }
+
+    .tender-cash { background: #2e7d32; color: #fff; }
+    .tender-card { background: #1565c0; color: #fff; }
+    .tender-split { background: #7b1fa2; color: #fff; }
+
+    .attach-customer-btn {
+      width: 100%;
+      background: none;
+      border: 1.5px dashed #aac;
+      border-radius: 8px;
+      padding: 8px;
+      font-size: 13px;
+      color: #2c4a6e;
+      cursor: pointer;
+      margin-bottom: 8px;
+      transition: all 0.15s;
+    }
+
+    .attach-customer-btn:hover { background: #f0f5ff; border-color: #2c4a6e; }
+
+    /* RIGHT - PRODUCT SEARCH */
+    .product-col {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .product-search-wrap {
+      position: relative;
+      margin-bottom: 12px;
+    }
+
+    .product-search-wrap svg {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 18px;
+      height: 18px;
+      color: #999;
+    }
+
+    .product-search-input {
+      width: 100%;
+      padding: 12px 14px 12px 40px;
+      border: 1.5px solid #ddd;
+      border-radius: 10px;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .product-search-input:focus { border-color: #2c4a6e; box-shadow: 0 0 0 3px rgba(44,74,110,0.1); }
+
+    /* Hidden barcode scanner input */
+    #barcodeInput {
+      position: absolute;
+      left: -9999px;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+    }
+
+    .product-results {
+      flex: 1;
+      overflow-y: auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      align-content: start;
+    }
+
+    .product-tile {
+      background: #fff;
+      border: 1.5px solid #e8e8e8;
+      border-radius: 10px;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .product-tile:hover { border-color: #2c4a6e; box-shadow: 0 2px 8px rgba(44,74,110,0.12); }
+    .product-tile:active { background: #f0f5ff; }
+
+    .tile-name { font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px; line-height: 1.3; }
+    .tile-price { font-size: 17px; font-weight: 800; color: #2c4a6e; }
+    .tile-stock { font-size: 12px; color: #888; margin-top: 4px; }
+    .tile-stock.low { color: #f59e0b; font-weight: 600; }
+    .tile-stock.out { color: #dc2626; font-weight: 600; }
+
+    .no-results { grid-column: 1/-1; text-align: center; color: #aaa; padding: 32px; font-size: 14px; }
+
+    /* Card processing overlay */
+    .card-processing-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(26,42,63,0.92);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 500;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .card-processing-overlay .spinner {
+      width: 60px;
+      height: 60px;
+      border: 5px solid rgba(255,255,255,0.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .card-processing-overlay p { color: #fff; font-size: 20px; font-weight: 600; }
+    .card-processing-overlay .sub { color: rgba(255,255,255,0.65); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <!-- Hidden barcode input (auto-focused) -->
+  <input type="text" id="barcodeInput" autocomplete="off" tabindex="-1" />
+
+  <div class="pos-layout">
+    <!-- CART COLUMN -->
+    <div class="cart-col">
+      <div class="cart-header">
+        <button class="btn btn-back" onclick="navigate('main-menu')">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+          Back
+        </button>
+        <h2>New Sale</h2>
+        <span class="customer-tag" id="customerTag" style="display:none"></span>
+      </div>
+
+      <!-- Customer info card (shown when customer is attached) -->
+      <div id="customerInfoCard" style="display:none;background:#e8f0fe;border-radius:10px;padding:10px 14px;margin-bottom:10px;align-items:flex-start;gap:12px">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:32px;height:32px;color:#1a56db;flex-shrink:0;margin-top:2px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <div style="flex:1;min-width:0">
+          <div id="custInfoName" style="font-weight:700;font-size:14px;color:#1a2a3f"></div>
+          <div id="custInfoPhone" style="font-size:12px;color:#444;margin-top:2px"></div>
+          <div id="custInfoEmail" style="font-size:12px;color:#444;margin-top:1px"></div>
+          <div id="custInfoAddress" style="font-size:12px;color:#444;margin-top:1px"></div>
+          <div id="custInfoStats" style="font-size:11px;color:#666;margin-top:3px"></div>
+          <div id="custInfoNotes" style="font-size:11px;color:#777;font-style:italic;margin-top:2px;white-space:pre-wrap"></div>
+          <div id="custInfoLoyalty" style="display:none;align-items:center;gap:8px;margin-top:6px">
+            <span style="font-size:12px;font-weight:700;color:#6d28d9">★ <span id="custLoyaltyPts">0</span> pts</span>
+            <span id="custLoyaltyTier" style="font-size:10px;font-weight:700;background:#ede9fe;color:#6d28d9;padding:1px 7px;border-radius:10px"></span>
+            <button id="redeemBtn" onclick="openRedeem()" style="display:none;font-size:11px;font-weight:600;background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:3px 9px;cursor:pointer">Redeem</button>
+          </div>
+        </div>
+        <button onclick="detachCustomer()" style="background:none;border:none;cursor:pointer;color:#888;font-size:18px;padding:2px 6px;line-height:1;flex-shrink:0" title="Remove customer">&times;</button>
+      </div>
+
+      <div class="card cart-card">
+        <div class="cart-items-wrap">
+          <table class="cart-table" id="cartTable">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th style="width:70px">Qty</th>
+                <th style="width:80px">Price</th>
+                <th style="width:80px">Total</th>
+                <th style="width:36px"></th>
+              </tr>
+            </thead>
+            <tbody id="cartBody"></tbody>
+          </table>
+          <div class="empty-cart" id="emptyCart">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+              <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+            </svg>
+            <p>Cart is empty — scan or search for products</p>
+          </div>
+        </div>
+
+        <div class="cart-totals">
+          <!-- Discount -->
+          <div class="discount-row">
+            <label>Discount:</label>
+            <input type="number" id="discountValue" value="0" min="0" step="0.01" />
+            <select id="discountType">
+              <option value="pct">%</option>
+              <option value="dollar">$</option>
+            </select>
+            <button class="btn btn-gray" style="padding:6px 10px;font-size:12px" onclick="applyDiscount()">Apply</button>
+            <div class="spacer"></div>
+            <button class="attach-customer-btn" id="attachCustomerBtn" style="width:auto;margin:0;padding:6px 12px;border-radius:20px;font-size:12px">
+              + Attach Customer
+            </button>
+          </div>
+
+          <!-- Promo code -->
+          <div class="discount-row" style="margin-bottom:10px">
+            <label>Promo:</label>
+            <input type="text" id="promoInput" placeholder="Enter code" style="text-transform:uppercase;width:150px;text-align:left" />
+            <button class="btn btn-gray" id="applyPromoBtn" style="padding:6px 10px;font-size:12px">Apply</button>
+            <button class="btn" id="clearPromoBtn" style="display:none;padding:6px 10px;font-size:12px;background:#fee2e2;color:#b91c1c">Remove</button>
+            <span id="promoMsg" style="font-size:12px;margin-left:4px"></span>
+          </div>
+
+          <div class="totals-grid">
+            <div class="total-line"><span>Subtotal</span><span id="subtotalDisplay">$0.00</span></div>
+            <div class="total-line" style="color:#888"><span id="taxLabel">Tax (8.0%)</span><span id="taxDisplay">$0.00</span></div>
+            <div class="total-line" style="color:#888" id="discountLine" style="display:none">
+              <span>Discount</span><span id="discountDisplay">-$0.00</span>
+            </div>
+            <div class="total-line" id="loyaltyLine" style="display:none;color:#7c3aed">
+              <span>Loyalty Reward</span><span id="loyaltyDisplay">-$0.00</span>
+            </div>
+            <div class="total-line" id="promoLine" style="display:none;color:#0e7490">
+              <span>Promo</span><span id="promoDisplay">-$0.00</span>
+            </div>
+            <div class="total-line grand"><span>TOTAL</span><span id="totalDisplay">$0.00</span></div>
+          </div>
+
+          <div id="customerRequiredHint" style="display:none;font-size:12px;color:#b45309;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:6px 10px;margin-bottom:8px;text-align:center;font-weight:600">
+            Attach a customer (scan ID) to check out
+          </div>
+
+          <div id="ageBlockBanner" style="display:none;font-size:13px;color:#991b1b;background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:8px 10px;margin-bottom:8px">
+            <div style="font-weight:700;margin-bottom:6px">⚠ <span id="ageBlockText">Customer is underage — sale blocked</span></div>
+            <button class="btn" id="militaryOverrideBtn" style="background:#1e3a5f;color:#fff;font-size:12px;padding:5px 10px">Override — Customer has Military ID</button>
+          </div>
+
+          <div id="ageOverrideNote" style="display:none;font-size:12px;color:#166534;background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:6px 10px;margin-bottom:8px;font-weight:600">
+            ✓ Age override applied — Military ID verified
+          </div>
+
+          <div class="tender-row">
+            <button class="tender-btn tender-cash" id="cashBtn" onclick="openCashModal()" disabled>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6 12h.01M18 12h.01"/></svg>
+              Cash
+            </button>
+            <button class="tender-btn tender-card" id="cardBtn" onclick="processCard()" disabled>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+              Card
+            </button>
+            <button class="tender-btn tender-split" id="splitBtn" onclick="openSplitModal()" disabled>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              Split
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRODUCT COLUMN -->
+    <div class="product-col">
+      <div class="product-search-wrap">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" class="product-search-input" id="productSearch"
+               placeholder="Search by name or barcode…" autocomplete="off" />
+      </div>
+
+      <div class="product-results" id="productResults">
+        <div class="no-results">Search for a product to begin</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="status-bar">
+    <div class="status-left" id="status-left">Loading…</div>
+    <div class="status-right" id="status-right"></div>
+  </div>
+
+  <!-- CASH MODAL -->
+  <div class="modal-overlay" id="cashModal" style="display:none">
+    <div class="modal" style="max-width:380px">
+      <button class="modal-close" onclick="closeModal('cashModal')">×</button>
+      <div class="modal-title">Cash Payment</div>
+      <div style="font-size:28px;font-weight:800;text-align:center;margin-bottom:20px" id="cashTotalDisplay"></div>
+      <div class="form-group">
+        <label>Amount Tendered ($)</label>
+        <input type="number" id="cashTendered" step="0.01" min="0" style="font-size:20px;text-align:right" />
+      </div>
+      <div id="changeDisplay" style="font-size:20px;font-weight:700;text-align:center;color:#2e7d32;margin:12px 0;display:none">
+        Change: <span id="changeAmount"></span>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('cashModal')">Cancel</button>
+        <button class="btn btn-green" id="completeCashBtn" disabled>Complete Sale</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CARD DECLINED MODAL -->
+  <div class="modal-overlay" id="cardDeclinedModal" style="display:none">
+    <div class="modal" style="max-width:360px">
+      <div class="modal-title" style="color:#dc2626">Card Declined</div>
+      <p style="font-size:14px;color:#666;margin-bottom:20px" id="declineMsg">The card was declined. Please try another payment method.</p>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('cardDeclinedModal')">Cancel</button>
+        <button class="btn btn-navy" onclick="processCard()">Try Again</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ATTACH CUSTOMER MODAL -->
+  <div class="modal-overlay" id="attachCustomerModal" style="display:none">
+    <div class="modal" style="max-width:460px">
+      <div class="modal-header">
+        <div class="modal-title">Attach Customer</div>
+        <button class="modal-close" onclick="closeModal('attachCustomerModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- ID SCAN BOX -->
+        <div id="idScanBox" style="border:1.5px dashed #2c4a6e;background:#f0f5ff;border-radius:10px;padding:12px;margin-bottom:14px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#2c4a6e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="9" x2="7" y2="15"/><line x1="11" y1="9" x2="11" y2="15"/><line x1="15" y1="9" x2="15" y2="15"/><line x1="18" y1="9" x2="18" y2="15"/></svg>
+            <strong style="font-size:14px;color:#2c4a6e">Scan Driver's License / ID</strong>
+          </div>
+          <div style="font-size:12px;color:#555;margin-bottom:8px">Click the box below, then scan the <strong>barcode on the back</strong> of the ID. Name &amp; address fill in automatically — just add the phone number.</div>
+          <textarea id="idScanInput" rows="2" placeholder="Waiting for scan…" autocomplete="off"
+            style="width:100%;border:1px solid #cdd9ec;border-radius:8px;padding:8px;font-size:12px;font-family:monospace;resize:none;color:#888;background:#fff"></textarea>
+          <div id="idScanStatus" style="font-size:12px;margin-top:6px;min-height:16px"></div>
+        </div>
+
+        <!-- Tab switcher -->
+        <div style="display:flex;gap:0;border-bottom:2px solid #eee;margin-bottom:14px">
+          <button id="tabSearch" onclick="switchCustTab('search')"
+            style="flex:1;padding:8px;background:none;border:none;border-bottom:3px solid #2c4a6e;font-weight:700;font-size:13px;cursor:pointer;color:#2c4a6e;margin-bottom:-2px">Search</button>
+          <button id="tabNew" onclick="switchCustTab('new')"
+            style="flex:1;padding:8px;background:none;border:none;border-bottom:3px solid transparent;font-weight:700;font-size:13px;cursor:pointer;color:#888;margin-bottom:-2px">+ New Customer</button>
+        </div>
+
+        <!-- Search tab -->
+        <div id="custSearchTab">
+          <div class="search-wrap" style="margin-bottom:10px">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="customerSearchInput" placeholder="Name or phone number…" />
+          </div>
+          <div id="customerResults" style="max-height:200px;overflow-y:auto;border:1px solid #eee;border-radius:8px;margin-bottom:10px"></div>
+        </div>
+
+        <!-- New Customer tab -->
+        <div id="custNewTab" style="display:none">
+          <div class="form-row">
+            <div class="form-group"><label>First Name *</label><input type="text" id="nc-first" /></div>
+            <div class="form-group"><label>Last Name *</label><input type="text" id="nc-last" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Phone *</label><input type="text" id="nc-phone" placeholder="(555) 000-0000" /></div>
+            <div class="form-group"><label>Email</label><input type="email" id="nc-email" /></div>
+          </div>
+          <div class="form-group"><label>Address</label><input type="text" id="nc-address" /></div>
+          <div class="form-row">
+            <div class="form-group"><label>City</label><input type="text" id="nc-city" /></div>
+            <div class="form-group" style="max-width:80px"><label>State</label><input type="text" id="nc-state" maxlength="2" /></div>
+            <div class="form-group" style="max-width:110px"><label>ZIP</label><input type="text" id="nc-zip" maxlength="10" /></div>
+          </div>
+          <input type="hidden" id="nc-dob" />
+          <input type="hidden" id="nc-license" />
+          <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;margin-bottom:14px">
+            <input type="checkbox" id="nc-sms" /> Opt-in to SMS
+          </label>
+          <button class="btn btn-navy" onclick="createAndAttachCustomer()">Create &amp; Attach</button>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;margin-top:8px">
+          <button class="btn btn-gray" onclick="closeModal('attachCustomerModal')">Skip</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REDEEM LOYALTY REWARDS MODAL -->
+  <div class="modal-overlay" id="redeemModal" style="display:none">
+    <div class="modal" style="max-width:400px">
+      <div class="modal-header">
+        <div class="modal-title">Redeem Rewards</div>
+        <button class="modal-close" onclick="closeModal('redeemModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:#555;margin-bottom:12px">Balance: <strong id="redeemBalance">0</strong> pts</p>
+        <div id="rewardsList"></div>
+        <div style="display:flex;gap:10px;justify-content:space-between;margin-top:12px">
+          <button class="btn" id="clearRewardBtn" style="display:none;background:#fee2e2;color:#b91c1c" onclick="clearReward()">Remove reward</button>
+          <div class="spacer"></div>
+          <button class="btn btn-gray" onclick="closeModal('redeemModal')">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MILITARY ID AGE OVERRIDE MODAL -->
+  <div class="modal-overlay" id="militaryOverrideModal" style="display:none">
+    <div class="modal" style="max-width:430px">
+      <div class="modal-header">
+        <div class="modal-title">Military ID Age Override</div>
+        <button class="modal-close" onclick="closeModal('militaryOverrideModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:14px;color:#444;margin-bottom:14px">
+          This customer is <strong>under the minimum purchase age</strong>. Confirm they have presented a
+          <strong>valid U.S. Military ID</strong> to override the age requirement for this sale.
+        </p>
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;margin-bottom:16px">
+          <input type="checkbox" id="militaryConfirmChk" /> I have verified a valid U.S. Military ID
+        </label>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="btn btn-gray" onclick="closeModal('militaryOverrideModal')">Cancel</button>
+          <button class="btn btn-navy" id="militaryConfirmBtn">Apply Override</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MANAGER OVERRIDE MODAL (cashier discount > 10%) -->
+  <div class="modal-overlay" id="discountOverrideModal" style="display:none">
+    <div class="modal" style="max-width:400px">
+      <div class="modal-header">
+        <div class="modal-title">Manager Approval Required</div>
+        <button class="modal-close" onclick="cancelDiscountOverride()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:14px;color:#666;margin-bottom:16px">
+          Discounts over 10% require a manager to approve. Please have a manager enter their credentials.
+        </p>
+        <div class="form-group">
+          <label>Manager Username</label>
+          <input type="text" id="overrideUsername" autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <label>Manager Password</label>
+          <input type="password" id="overridePassword" autocomplete="off" />
+        </div>
+        <div id="overrideError" style="color:#c0392b;font-size:13px;margin-bottom:10px;display:none"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="btn btn-gray" onclick="cancelDiscountOverride()">Cancel</button>
+          <button class="btn btn-navy" onclick="confirmDiscountOverride()">Approve</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CARD PROCESSING MODAL -->
+  <div class="modal-overlay" id="cardProcessingModal" style="display:none">
+    <div class="modal" style="max-width:420px;text-align:center">
+      <div class="spinner" style="margin:0 auto 16px"></div>
+      <div class="modal-title" style="margin-bottom:8px">Waiting for Customer</div>
+      <p id="cardProcessingMsg" style="font-size:14px;color:#666;margin-bottom:20px">
+        Waiting for customer to complete payment on terminal…
+      </p>
+      <button class="btn btn-gray" onclick="cancelCardPayment()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- MOCK TERMINAL WARNING BANNER -->
+  <div id="mockWarningBanner" style="
+    display:none;position:fixed;bottom:36px;left:0;right:0;z-index:900;
+    background:#fef3c7;border-top:2px solid #f59e0b;
+    padding:6px 16px;font-size:12px;font-weight:600;color:#92400e;
+    text-align:center;pointer-events:none
+  ">
+    ⚠ Mock terminal mode — no real payments will be processed
+  </div>
+
+  <!-- SALE COMPLETE MODAL -->
+  <div class="modal-overlay" id="saleCompleteModal" style="display:none">
+    <div class="modal" style="max-width:400px;text-align:center">
+      <div id="saleCompleteIcon" style="font-size:48px;margin-bottom:8px">✓</div>
+      <div class="modal-title" id="saleCompleteTitle">Sale Complete!</div>
+      <div id="saleCompleteDetails" style="font-size:14px;color:#555;margin-bottom:16px;text-align:left;background:#f8f8f8;border-radius:8px;padding:12px"></div>
+
+      <!-- Text receipt row -->
+      <div id="textReceiptRow" style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+        <input type="tel" id="smsPhone" placeholder="(555) 000-0000 — text receipt"
+          style="flex:1;border:1px solid #ddd;border-radius:8px;padding:9px 12px;font-size:14px" />
+        <button class="btn btn-navy" onclick="sendTextReceipt()" style="white-space:nowrap">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Send
+        </button>
+      </div>
+
+      <div class="modal-actions" style="justify-content:center">
+        <button class="btn btn-navy" id="printAndNewBtn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Print &amp; New Sale
+        </button>
+        <button class="btn btn-gray" id="newSaleBtn">New Sale</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../shared.js"></script>
+  <script>
+    // ---- State ----
+    let cart = [];
+    let attachedCustomer = null;
+    let lastCompletedTxnId = null;
+    let taxRate = 0.0825;
+    let discountAmt = 0;
+    let lastScan = '';
+    let lastScanTime = 0;
+    let sessionRole = 'cashier'; // set on DOMContentLoaded
+    let pendingDiscountAmt = 0;  // held while waiting for manager override
+    let ageOverride = false;     // set true when a Military ID overrides the age check
+    let minAge = 21;             // store policy: minimum purchase age (0 = no restriction)
+    let pointsRedeemed = 0;      // points cost of the redeemed reward
+    let rewardBenefit = null;    // { kind, value, category } of the redeemed reward
+    let rewardLabel = '';        // reward name for display
+    let loyaltyDiscount = 0;     // computed $ value of the reward
+    let promoCode = '';          // applied promo/birthday code
+    let promoBenefit = null;     // { kind, value, category } of the promo
+    let promoDiscount = 0;       // computed $ value of the promo
+
+    // ---- Init ----
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Load tax rate + minimum purchase age from receipt config
+      const cfgRes = await window.api.getReceiptConfig();
+      if (cfgRes.success && cfgRes.config) {
+        taxRate = cfgRes.config.tax_rate || 0.0825;
+        document.getElementById('taxLabel').textContent = `Tax (${(taxRate * 100).toFixed(2)}%)`;
+        minAge = cfgRes.config.min_age ?? 21;
+      }
+
+      // Cache session role so discount logic doesn't need async calls
+      const sessRes = await window.api.getSession();
+      if (sessRes.session) sessionRole = sessRes.session.role;
+
+      // Show mock warning banner if terminal is not configured for real payments
+      try {
+        const tcRes = await window.api.getTerminalConfig();
+        if (tcRes.success) {
+          const t = tcRes.config.terminal_type || 'mock';
+          if (t === 'mock') {
+            document.getElementById('mockWarningBanner').style.display = 'block';
+          }
+        }
+      } catch { /* non-fatal */ }
+
+      // Product search
+      const searchEl = document.getElementById('productSearch');
+      let searchTimer;
+      searchEl.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => searchProducts(searchEl.value.trim()), 200);
+      });
+
+      searchEl.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          clearTimeout(searchTimer);
+          searchProducts(searchEl.value.trim());
+        }
+      });
+
+      // Barcode scanner (hidden input — debounced)
+      const barcodeEl = document.getElementById('barcodeInput');
+      barcodeEl.focus();
+
+      let barcodeBuffer = '';
+      let barcodeTimer;
+      barcodeEl.addEventListener('input', () => {
+        barcodeBuffer += barcodeEl.value;
+        barcodeEl.value = '';
+        clearTimeout(barcodeTimer);
+        barcodeTimer = setTimeout(async () => {
+          const barcode = barcodeBuffer.trim();
+          barcodeBuffer = '';
+          if (!barcode) return;
+
+          const now = Date.now();
+          if (barcode === lastScan && now - lastScanTime < 300) return; // debounce duplicate
+          lastScan = barcode;
+          lastScanTime = now;
+
+          const res = await window.api.getProductByBarcode(barcode);
+          if (res.success && res.product) {
+            addToCart(res.product);
+          } else {
+            showToast(`Barcode not found: ${barcode}`, 'warning');
+          }
+        }, 80);
+      });
+
+      // Refocus barcode input when window is clicked (unless user is in another input)
+      document.addEventListener('click', e => {
+        // Don't steal focus from the ID-scan box while attaching a customer
+        if (document.getElementById('attachCustomerModal').style.display === 'flex') return;
+        if (!e.target.matches('input, select, button, textarea')) {
+          barcodeEl.focus();
+        }
+      });
+
+      // Cash modal
+      document.getElementById('cashTendered').addEventListener('input', updateChange);
+      document.getElementById('cashTendered').addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          const completBtn = document.getElementById('completeCashBtn');
+          if (!completBtn.disabled) completBtn.click();
+        }
+      });
+      document.getElementById('completeCashBtn').addEventListener('click', completeCashSale);
+
+      // Attach customer
+      document.getElementById('attachCustomerBtn').addEventListener('click', openAttachCustomer);
+
+      let custSearchTimer;
+      document.getElementById('customerSearchInput').addEventListener('input', e => {
+        clearTimeout(custSearchTimer);
+        custSearchTimer = setTimeout(() => searchCustomers(e.target.value.trim()), 250);
+      });
+
+      // ID scanner (driver's license PDF417 keyboard-wedge) — debounced parse
+      let idScanTimer;
+      document.getElementById('idScanInput').addEventListener('input', () => {
+        clearTimeout(idScanTimer);
+        idScanTimer = setTimeout(handleIdScan, 250);
+      });
+
+      // While the Attach Customer modal is open, funnel every keystroke into the
+      // scan box. A license scan is a fast burst of keystrokes (including Enter);
+      // if it lands on a focused button it can trigger navigation and close the
+      // screen, with the rest of the scan spilling into the next window. Capturing
+      // here keeps the whole burst contained in the scan textarea.
+      document.addEventListener('keydown', (e) => {
+        if (document.getElementById('attachCustomerModal').style.display !== 'flex') return;
+        const active = document.activeElement;
+        const inModalField = active && /^(INPUT|TEXTAREA)$/.test(active.tagName || '') &&
+                             active.closest('#attachCustomerModal');
+        if (!inModalField) {
+          document.getElementById('idScanInput').focus();
+          // Don't let Enter/keys activate the focused button or navigate away
+          if (e.key === 'Enter') e.preventDefault();
+        }
+      }, true);
+
+      // Military ID age override
+      document.getElementById('militaryOverrideBtn').addEventListener('click', () => {
+        document.getElementById('militaryConfirmChk').checked = false;
+        openModal('militaryOverrideModal');
+      });
+      // Promo codes
+      document.getElementById('applyPromoBtn').addEventListener('click', applyPromo);
+      document.getElementById('clearPromoBtn').addEventListener('click', clearPromo);
+      document.getElementById('promoInput').addEventListener('keydown', e => { if (e.key === 'Enter') applyPromo(); });
+
+      document.getElementById('militaryConfirmBtn').addEventListener('click', () => {
+        if (!document.getElementById('militaryConfirmChk').checked) {
+          showToast('Confirm the military ID first', 'warning');
+          return;
+        }
+        ageOverride = true;
+        closeModal('militaryOverrideModal');
+        updateTenderButtons();
+        showToast('Age override applied — Military ID verified', 'success');
+      });
+
+      // Print & New Sale buttons
+      document.getElementById('printAndNewBtn').addEventListener('click', async () => {
+        if (lastCompletedTxnId) {
+          const r = await window.api.printReceipt(lastCompletedTxnId);
+          showToast(r.success ? (r.saved_to ? 'Receipt saved to file' : 'Receipt printed!') : (r.error || 'Print failed'), r.success ? 'success' : 'error');
+        }
+        closeModal('saleCompleteModal');
+        clearCart();
+      });
+
+      document.getElementById('newSaleBtn').addEventListener('click', () => {
+        closeModal('saleCompleteModal');
+        clearCart();
+      });
+
+      // Load all products on start
+      searchProducts('');
+    });
+
+    // ---- Product Search ----
+    async function searchProducts(query) {
+      const res = query
+        ? await window.api.searchProducts(query)
+        : await window.api.getProducts({ });
+      if (!res.success) return;
+
+      const results = document.getElementById('productResults');
+      const products = res.products || [];
+
+      if (products.length === 0) {
+        results.innerHTML = '<div class="no-results">No products found</div>';
+        return;
+      }
+
+      results.innerHTML = products.slice(0, 30).map(p => {
+        const isLow = p.stock_qty <= p.low_stock_threshold && p.stock_qty > 0;
+        const isOut = p.stock_qty <= 0;
+        return `
+          <div class="product-tile ${isOut ? 'out-of-stock' : ''}" onclick="addToCartById(${p.id})">
+            <div class="tile-name">${esc(p.name)}</div>
+            <div class="tile-price">${fmt(p.price)}</div>
+            <div class="tile-stock ${isOut ? 'out' : isLow ? 'low' : ''}">
+              ${isOut ? '⚠ Out of stock' : isLow ? `⚠ ${p.stock_qty} left` : `${p.stock_qty} in stock`}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    let _productsCache = [];
+    window.api.getProducts({}).then(r => { if (r.success) _productsCache = r.products; });
+
+    async function addToCartById(id) {
+      let product = _productsCache.find(p => p.id === id);
+      if (!product) {
+        const res = await window.api.searchProducts(String(id));
+        product = res.products?.find(p => p.id === id);
+      }
+      if (product) addToCart(product);
+    }
+
+    function addToCart(product) {
+      const variantId = product.variant_id || null;
+      const existing = cart.find(i => i.product_id === product.id && (i.variant_id || null) === variantId);
+      if (existing) {
+        existing.qty++;
+        existing.line_total = existing.qty * existing.unit_price;
+      } else {
+        cart.push({
+          product_id: product.id,
+          variant_id: variantId,
+          name: product.name,
+          category: product.category || '',
+          qty: 1,
+          unit_price: product.price,
+          line_total: product.price,
+          stock_qty: product.stock_qty,
+          age_restricted: product.age_restricted ? 1 : 0,
+        });
+      }
+      renderCart();
+    }
+
+    // ---- Cart Rendering ----
+    function renderCart() {
+      const tbody = document.getElementById('cartBody');
+      const emptyCart = document.getElementById('emptyCart');
+      const tableEl = document.getElementById('cartTable');
+
+      if (cart.length === 0) {
+        tableEl.style.display = 'none';
+        emptyCart.style.display = 'flex';
+        updateTotals();
+        updateTenderButtons();
+        return;
+      }
+
+      tableEl.style.display = 'table';
+      emptyCart.style.display = 'none';
+
+      tbody.innerHTML = cart.map((item, idx) => {
+        const isReturn = item.qty < 0;
+        return `
+          <tr${isReturn ? ' style="background:#fff5f5"' : ''}>
+            <td>
+              <strong>${esc(item.name)}</strong>
+              ${isReturn ? '<span style="font-size:11px;font-weight:700;color:#991b1b;margin-left:6px;background:#fee2e2;padding:1px 5px;border-radius:3px">RETURN</span>' : ''}
+            </td>
+            <td>
+              <input class="qty-input" type="number" value="${item.qty}"
+                     onchange="updateQty(${idx}, this.value)" />
+            </td>
+            <td>${fmt(item.unit_price)}</td>
+            <td><strong style="color:${isReturn ? '#991b1b' : 'inherit'}">${fmt(item.line_total)}</strong></td>
+            <td>
+              <button class="remove-item-btn" onclick="removeItem(${idx})" title="Remove">×</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      updateTotals();
+      updateTenderButtons();
+    }
+
+    function updateQty(idx, val) {
+      const qty = parseInt(val) || 1;
+      if (qty === 0) { removeItem(idx); return; }
+      cart[idx].qty = qty;
+      cart[idx].line_total = qty * cart[idx].unit_price;
+      renderCart();
+    }
+
+    function removeItem(idx) {
+      cart.splice(idx, 1);
+      renderCart();
+    }
+
+    function clearCart() {
+      cart = [];
+      attachedCustomer = null;
+      ageOverride = false;
+      discountAmt = 0;
+      pointsRedeemed = 0;
+      loyaltyDiscount = 0;
+      rewardBenefit = null;
+      rewardLabel = '';
+      if (typeof clearPromo === 'function') clearPromo();
+      document.getElementById('discountValue').value = '0';
+      document.getElementById('customerTag').style.display = 'none';
+      document.getElementById('customerInfoCard').style.display = 'none';
+      ['custInfoName','custInfoPhone','custInfoEmail','custInfoAddress','custInfoStats','custInfoNotes'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '';
+      });
+      renderCart();
+    }
+
+    // Compute the dollar value of a benefit { kind, value, category } against the cart
+    function benefitValue(b) {
+      if (!b) return 0;
+      const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
+      if (b.kind === 'discount_amount') return Math.min(b.value || 0, subtotal);
+      if (b.kind === 'discount_pct') return subtotal * (b.value || 0) / 100;
+      if (b.kind === 'free_category' || b.kind === 'bogo_category') {
+        const cat = (b.category || '').toLowerCase();
+        const matches = cart.filter(i => cat && (i.category || '').toLowerCase().includes(cat));
+        return matches.length ? Math.min(...matches.map(i => i.unit_price)) : 0;
+      }
+      return 0;
+    }
+
+    function updateTotals() {
+      const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
+      loyaltyDiscount = benefitValue(rewardBenefit);
+      promoDiscount = benefitValue(promoBenefit);
+      const taxAmount = subtotal * taxRate;
+      const total = subtotal + taxAmount - discountAmt - loyaltyDiscount - promoDiscount;
+      const isRefund = total < 0;
+
+      document.getElementById('subtotalDisplay').textContent = fmt(subtotal);
+      document.getElementById('taxDisplay').textContent = fmt(taxAmount);
+      document.getElementById('totalDisplay').textContent = fmt(total);
+      document.getElementById('totalDisplay').style.color = isRefund ? '#991b1b' : '';
+
+      const discLine = document.getElementById('discountLine');
+      if (discountAmt > 0) {
+        discLine.style.display = 'flex';
+        document.getElementById('discountDisplay').textContent = `-${fmt(discountAmt)}`;
+      } else {
+        discLine.style.display = 'none';
+      }
+
+      const loyLine = document.getElementById('loyaltyLine');
+      if (loyLine) {
+        if (loyaltyDiscount > 0) {
+          loyLine.style.display = 'flex';
+          document.getElementById('loyaltyDisplay').textContent =
+            `-${fmt(loyaltyDiscount)} (${esc(rewardLabel)}, ${pointsRedeemed} pts)`;
+        } else {
+          loyLine.style.display = 'none';
+        }
+      }
+
+      const promoLine = document.getElementById('promoLine');
+      if (promoLine) {
+        if (promoDiscount > 0) {
+          promoLine.style.display = 'flex';
+          document.getElementById('promoDisplay').textContent = `-${fmt(promoDiscount)} (${esc(promoCode)})`;
+        } else {
+          promoLine.style.display = 'none';
+        }
+      }
+    }
+
+    // Does the cart contain anything that legally requires an ID / age check?
+    // Gated by the store's minimum-age policy (minAge = 0 disables all age checks).
+    function cartHasAgeRestricted() {
+      return cart.some(i => i.age_restricted);
+    }
+    function cartRequiresAge() {
+      return minAge > 0 && cartHasAgeRestricted();
+    }
+
+    // Age of the attached customer (from scanned DOB), or null if unknown
+    function attachedCustomerAge() {
+      const dob = attachedCustomer && attachedCustomer.dob;
+      return dob ? ageFromDob(dob) : null;
+    }
+
+    // Build the age-verification audit record for an age-restricted sale.
+    function buildAgeCheck() {
+      if (!cartRequiresAge() || !attachedCustomer) return undefined;
+      const age = attachedCustomerAge();
+      return {
+        customer_name: `${attachedCustomer.first_name} ${attachedCustomer.last_name}`,
+        dob: attachedCustomer.dob || null,
+        age_at_sale: age,
+        min_age: minAge,
+        result: ageOverride ? 'OVERRIDE' : 'PASS',
+        method: ageOverride ? 'military_override' : (attachedCustomer.dob ? 'id_on_file' : 'manual'),
+      };
+    }
+
+    // True (and warns) when the sale must be blocked for being underage.
+    // Only enforced when the cart contains an age-restricted item.
+    function isAgeBlocked() {
+      if (!cartRequiresAge()) return false;
+      const age = attachedCustomerAge();
+      if (age != null && age < minAge && !ageOverride) {
+        showToast(`Customer is under ${minAge} (age ${age}) — age-restricted item blocked. Use the Military ID override if applicable.`, 'error');
+        return true;
+      }
+      return false;
+    }
+
+    function updateTenderButtons() {
+      const hasItems = cart.length > 0;
+      const hasCustomer = !!attachedCustomer;
+      const restricted = cartRequiresAge();
+      const age = attachedCustomerAge();
+
+      // A customer/ID is only required when an age-restricted item is in the cart
+      const needCustomer = restricted && !hasCustomer;
+      const underageBlocked = restricted && age != null && age < minAge && !ageOverride;
+      const ready = hasItems && !needCustomer && !underageBlocked;
+
+      document.getElementById('cashBtn').disabled = !ready;
+      document.getElementById('cardBtn').disabled = !ready;
+      document.getElementById('splitBtn').disabled = !ready;
+      document.getElementById('customerRequiredHint').style.display =
+        (hasItems && needCustomer) ? 'block' : 'none';
+
+      // Underage block / override messaging — only when an age-restricted item is present
+      const banner = document.getElementById('ageBlockBanner');
+      const note = document.getElementById('ageOverrideNote');
+      const isUnderage = restricted && hasCustomer && age != null && age < minAge;
+      if (isUnderage && !ageOverride) {
+        document.getElementById('ageBlockText').textContent =
+          `Customer is under ${minAge} (age ${age}) — age-restricted item blocked`;
+        banner.style.display = 'block';
+        note.style.display = 'none';
+      } else if (isUnderage && ageOverride) {
+        banner.style.display = 'none';
+        note.style.display = 'block';
+      } else {
+        banner.style.display = 'none';
+        note.style.display = 'none';
+      }
+    }
+
+    // ---- Discount ----
+    function applyDiscount() {
+      const val = parseFloat(document.getElementById('discountValue').value) || 0;
+      const type = document.getElementById('discountType').value;
+      const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
+      const pct = type === 'pct' ? val : (subtotal > 0 ? (val / subtotal) * 100 : 0);
+
+      const calculated = type === 'pct' ? (subtotal * val / 100) : val;
+
+      // Managers can apply any discount without restriction
+      if (sessionRole === 'manager') {
+        discountAmt = calculated;
+        updateTotals();
+        return;
+      }
+
+      // Cashiers: allow up to 10% freely; over 10% needs manager approval
+      if (pct > 10) {
+        pendingDiscountAmt = calculated;
+        document.getElementById('overrideUsername').value = '';
+        document.getElementById('overridePassword').value = '';
+        document.getElementById('overrideError').style.display = 'none';
+        document.getElementById('discountOverrideModal').style.display = 'flex';
+        setTimeout(() => document.getElementById('overrideUsername').focus(), 50);
+        return;
+      }
+
+      discountAmt = calculated;
+      updateTotals();
+    }
+
+    function cancelDiscountOverride() {
+      document.getElementById('discountOverrideModal').style.display = 'none';
+      pendingDiscountAmt = 0;
+      document.getElementById('discountValue').value = '0';
+      discountAmt = 0;
+      updateTotals();
+    }
+
+    async function confirmDiscountOverride() {
+      const username = document.getElementById('overrideUsername').value.trim();
+      const password = document.getElementById('overridePassword').value;
+      const errEl = document.getElementById('overrideError');
+
+      if (!username || !password) {
+        errEl.textContent = 'Enter manager username and password';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      const res = await window.api.verifyManager(username, password);
+      if (!res.success) {
+        errEl.textContent = res.error || 'Invalid manager credentials';
+        errEl.style.display = 'block';
+        document.getElementById('overridePassword').value = '';
+        return;
+      }
+
+      discountAmt = pendingDiscountAmt;
+      pendingDiscountAmt = 0;
+      document.getElementById('discountOverrideModal').style.display = 'none';
+      updateTotals();
+      showToast('Discount approved', 'success');
+    }
+
+    // ---- Cash Sale ----
+    function openCashModal() {
+      if (cart.length === 0) return;
+      if (cartRequiresAge() && !attachedCustomer) { showToast('Scan a customer ID — this sale has an age-restricted item', 'warning'); openAttachCustomer(); return; }
+      if (isAgeBlocked()) return;
+      const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
+      const total = Math.max(0, subtotal + subtotal * taxRate - discountAmt - loyaltyDiscount - promoDiscount);
+      document.getElementById('cashTotalDisplay').textContent = `Total: ${fmt(total)}`;
+      document.getElementById('cashTendered').value = '';
+      document.getElementById('changeDisplay').style.display = 'none';
+      document.getElementById('completeCashBtn').disabled = true;
+      openModal('cashModal');
+      setTimeout(() => document.getElementById('cashTendered').focus(), 100);
+    }
+
+    function updateChange() {
+      const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
+      const total = Math.max(0, subtotal + subtotal * taxRate - discountAmt - loyaltyDiscount - promoDiscount);
+      const tendered = parseFloat(document.getElementById('cashTendered').value) || 0;
+      const change = tendered - total;
+
+      if (tendered >= total) {
+        document.getElementById('changeAmount').textContent = fmt(change);
+        document.getElementById('changeDisplay').style.display = 'block';
+        document.getElementById('completeCashBtn').disabled = false;
+      } else {
+        document.getElementById('changeDisplay').style.display = 'none';
+        document.getElementById('completeCashBtn').disabled = true;
+      }
+    }
+
+    async function completeCashSale() {
+      const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
+      const taxAmount = subtotal * taxRate;
+      const total = Math.max(0, subtotal + taxAmount - discountAmt - loyaltyDiscount - promoDiscount);
+      const tendered = parseFloat(document.getElementById('cashTendered').value);
+      const change = tendered - total;
+
+      closeModal('cashModal');
+      await completeSale('cash', { cash_tendered: tendered, change_given: change });
+    }
+
+    // ---- Card Sale ----
+    async function processCard() {
+      closeModal('cardDeclinedModal');
+      if (cart.length === 0) return;
+      if (cartRequiresAge() && !attachedCustomer) { showToast('Scan a customer ID — this sale has an age-restricted item', 'warning'); openAttachCustomer(); return; }
+      if (isAgeBlocked()) return;
+
+      const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
+      const taxAmount = subtotal * taxRate;
+      const baseTotal = Math.max(0, subtotal + taxAmount - discountAmt - loyaltyDiscount - promoDiscount);
+
+      // Build full Valor payload
+      const txnRef = 'TXN-' + Date.now();
+      let termConfig = { terminal_mid: '', terminal_tid: '' };
+      try {
+        const cfgRes = await window.api.getTerminalConfig();
+        if (cfgRes.success) termConfig = cfgRes.config;
+      } catch { /* use defaults — mock terminal ignores these */ }
+
+      const payload = {
+        amount: baseTotal,
+        transactionId: txnRef,
+        merchantId: termConfig.terminal_mid || '',
+        terminalId: termConfig.terminal_tid || '',
+        lineItems: cart.map(i => ({
+          name: i.name,
+          qty: i.qty,
+          unitPrice: i.unit_price,
+          total: i.line_total,
+        })),
+        taxAmount,
+        taxRate,
+        discountAmount: discountAmt,
+      };
+
+      // Show processing modal
+      document.getElementById('cardProcessingModal').style.display = 'flex';
+      document.getElementById('cardProcessingMsg').textContent =
+        'Waiting for customer to complete payment on terminal…';
+
+      // Update customer-facing display: show itemised cart + "follow prompts" message
+      await window.api.updateCustomerDisplay({
+        state: 'card_processing',
+        cart: cart.map(i => ({ name: i.name, qty: i.qty, total: i.line_total })),
+        subtotal, tax: taxAmount, discount: discountAmt, total: baseTotal,
+      });
+
+      const res = await window.api.sendPayment(payload);
+      document.getElementById('cardProcessingModal').style.display = 'none';
+
+      if (!res.success) {
+        // Misconfigured terminal
+        showToast(res.error || 'Terminal error', 'error');
+        await window.api.updateCustomerDisplay({ state: 'idle' });
+        return;
+      }
+
+      const termResult = res.result;
+
+      if (termResult.approved) {
+        // Brief "approved" banner before clearing the modal
+        showToast('Payment Approved', 'success');
+
+        const tipAmt = termResult.tipAmount || 0;
+        const finalTotal = baseTotal + tipAmt;
+
+        await completeSale('card', {
+          auth_code:      termResult.authCode,
+          last4:          termResult.last4,
+          card_type:      termResult.cardType,
+          terminal_ref:   termResult.authCode,
+          tip_amount:     tipAmt,
+          signature_data: termResult.signatureData,
+          total_override: finalTotal,   // passed through to completeSale
+        });
+      } else {
+        await window.api.updateCustomerDisplay({ state: 'idle' });
+        document.getElementById('declineMsg').textContent = termResult.errorMessage || 'Card declined.';
+        openModal('cardDeclinedModal');
+      }
+    }
+
+    async function cancelCardPayment() {
+      document.getElementById('cardProcessingMsg').textContent = 'Cancelling…';
+      await window.api.cancelPayment();
+      document.getElementById('cardProcessingModal').style.display = 'none';
+      await window.api.updateCustomerDisplay({ state: 'idle' });
+    }
+
+    // ---- Split Sale ----
+    async function openSplitModal() {
+      const session = (await window.api.getSession()).session;
+      if (session?.role !== 'manager') {
+        showToast('Split payment requires manager access', 'error');
+        return;
+      }
+      // For simplicity, split is handled same as card + cash (just use card in this version)
+      showToast('Split: use Card or Cash for now (full split coming soon)', 'warning');
+    }
+
+    // ---- Complete Sale ----
+    async function completeSale(method, extraData = {}) {
+      const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
+      const taxAmount = subtotal * taxRate;
+      const baseTotal = subtotal + taxAmount - discountAmt - loyaltyDiscount - promoDiscount;
+      // Card sales with tip pass total_override = baseTotal + tipAmount
+      const total = extraData.total_override != null ? extraData.total_override : baseTotal;
+
+      const { total_override, ...cleanExtra } = extraData; // strip internal field
+
+      const data = {
+        customer_id: attachedCustomer?.id,
+        items: cart.map(i => ({
+          product_id: i.product_id,
+          variant_id: i.variant_id || undefined,
+          qty: i.qty,
+          unit_price: i.unit_price,
+          line_total: i.line_total,
+        })),
+        subtotal,
+        tax_rate: taxRate,
+        tax_amount: taxAmount,
+        discount_amount: discountAmt + loyaltyDiscount + promoDiscount,
+        total,
+        payment_method: method,
+        points_redeemed: pointsRedeemed,
+        promo_code: promoCode || undefined,
+        age_check: buildAgeCheck(),
+        ...cleanExtra,
+      };
+
+      const res = await window.api.createTransaction(data);
+      if (!res.success) {
+        showToast(res.error || 'Failed to complete sale', 'error');
+        return;
+      }
+
+      lastCompletedTxnId = res.id;
+      const isRefund = total < 0;
+
+      // Reset customer display
+      await window.api.updateCustomerDisplay({ state: 'idle' });
+
+      // Populate sale complete modal
+      document.getElementById('saleCompleteIcon').textContent = isRefund ? '↩' : '✓';
+      document.getElementById('saleCompleteTitle').textContent = isRefund ? 'Refund Processed' : 'Sale Complete!';
+
+      let payDesc = '';
+      if (method === 'cash') {
+        payDesc = `Cash  •  Tendered: ${fmt(extraData.change_given != null ? (extraData.cash_tendered || total) : total)}  •  Change: ${fmt(extraData.change_given || 0)}`;
+      } else {
+        const cardBrand = (extraData.card_type || '').toUpperCase() || 'CARD';
+        payDesc = `${cardBrand}${extraData.last4 ? ` ****${extraData.last4}` : ''}${extraData.auth_code ? `  •  Auth: ${extraData.auth_code}` : ''}`;
+      }
+
+      const loy = res.loyalty;
+      const loyHtml = loy ? `<div style="margin-top:6px;color:#6d28d9;font-weight:600">
+        ★ ${loy.earned} pts earned${loy.redeemed ? ` · ${loy.redeemed} redeemed` : ''} · Balance ${loy.balance} pts (${esc(loy.tier)})
+      </div>` : '';
+
+      document.getElementById('saleCompleteDetails').innerHTML = `
+        <div style="margin-bottom:4px">Txn <strong>#${res.id}</strong></div>
+        <div style="font-size:18px;font-weight:800;color:${isRefund ? '#991b1b' : '#2e7d32'};margin-bottom:6px">${fmt(total)}</div>
+        <div style="color:#555">${payDesc}</div>
+        ${attachedCustomer ? `<div style="margin-top:6px;color:#555">Customer: <strong>${esc(attachedCustomer.first_name + ' ' + attachedCustomer.last_name)}</strong></div>` : ''}
+        ${loyHtml}
+      `;
+
+      // Pre-fill SMS phone from attached customer
+      const smsInput = document.getElementById('smsPhone');
+      smsInput.value = (attachedCustomer?.phone) || '';
+
+      openModal('saleCompleteModal');
+
+      // Auto-print receipt for card payments immediately after approval
+      if (method === 'card') {
+        const printRes = await window.api.printReceipt(res.id);
+        if (!printRes.success && printRes.saved_to) {
+          showToast('Printer offline — receipt saved to file', 'warning');
+        }
+      }
+    }
+
+    // ---- Customer tab switcher ----
+    function switchCustTab(tab) {
+      const isSearch = tab === 'search';
+      document.getElementById('custSearchTab').style.display = isSearch ? 'block' : 'none';
+      document.getElementById('custNewTab').style.display = isSearch ? 'none' : 'block';
+      document.getElementById('tabSearch').style.borderBottomColor = isSearch ? '#2c4a6e' : 'transparent';
+      document.getElementById('tabSearch').style.color = isSearch ? '#2c4a6e' : '#888';
+      document.getElementById('tabNew').style.borderBottomColor = isSearch ? 'transparent' : '#2c4a6e';
+      document.getElementById('tabNew').style.color = isSearch ? '#888' : '#2c4a6e';
+    }
+
+    // ---- Customer Search ----
+    async function searchCustomers(query) {
+      if (!query) { document.getElementById('customerResults').innerHTML = ''; return; }
+      const res = await window.api.searchCustomers(query);
+      if (!res.success) return;
+
+      const el = document.getElementById('customerResults');
+      if (res.customers.length === 0) {
+        el.innerHTML = '<div style="padding:12px;text-align:center;color:#888;font-size:13px">No customers found. Use "New Customer" tab to add.</div>';
+        return;
+      }
+
+      el.innerHTML = res.customers.map(c => `
+        <div onclick="attachCustomer(${c.id}, '${esc(c.first_name)}', '${esc(c.last_name)}', '${esc(c.phone || '')}')"
+             style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:14px;transition:background 0.1s"
+             onmouseover="this.style.background='#f0f5ff'" onmouseout="this.style.background='#fff'">
+          <strong>${esc(c.first_name)} ${esc(c.last_name)}</strong>
+          <span style="color:#888;margin-left:8px">${esc(c.phone || '')}</span>
+        </div>
+      `).join('');
+    }
+
+    async function attachCustomer(id, firstName, lastName, phone) {
+      ageOverride = false;
+      pointsRedeemed = 0;
+      loyaltyDiscount = 0;
+      rewardBenefit = null;
+      rewardLabel = '';
+      document.getElementById('custInfoLoyalty').style.display = 'none';
+      attachedCustomer = { id, first_name: firstName, last_name: lastName, phone: phone || '' };
+      const tag = document.getElementById('customerTag');
+      tag.textContent = `${firstName} ${lastName}`;
+      tag.style.display = 'inline-block';
+
+      // Show customer info card with basic info immediately
+      const card = document.getElementById('customerInfoCard');
+      card.style.display = 'flex';
+      document.getElementById('custInfoName').textContent = `${firstName} ${lastName}`;
+      document.getElementById('custInfoPhone').textContent = phone || '';
+      document.getElementById('custInfoEmail').textContent = '';
+      document.getElementById('custInfoAddress').textContent = '';
+      document.getElementById('custInfoStats').textContent = 'Loading…';
+      document.getElementById('custInfoNotes').textContent = '';
+
+      updateTenderButtons();
+      closeModal('attachCustomerModal');
+      document.getElementById('barcodeInput').focus();
+
+      // Fetch full customer details
+      const res = await window.api.getCustomer(id);
+      if (res.success) {
+        const c = res.customer;
+        attachedCustomer = { ...attachedCustomer, ...c };
+
+        // Re-evaluate the 21+ age block now that the DOB is known
+        updateTenderButtons();
+
+        document.getElementById('custInfoPhone').textContent = c.phone ? `📞 ${c.phone}` : '';
+        document.getElementById('custInfoEmail').textContent = c.email ? `✉ ${c.email}` : '';
+
+        const addrParts = [c.address, [c.city, c.state].filter(Boolean).join(', '), c.zip].filter(Boolean);
+        document.getElementById('custInfoAddress').textContent = addrParts.length ? `🏠 ${addrParts.join(' ')}` : '';
+
+        const stats = [];
+        if (c.txn_count) stats.push(`${c.txn_count} visit${c.txn_count !== 1 ? 's' : ''}`);
+        if (c.total_spent) stats.push(`${fmt(c.total_spent)} total spent`);
+        if (c.last_visit) stats.push(`Last visit: ${fmtDate(c.last_visit)}`);
+        document.getElementById('custInfoStats').textContent = stats.join('  ·  ');
+
+        document.getElementById('custInfoNotes').textContent = c.notes || '';
+
+        // Loyalty
+        const pts = c.loyalty_points || 0;
+        const tier = res.loyalty?.tier || 'Member';
+        const loyEl = document.getElementById('custInfoLoyalty');
+        loyEl.style.display = 'flex';
+        document.getElementById('custLoyaltyPts').textContent = pts;
+        document.getElementById('custLoyaltyTier').textContent = tier;
+        document.getElementById('redeemBtn').style.display = pts >= 100 ? 'inline-block' : 'none';
+        // Expiry warning
+        if (res.loyalty?.expiring_soon && res.loyalty.expires_on) {
+          document.getElementById('custLoyaltyTier').insertAdjacentHTML('afterend',
+            `<span style="font-size:10px;color:#b45309;margin-left:6px">pts expire ${res.loyalty.expires_on}</span>`);
+        }
+        loyaltyDiscount = 0; pointsRedeemed = 0; rewardBenefit = null; rewardLabel = ''; updateTotals();
+      } else {
+        document.getElementById('custInfoStats').textContent = '';
+      }
+    }
+
+    function detachCustomer() {
+      attachedCustomer = null;
+      ageOverride = false;
+      pointsRedeemed = 0;
+      loyaltyDiscount = 0;
+      rewardBenefit = null;
+      rewardLabel = '';
+      document.getElementById('customerTag').style.display = 'none';
+      document.getElementById('customerInfoCard').style.display = 'none';
+      document.getElementById('custInfoLoyalty').style.display = 'none';
+      ['custInfoName','custInfoPhone','custInfoEmail','custInfoAddress','custInfoStats','custInfoNotes'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '';
+      });
+      updateTotals();
+      updateTenderButtons();
+    }
+
+    // ---- Promo / birthday codes ----
+    async function applyPromo() {
+      const code = document.getElementById('promoInput').value.trim().toUpperCase();
+      const msg = document.getElementById('promoMsg');
+      if (!code) { msg.textContent = ''; return; }
+      if (cart.length === 0) { showToast('Add items before applying a promo', 'warning'); return; }
+      const res = await window.api.validatePromo(code);
+      if (!res.success) { msg.style.color = '#c0392b'; msg.textContent = res.error || 'Invalid code'; return; }
+      const b = res.promo.benefit;
+      if ((b.kind === 'free_category' || b.kind === 'bogo_category') && benefitValue(b) <= 0) {
+        msg.style.color = '#c0392b'; msg.textContent = `Add a "${b.category}" item first`; return;
+      }
+      promoCode = res.promo.code;
+      promoBenefit = b;
+      msg.style.color = '#16a34a';
+      msg.textContent = describeBenefit(b) + (res.promo.customer_name ? ' · ' + res.promo.customer_name : '');
+      document.getElementById('clearPromoBtn').style.display = 'inline-block';
+      updateTotals();
+    }
+
+    function describeBenefit(b) {
+      if (!b) return '';
+      if (b.kind === 'discount_amount') return `$${b.value} off`;
+      if (b.kind === 'discount_pct') return `${b.value}% off`;
+      if (b.kind === 'free_category') return `Free ${b.category}`;
+      if (b.kind === 'bogo_category') return `BOGO ${b.category}`;
+      return 'Reward';
+    }
+
+    function clearPromo() {
+      promoCode = ''; promoBenefit = null; promoDiscount = 0;
+      document.getElementById('promoInput').value = '';
+      document.getElementById('promoMsg').textContent = '';
+      document.getElementById('clearPromoBtn').style.display = 'none';
+      updateTotals();
+    }
+
+    // ---- Loyalty rewards redemption ----
+    let _rewards = [];
+    async function openRedeem() {
+      if (!attachedCustomer) return;
+      const bal = attachedCustomer.loyalty_points || 0;
+      document.getElementById('redeemBalance').textContent = bal;
+      document.getElementById('clearRewardBtn').style.display = rewardBenefit ? 'inline-block' : 'none';
+
+      const res = await window.api.getRewards();
+      const list = document.getElementById('rewardsList');
+      _rewards = (res.success && res.rewards) ? res.rewards : [];
+      if (!_rewards.length) {
+        list.innerHTML = '<div style="color:#888;font-size:13px">No rewards configured</div>';
+      } else {
+        list.innerHTML = _rewards.map(r => {
+          const ok = bal >= r.point_cost;
+          return `<button class="btn" style="width:100%;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;${ok ? 'background:#6d28d9;color:#fff' : 'opacity:0.45'}"
+            ${ok ? `onclick="pickReward(${r.id})"` : 'disabled'}>
+            <span>${esc(r.name)}</span><span style="font-size:12px">${r.point_cost} pts</span></button>`;
+        }).join('');
+      }
+      openModal('redeemModal');
+    }
+
+    function pickReward(id) {
+      const r = _rewards.find(x => x.id === id);
+      if (!r) return;
+      const benefit = { kind: r.benefit_kind, value: r.benefit_value, category: r.benefit_category };
+      if ((benefit.kind === 'free_category' || benefit.kind === 'bogo_category') && benefitValue(benefit) <= 0) {
+        showToast(`Add a "${r.benefit_category}" item to the cart first`, 'warning');
+        return;
+      }
+      rewardBenefit = benefit;
+      rewardLabel = r.name;
+      pointsRedeemed = r.point_cost;
+      closeModal('redeemModal');
+      updateTotals();
+      showToast(`Redeemed: ${r.name}`, 'success');
+    }
+
+    function clearReward() {
+      rewardBenefit = null; rewardLabel = ''; pointsRedeemed = 0; loyaltyDiscount = 0;
+      closeModal('redeemModal');
+      updateTotals();
+    }
+
+    async function sendTextReceipt() {
+      const phone = document.getElementById('smsPhone').value.trim();
+      if (!phone) { showToast('Enter a phone number', 'warning'); return; }
+      if (!lastCompletedTxnId) { showToast('No transaction to send', 'warning'); return; }
+
+      const btn = document.querySelector('#textReceiptRow button');
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+
+      const res = await window.api.sendReceiptSms(lastCompletedTxnId, phone);
+
+      btn.disabled = false;
+      btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Send`;
+
+      if (res.success) showToast('Receipt sent via SMS!', 'success');
+      else showToast(res.error || 'SMS failed — check Twilio settings', 'error');
+    }
+
+    async function createAndAttachCustomer() {
+      const first = document.getElementById('nc-first').value.trim();
+      const last = document.getElementById('nc-last').value.trim();
+      const phone = document.getElementById('nc-phone').value.trim();
+      if (!first || !last) { showToast('First and last name required', 'warning'); return; }
+      if (!phone) { showToast('Phone number required', 'warning'); document.getElementById('nc-phone').focus(); return; }
+
+      const dob = document.getElementById('nc-dob').value.trim() || undefined;
+      const license = document.getElementById('nc-license').value.trim() || undefined;
+
+      // Safety net against duplicates if the same ID is created twice
+      try {
+        const dup = await window.api.findCustomerForId({ license_number: license, first_name: first, last_name: last, dob });
+        if (dup && dup.success && dup.customer) {
+          const c = dup.customer;
+          ['nc-first','nc-last','nc-phone','nc-email','nc-address','nc-city','nc-state','nc-zip','nc-dob','nc-license'].forEach(id => document.getElementById(id).value = '');
+          document.getElementById('nc-sms').checked = false;
+          document.getElementById('idScanStatus').textContent = '';
+          await attachCustomer(c.id, c.first_name, c.last_name, c.phone || '');
+          showToast(`Returning customer: ${c.first_name} ${c.last_name}`, 'success');
+          return;
+        }
+      } catch { /* non-fatal — proceed to create */ }
+
+      const data = {
+        first_name: first,
+        last_name: last,
+        phone,
+        email: document.getElementById('nc-email').value.trim() || undefined,
+        address: document.getElementById('nc-address').value.trim() || undefined,
+        city: document.getElementById('nc-city').value.trim() || undefined,
+        state: document.getElementById('nc-state').value.trim() || undefined,
+        zip: document.getElementById('nc-zip').value.trim() || undefined,
+        dob,
+        license_number: license,
+        opt_in_sms: document.getElementById('nc-sms').checked,
+      };
+
+      const res = await window.api.addCustomer(data);
+      if (!res.success) { showToast(res.error || 'Failed to create customer', 'error'); return; }
+
+      // Clear form
+      ['nc-first','nc-last','nc-phone','nc-email','nc-address','nc-city','nc-state','nc-zip','nc-dob','nc-license'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('nc-sms').checked = false;
+      document.getElementById('idScanStatus').textContent = '';
+
+      attachCustomer(res.id, first, last, phone);
+      showToast(`Customer ${first} ${last} created & attached`, 'success');
+    }
+
+    // ---- Open Attach Customer modal ----
+    function openAttachCustomer() {
+      document.getElementById('customerSearchInput').value = '';
+      document.getElementById('customerResults').innerHTML = '';
+      document.getElementById('idScanInput').value = '';
+      document.getElementById('idScanStatus').textContent = '';
+      switchCustTab('search');
+      openModal('attachCustomerModal');
+      // Focus the scan box immediately (and again on the next tick as a backup)
+      // so the very first keystroke of a license scan lands here, not on a button.
+      document.getElementById('idScanInput').focus();
+      setTimeout(() => document.getElementById('idScanInput').focus(), 50);
+    }
+
+    // ---- Driver's License (AAMVA PDF417) parsing ----
+    // US/Canada licenses encode an AAMVA data blob in the PDF417 barcode on the
+    // back. A 2D scanner in keyboard-wedge mode "types" this blob. Each data
+    // element is a 3-letter code followed by its value, terminated by a newline.
+    // Known AAMVA element codes. We use these as boundaries: a field's value
+    // runs from just after its code up to the next known code (or a line break).
+    // Some scanners strip all line breaks and lowercase the codes, so matching
+    // is case-insensitive and does not rely on newlines. NOTE: DDI is excluded
+    // on purpose — it collides with surnames like "Si-DDI-qui".
+    const AAMVA_CODES = [
+      'DCA','DCB','DCD','DCE','DBA','DCS','DAC','DAD','DBD','DBB','DBC',
+      'DAY','DAU','DAV','DAG','DAH','DAI','DAJ','DAK','DAL','DAM','DAN','DAO','DAP','DAQ',
+      'DCF','DCG','DCH','DCJ','DCK','DCL','DCM','DCN','DCO','DCR','DCT','DCU',
+      'DDB','DDE','DDF','DDG','DDJ',
+      'DAA','DAB','DAF','DAW','DAX','DAZ','DBE','DBF','DBG','DBH','DBN','DBR','DBS',
+      'PAA','PAB','PAC','ZTZ','ZTA','ZTB','ZVA','ZVB',
+    ];
+
+    function parseDriversLicense(raw) {
+      if (!raw) return null;
+      // Only treat this as a license if several AAMVA codes are present
+      const hits = (raw.match(/d(?:ac|ad|ag|ai|aj|ak|bb|cs|aq|cf|cg|bc|ay)/gi) || []).length;
+      if (!/ANSI/i.test(raw) && hits < 3) return null;
+
+      const boundary = '(?:' + AAMVA_CODES.join('|') + '|[\\r\\n]|$)';
+      // Value = everything (non-greedy) after the code up to the next known code.
+      const field = (code) => {
+        const m = raw.match(new RegExp(code + '(.*?)' + boundary, 'i'));
+        return m ? m[1].trim() : '';
+      };
+
+      let last = field('DCS');                 // family name
+      let first = field('DAC');                // first name
+      let middle = field('DAD');               // middle name
+      if (!first) {                            // older format: DCT = full given names
+        const given = field('DCT');
+        if (given) {
+          const parts = given.split(/[\s,]+/).filter(Boolean);
+          first = parts.shift() || '';
+          if (!middle) middle = parts.join(' ');
+        }
+      }
+
+      // Some scanners omit the DCS code entirely (the surname is emitted right
+      // before the DDE last-name-truncation flag). Fall back to the capitalized
+      // word(s) immediately preceding "dde". The uppercase anchor skips any
+      // lowercase seam fragment left by a wrapped scan buffer.
+      if (!last) {
+        const m = raw.match(/([A-Z][A-Za-z'’.\-]+(?:\s+[A-Z][A-Za-z'’.\-]+)*)\s*[\r\n]?dde/);
+        if (m) last = m[1].trim();
+      }
+
+      const address = field('DAG');            // street address
+      const city = field('DAI');               // city
+      const state = field('DAJ');              // state / jurisdiction
+      let zip = field('DAK');                   // postal code
+      if (zip) zip = zip.replace(/[^0-9]/g, '').slice(0, 5);
+      const license = field('DAQ');            // license / ID number (unique key)
+
+      // DOB (DBB): US uses MMDDCCYY, Canada uses CCYYMMDD — both 8 digits
+      let dob = '';
+      const rawDob = field('DBB').replace(/[^0-9]/g, '');
+      if (rawDob.length === 8) {
+        if (/^(19|20)/.test(rawDob) && parseInt(rawDob.slice(4, 6), 10) <= 12) {
+          dob = `${rawDob.slice(4, 6)}/${rawDob.slice(6, 8)}/${rawDob.slice(0, 4)}`;
+        } else {
+          dob = `${rawDob.slice(0, 2)}/${rawDob.slice(2, 4)}/${rawDob.slice(4, 8)}`;
+        }
+      }
+
+      if (!last && !first) return null;        // nothing usable
+
+      // Licenses store names/addresses in ALL CAPS (or mixed) — title-case them
+      const title = (s) => s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+      return {
+        first: title(first),
+        middle: title(middle),
+        last: title(last),
+        address: title(address),
+        city: title(city),
+        state: state.toUpperCase(),
+        zip,
+        dob,
+        license: license.toUpperCase(),
+      };
+    }
+
+    function ageFromDob(dobStr) {
+      const m = (dobStr || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (!m) return null;
+      const birth = new Date(+m[3], +m[1] - 1, +m[2]);
+      const now = new Date();
+      let age = now.getFullYear() - birth.getFullYear();
+      const md = now.getMonth() - birth.getMonth();
+      if (md < 0 || (md === 0 && now.getDate() < birth.getDate())) age--;
+      return age;
+    }
+
+    async function handleIdScan() {
+      const raw = document.getElementById('idScanInput').value;
+      const statusEl = document.getElementById('idScanStatus');
+      const parsed = parseDriversLicense(raw);
+
+      if (!parsed) {
+        if (raw.trim().length > 20) {
+          statusEl.innerHTML = '<span style="color:#c0392b">Could not read this scan. Make sure you scanned the barcode on the <strong>back</strong> of the ID.</span>';
+        }
+        return;
+      }
+
+      // Clear the raw blob right away so a re-scan starts clean
+      document.getElementById('idScanInput').value = '';
+
+      const age = ageFromDob(parsed.dob);
+      const threshold = minAge > 0 ? minAge : 21;
+      const ageNote = age == null ? '' : (age < threshold
+        ? ` <span style="color:#c0392b;font-weight:700">⚠ UNDER ${threshold} (age ${age})</span>`
+        : ` <span style="color:#2e7d32;font-weight:700">✓ Age ${age}</span>`);
+
+      // Returning customer? Look up by license number, then by name + DOB, to
+      // avoid creating a duplicate profile.
+      statusEl.innerHTML = '<span style="color:#555">Checking for existing customer…</span>';
+      let lookup = null;
+      try {
+        lookup = await window.api.findCustomerForId({
+          license_number: parsed.license || undefined,
+          first_name: parsed.first,
+          last_name: parsed.last,
+          dob: parsed.dob || undefined,
+        });
+      } catch { /* fall through to new-customer flow */ }
+
+      if (lookup && lookup.success && lookup.customer) {
+        const c = lookup.customer;
+        // Backfill the license number if we now have one and the record didn't
+        if (parsed.license && !c.license_number) {
+          try { await window.api.updateCustomer(c.id, { license_number: parsed.license }); } catch { /* non-fatal */ }
+        }
+        await attachCustomer(c.id, c.first_name, c.last_name, c.phone || '');
+        showToast(`Returning customer: ${c.first_name} ${c.last_name}`, 'success');
+        return;
+      }
+
+      // New customer — pre-fill the form
+      switchCustTab('new');
+      document.getElementById('nc-first').value = parsed.first;
+      document.getElementById('nc-last').value = parsed.last;
+      document.getElementById('nc-address').value = parsed.address;
+      document.getElementById('nc-city').value = parsed.city;
+      document.getElementById('nc-state').value = parsed.state;
+      document.getElementById('nc-zip').value = parsed.zip;
+      document.getElementById('nc-dob').value = parsed.dob;
+      document.getElementById('nc-license').value = parsed.license || '';
+
+      statusEl.innerHTML =
+        `<span style="color:#2e7d32">New customer: <strong>${esc(parsed.first)} ${esc(parsed.last)}</strong></span>${ageNote}` +
+        ` — enter the phone number, then Create &amp; Attach.`;
+
+      setTimeout(() => document.getElementById('nc-phone').focus(), 50);
+    }
+  </script>
+</body>
+</html>

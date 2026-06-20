@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Login</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    .login-wrap {
+      width: 380px;
+    }
+
+    .logo-area {
+      text-align: center;
+      margin-bottom: 24px;
+      background: linear-gradient(160deg, #1e2e48 0%, #2c3e5a 55%, #1a2840 100%);
+      border-radius: 16px;
+      padding: 24px 20px 20px;
+      box-shadow:
+        0 6px 20px rgba(0,0,0,0.3),
+        inset 0 1px 0 rgba(255,255,255,0.12);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .logo-area::before {
+      content: '';
+      position: absolute;
+      top: -60px; left: 50%;
+      transform: translateX(-50%);
+      width: 300px; height: 200px;
+      background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .logo-area .logo-icon {
+      width: 200px;
+      height: 200px;
+      margin: 0 auto 14px;
+      display: block;
+      filter: drop-shadow(0 6px 14px rgba(0,0,0,0.5));
+      position: relative;
+      z-index: 1;
+    }
+
+    .logo-area .brand-sub {
+      font-size: 11px;
+      color: rgba(255,255,255,0.45);
+      margin-top: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+    }
+
+    .login-card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 6px 28px rgba(0,0,0,0.18);
+      padding: 32px;
+    }
+
+    .login-card h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin-bottom: 24px;
+    }
+
+    .login-card .form-group {
+      margin-bottom: 16px;
+    }
+
+    .login-card .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #666;
+      margin-bottom: 6px;
+    }
+
+    .login-card .form-group input {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1.5px solid #ddd;
+      border-radius: 10px;
+      font-size: 15px;
+      color: #1a1a1a;
+      background: #fafafa;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .login-card .form-group input:focus {
+      border-color: #2c4a6e;
+      background: #fff;
+      box-shadow: 0 0 0 3px rgba(44,74,110,0.12);
+    }
+
+    .error-msg {
+      background: #fee2e2;
+      color: #991b1b;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      margin-bottom: 16px;
+      display: none;
+    }
+
+    .btn-login {
+      width: 100%;
+      padding: 13px;
+      background: linear-gradient(180deg, #2c3e5a 0%, #1a2a3f 100%);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: filter 0.15s;
+      margin-top: 8px;
+    }
+
+    .btn-login:hover  { filter: brightness(1.15); }
+    .btn-login:active { filter: brightness(0.9); }
+  </style>
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="logo-area">
+      <img src="../../../assets/icon.svg" class="logo-icon" alt="" />
+      <div class="brand-headline">
+        <span class="brand-wordmark" id="brandName" style="font-size:34px;color:#fff">rackd</span>
+      </div>
+      <div class="brand-sub">Point of Sale System</div>
+    </div>
+
+    <div class="login-card" id="loginCard">
+      <h2>Sign In</h2>
+      <div class="error-msg" id="errorMsg">Invalid username or password</div>
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" id="username" autocomplete="username" placeholder="Enter username" />
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="password" autocomplete="current-password" placeholder="Enter password" />
+      </div>
+      <button class="btn-login" id="loginBtn">Sign In</button>
+    </div>
+  </div>
+
+  <!-- Change password modal (first run) -->
+  <div class="modal-overlay" id="changePassModal" style="display:none">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-title">Change Your Password</div>
+      <p style="font-size:14px;color:#666;margin-bottom:20px">
+        Please set a new password before continuing.
+      </p>
+      <div class="form-group">
+        <label>Current Password</label>
+        <input type="password" id="cpOld" />
+      </div>
+      <div class="form-group">
+        <label>New Password</label>
+        <input type="password" id="cpNew" />
+      </div>
+      <div class="form-group">
+        <label>Confirm New Password</label>
+        <input type="password" id="cpConfirm" />
+      </div>
+      <div class="error-msg" id="cpError" style="display:none"></div>
+      <div class="modal-actions">
+        <button class="btn btn-navy" id="cpSaveBtn">Save Password</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../shared.js"></script>
+  <script>
+    const loginBtn = document.getElementById('loginBtn');
+    const usernameEl = document.getElementById('username');
+    const passwordEl = document.getElementById('password');
+    const errorMsg = document.getElementById('errorMsg');
+    const loginCard = document.getElementById('loginCard');
+
+    // White-label: show the shop's own store name (falls back to product name)
+    (async () => {
+      try {
+        const cfg = await window.api.getReceiptConfig();
+        const name = cfg?.config?.store_name;
+        if (name) document.getElementById('brandName').textContent = name;
+      } catch { /* keep default */ }
+    })();
+
+    async function doLogin() {
+      const username = usernameEl.value.trim();
+      const password = passwordEl.value;
+      if (!username || !password) return;
+
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Signing in…';
+
+      const res = await window.api.login(username, password);
+
+      if (res.success) {
+        if (res.user?.must_change_password) {
+          // Server flagged this account — force a password change before entry
+          document.getElementById('cpOld').value = password;
+          document.getElementById('changePassModal').style.display = 'flex';
+          return;
+        }
+        await window.api.navigate('main-menu');
+      } else {
+        errorMsg.style.display = 'block';
+        loginCard.classList.remove('shake');
+        void loginCard.offsetWidth; // reflow
+        loginCard.classList.add('shake');
+        passwordEl.value = '';
+        passwordEl.focus();
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Sign In';
+        setTimeout(() => { loginCard.classList.remove('shake'); }, 400);
+      }
+    }
+
+    loginBtn.addEventListener('click', doLogin);
+    passwordEl.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+    usernameEl.addEventListener('keydown', e => { if (e.key === 'Enter') passwordEl.focus(); });
+
+    // Change password flow
+    document.getElementById('cpSaveBtn').addEventListener('click', async () => {
+      const oldP = document.getElementById('cpOld').value;
+      const newP = document.getElementById('cpNew').value;
+      const confirmP = document.getElementById('cpConfirm').value;
+      const cpError = document.getElementById('cpError');
+
+      if (newP !== confirmP) {
+        cpError.textContent = 'Passwords do not match';
+        cpError.style.display = 'block';
+        return;
+      }
+      if (newP.length < 6) {
+        cpError.textContent = 'Password must be at least 6 characters';
+        cpError.style.display = 'block';
+        return;
+      }
+      const res = await window.api.changePassword(oldP, newP);
+      if (res.success) {
+        document.getElementById('changePassModal').style.display = 'none';
+        await window.api.navigate('main-menu');
+      } else {
+        cpError.textContent = res.error || 'Failed to change password';
+        cpError.style.display = 'block';
+      }
+    });
+
+    // Focus username on load
+    document.addEventListener('DOMContentLoaded', () => {
+      usernameEl.focus();
+    });
+  </script>
+</body>
+</html>

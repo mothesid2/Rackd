@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Main Menu</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <style>
+    body { overflow: hidden; }
+
+    .main-layout {
+      display: grid;
+      grid-template-columns: 46% 1fr;
+      gap: 24px;
+      padding: 24px;
+      padding-bottom: 56px;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Left column */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .logo-header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    /* Fullscreen toggle button */
+    .fullscreen-btn {
+      position: fixed;
+      top: 10px;
+      right: 12px;
+      z-index: 300;
+      background: rgba(30,42,62,0.75);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 5px;
+      color: rgba(255,255,255,0.7);
+      cursor: pointer;
+      padding: 0;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, color 0.15s;
+      backdrop-filter: blur(4px);
+    }
+    .fullscreen-btn:hover {
+      background: rgba(44,74,110,0.9);
+      color: #fff;
+    }
+    .fullscreen-btn svg { width: 15px; height: 15px; }
+
+    /* Logo wrapper */
+    .logo-clip {
+      width: 132px;
+      height: 132px;
+      overflow: hidden;
+      flex-shrink: 0;
+      border-radius: 0;
+    }
+
+    .logo-clip .logo-icon {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .logo-header .brand {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .new-sale-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      height: 60px;
+      border-radius: 5px;
+      border: none;
+      background:
+        repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.05) 3px, rgba(255,255,255,0.05) 4px, transparent 4px, transparent 9px, rgba(255,255,255,0.03) 9px, rgba(255,255,255,0.03) 10px),
+        linear-gradient(180deg, #3d8a28 0%, #2e6c1a 50%, #245514 100%);
+      color: #fff;
+      font-size: 19px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-bottom: 12px;
+      transition: filter 0.15s, transform 0.1s;
+      box-shadow: 0 3px 10px rgba(35,80,15,0.4), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.2);
+      text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      letter-spacing: 0.5px;
+      position: relative;
+    }
+    .new-sale-btn::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: rgba(255,255,255,0.25);
+    }
+    .new-sale-btn:hover  { filter: brightness(1.12); transform: translateY(-1px); }
+    .new-sale-btn:active { filter: brightness(0.92); transform: translateY(0); }
+    .new-sale-btn svg { width: 26px; height: 26px; }
+
+    /* nav buttons in left */
+    .nav-section { flex: 1; display: flex; flex-direction: column; }
+
+    /* Right column — overview card */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .overview-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .overview-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .metric-box {
+      background: #f4f3f0;
+      border-radius: 10px;
+      padding: 14px 16px;
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+
+    .metric-label {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #888;
+      margin-bottom: 4px;
+    }
+
+    .metric-value {
+      font-size: 26px;
+      font-weight: 800;
+      color: #1a1a1a;
+      line-height: 1;
+    }
+
+    .metric-value.revenue { color: #2e7d32; }
+
+    .metric-sub {
+      font-size: 12px;
+      color: #888;
+      margin-top: 3px;
+    }
+
+    .top-item-box {
+      background: #f8f8f8;
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .top-item-icon {
+      width: 38px;
+      height: 38px;
+      background: #e8f0fe;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .top-item-icon svg { width: 20px; height: 20px; color: #2c4a6e; }
+
+    .top-item-info .label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #888; }
+    .top-item-info .name { font-size: 15px; font-weight: 600; color: #1a1a1a; }
+    .top-item-info .units { font-size: 12px; color: #888; }
+
+    .low-stock-section {}
+    .low-stock-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    .low-stock-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      background: #fffbeb;
+      border-radius: 8px;
+      margin-bottom: 6px;
+    }
+
+    .low-stock-item svg { width: 16px; height: 16px; color: #f59e0b; flex-shrink: 0; }
+    .low-stock-item .ls-name { font-size: 14px; font-weight: 600; color: #1a1a1a; flex: 1; }
+    .low-stock-item .ls-qty { font-size: 12px; color: #888; }
+    .low-stock-item .ls-qty strong { color: #92400e; }
+  </style>
+</head>
+<body>
+  <div class="main-layout">
+    <!-- LEFT COLUMN -->
+    <div class="left-col">
+      <div class="logo-header">
+        <div class="logo-clip">
+          <img src="../../../assets/icon.svg" class="logo-icon" alt="" />
+        </div>
+        <div class="brand">
+          <div class="brand-headline">
+            <span class="brand-wordmark" id="brandName" style="font-size:46px">rackd</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- NEW SALE button -->
+      <button class="new-sale-btn" onclick="navigate('pos')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+          <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+        </svg>
+        New Sale
+      </button>
+
+      <div class="nav-section">
+        <!-- Receipts -->
+        <button class="nav-btn receipts-btn" onclick="navigate('receipts')">
+          <div class="nav-icon-area">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10 9 9 9 8 9"/>
+            </svg>
+          </div>
+          <div class="nav-text">
+            <div class="nav-title">Receipts</div>
+            <div class="nav-subtitle">View Transactions</div>
+          </div>
+          <div class="nav-btn-chevron"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </button>
+
+        <!-- Merchandise -->
+        <button class="nav-btn merchandise-btn" onclick="navigate('merchandise')">
+          <div class="nav-icon-area">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/>
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+          </div>
+          <div class="nav-text">
+            <div class="nav-title">Merchandise</div>
+            <div class="nav-subtitle">Manage Inventory</div>
+          </div>
+          <div class="nav-btn-chevron"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </button>
+
+        <!-- Customer Lookup -->
+        <button class="nav-btn customer-btn" onclick="navigate('customer-lookup')">
+          <div class="nav-icon-area">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+          </div>
+          <div class="nav-text">
+            <div class="nav-title">Customer Lookup</div>
+            <div class="nav-subtitle">Find Customer Info</div>
+          </div>
+          <div class="nav-btn-chevron"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </button>
+
+        <!-- X/Z Out -->
+        <button class="nav-btn xzout-btn" onclick="navigate('xz-out')">
+          <div class="nav-icon-area">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+          </div>
+          <div class="nav-text">
+            <div class="nav-title">X / Z Out</div>
+            <div class="nav-subtitle">Close Registers</div>
+          </div>
+          <div class="nav-btn-chevron"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </button>
+
+        <!-- Settings (manager only) -->
+        <button class="nav-btn settings-btn" id="settingsBtn" onclick="navigate('settings')" style="display:none">
+          <div class="nav-icon-area">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </div>
+          <div class="nav-text">
+            <div class="nav-title">Settings</div>
+            <div class="nav-subtitle">Terminal & Store Config</div>
+          </div>
+          <div class="nav-btn-chevron"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </button>
+
+        <!-- Log In / Out -->
+        <button class="nav-btn logout-btn" id="logoutBtn">
+          <div class="nav-icon-area">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+          </div>
+          <div class="nav-text">
+            <div class="nav-title">Log In / Out</div>
+            <div class="nav-subtitle">Access Account</div>
+          </div>
+          <div class="nav-btn-chevron"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </button>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="right-col">
+      <div class="card overview-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0">
+          <div class="card-title" style="margin-bottom:0">Today Overview</div>
+          <button onclick="loadOverview(currentRole)" style="background:none;border:none;cursor:pointer;padding:4px;color:#888;display:flex;align-items:center" title="Refresh">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          </button>
+        </div>
+
+        <div class="overview-grid">
+          <div class="metric-box">
+            <div class="metric-label">Revenue</div>
+            <div class="metric-value revenue" id="metricRevenue">—</div>
+            <div class="metric-sub">today's sales</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">Profit</div>
+            <div class="metric-value" id="metricProfit">—</div>
+            <div class="metric-sub">gross margin</div>
+          </div>
+        </div>
+
+        <div class="metric-box" style="margin-bottom:14px">
+          <div class="metric-label">Transactions</div>
+          <div class="metric-value" id="metricSales">—</div>
+          <div class="metric-sub">sales today</div>
+        </div>
+
+        <div class="top-item-box" id="topItemBox">
+          <div class="top-item-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+              <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+            </svg>
+          </div>
+          <div class="top-item-info">
+            <div class="label">Top Item</div>
+            <div class="name" id="topItemName">No sales yet</div>
+            <div class="units" id="topItemUnits"></div>
+          </div>
+        </div>
+
+        <div class="low-stock-section">
+          <div class="low-stock-title">Low Stock Alerts</div>
+          <div id="lowStockList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fullscreen toggle -->
+  <button class="fullscreen-btn" id="fullscreenBtn" title="Toggle Fullscreen (F11)">
+    <svg id="fsIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+      <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+    </svg>
+  </button>
+
+  <!-- Status bar -->
+  <div class="status-bar">
+    <div class="status-left" id="status-left">Loading…</div>
+    <div class="status-right" id="status-right"></div>
+  </div>
+
+  <script src="../shared.js"></script>
+  <script>
+    // Fullscreen icons
+    const FS_EXPAND = `<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>`;
+    const FS_COMPRESS = `<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>`;
+    let isFullscreen = false;
+
+    document.getElementById('fullscreenBtn').addEventListener('click', async () => {
+      isFullscreen = await window.api.toggleFullscreen();
+      document.getElementById('fsIcon').innerHTML = isFullscreen ? FS_COMPRESS : FS_EXPAND;
+    });
+
+    let currentRole = null;
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      // White-label: show the shop's own store name (falls back to product name)
+      try {
+        const cfg = await window.api.getReceiptConfig();
+        if (cfg?.config?.store_name) document.getElementById('brandName').textContent = cfg.config.store_name;
+      } catch { /* keep default */ }
+
+      // Apply role-based UI restrictions
+      const { session } = await window.api.getSession();
+      currentRole = session?.role;
+      if (session?.role === 'manager') {
+        document.getElementById('settingsBtn').style.display = '';
+      } else {
+        // Cashier: hide profit metric and X/Z Out button
+        const profitBox = document.querySelector('.overview-grid .metric-box:nth-child(2)');
+        if (profitBox) profitBox.style.display = 'none';
+        document.querySelector('.xzout-btn')?.setAttribute('style', 'display:none!important');
+      }
+
+      await loadOverview(session?.role);
+      document.getElementById('logoutBtn').addEventListener('click', async () => {
+        await window.api.logout();
+        await window.api.navigate('login');
+      });
+    });
+
+    async function loadOverview(role) {
+      const res = await window.api.getTodayOverview();
+      if (!res.success) return;
+      const ov = res.overview;
+
+      document.getElementById('metricRevenue').textContent = fmt(ov.revenue);
+      if (role === 'manager') {
+        document.getElementById('metricProfit').textContent = fmt(ov.profit);
+      }
+      document.getElementById('metricSales').textContent = ov.sale_count;
+
+      if (ov.top_item) {
+        document.getElementById('topItemName').textContent = ov.top_item.name;
+        document.getElementById('topItemUnits').textContent = `${ov.top_item.units_sold} units sold`;
+      }
+
+      const lowList = document.getElementById('lowStockList');
+      if (ov.low_stock && ov.low_stock.length > 0) {
+        lowList.innerHTML = ov.low_stock.map(item => `
+          <div class="low-stock-item">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <span class="ls-name">${esc(item.name)}</span>
+            <span class="ls-qty"><strong>${item.stock_qty}</strong> left</span>
+          </div>
+        `).join('');
+      } else {
+        lowList.innerHTML = '<div style="color:#888;font-size:13px;padding:8px 0">No low stock items</div>';
+      }
+    }
+
+    // Refresh overview every 30 seconds
+    setInterval(() => loadOverview(), 30000);
+  </script>
+</body>
+</html>

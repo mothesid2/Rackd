@@ -1,0 +1,126 @@
+import { contextBridge, ipcRenderer } from 'electron';
+
+contextBridge.exposeInMainWorld('api', {
+  // Auth
+  login: (username: string, password: string) =>
+    ipcRenderer.invoke('auth:login', username, password),
+  logout: () => ipcRenderer.invoke('auth:logout'),
+  getSession: () => ipcRenderer.invoke('auth:getSession'),
+  changePassword: (oldPass: string, newPass: string) =>
+    ipcRenderer.invoke('auth:changePassword', oldPass, newPass),
+  listUsers: () => ipcRenderer.invoke('auth:listUsers'),
+  createUser: (username: string, password: string, role: string) =>
+    ipcRenderer.invoke('auth:createUser', username, password, role),
+  deleteUser: (id: number) => ipcRenderer.invoke('auth:deleteUser', id),
+  verifyManager: (username: string, password: string) =>
+    ipcRenderer.invoke('auth:verifyManager', username, password),
+
+  // Products
+  getProducts: (filters?: object) => ipcRenderer.invoke('products:getAll', filters),
+  getProductByBarcode: (barcode: string) => ipcRenderer.invoke('products:getByBarcode', barcode),
+  searchProducts: (query: string) => ipcRenderer.invoke('products:search', query),
+  addProduct: (product: object) => ipcRenderer.invoke('products:add', product),
+  updateProduct: (id: number, data: object) => ipcRenderer.invoke('products:update', id, data),
+  adjustStock: (id: number, delta: number, reason: string) =>
+    ipcRenderer.invoke('products:adjustStock', id, delta, reason),
+  importProductsCSV: (csvText: string) => ipcRenderer.invoke('products:importCSV', csvText),
+  clearProducts: () => ipcRenderer.invoke('products:clearAll'),
+  deleteProduct: (id: number) => ipcRenderer.invoke('products:delete', id),
+  getProductSaleHistory: (id: number) => ipcRenderer.invoke('products:getSaleHistory', id),
+  getReorderReport: (windowDays?: number) => ipcRenderer.invoke('products:reorderReport', windowDays),
+  getVariants: (productId: number) => ipcRenderer.invoke('products:getVariants', productId),
+  addVariants: (productId: number, rows: object[]) => ipcRenderer.invoke('products:addVariants', productId, rows),
+  updateVariant: (id: number, data: object) => ipcRenderer.invoke('products:updateVariant', id, data),
+  deleteVariant: (id: number) => ipcRenderer.invoke('products:deleteVariant', id),
+
+  // Transactions
+  getTransactions: (filters?: object) => ipcRenderer.invoke('transactions:getAll', filters),
+  getTransaction: (id: number) => ipcRenderer.invoke('transactions:getOne', id),
+  createTransaction: (data: object) => ipcRenderer.invoke('transactions:create', data),
+  deleteTransaction: (id: number) => ipcRenderer.invoke('transactions:delete', id),
+  getTodayOverview: () => ipcRenderer.invoke('transactions:todayOverview'),
+
+  // Card terminal
+  sendPayment: (payload: object) => ipcRenderer.invoke('terminal:sendPayment', payload),
+  cancelPayment: () => ipcRenderer.invoke('terminal:cancel'),
+  testTerminalConnection: () => ipcRenderer.invoke('terminal:test'),
+  getTerminalConfig: () => ipcRenderer.invoke('terminal:getConfig'),
+  saveTerminalConfig: (config: object) => ipcRenderer.invoke('terminal:saveConfig', config),
+  getTerminalCertStatus: () => ipcRenderer.invoke('terminal:certStatus'),
+
+  // Customers
+  getCustomers: (query?: string) => ipcRenderer.invoke('customers:getAll', query),
+  getCustomer: (id: number) => ipcRenderer.invoke('customers:getOne', id),
+  addCustomer: (data: object) => ipcRenderer.invoke('customers:add', data),
+  updateCustomer: (id: number, data: object) => ipcRenderer.invoke('customers:update', id, data),
+  searchCustomers: (query: string) => ipcRenderer.invoke('customers:search', query),
+  findCustomerForId: (q: object) => ipcRenderer.invoke('customers:findForId', q),
+  getCustomerUpsell: (id: number) => ipcRenderer.invoke('customers:upsell', id),
+
+  // SMS
+  sendSmsBlast: (message: string, filter: object) =>
+    ipcRenderer.invoke('sms:blast', message, filter),
+  sendSingleSms: (phone: string, message: string) =>
+    ipcRenderer.invoke('sms:single', phone, message),
+  sendReceiptSms: (txnId: number, phone: string) =>
+    ipcRenderer.invoke('sms:receipt', txnId, phone),
+
+  // Invoices
+  getInvoices: (filters?: object) => ipcRenderer.invoke('invoices:getAll', filters),
+  getInvoice: (id: number) => ipcRenderer.invoke('invoices:getOne', id),
+  createInvoice: (data: object) => ipcRenderer.invoke('invoices:create', data),
+  attachInvoicePdf: (id: number, path: string) => ipcRenderer.invoke('invoices:attachPdf', id, path),
+  deleteInvoice: (id: number) => ipcRenderer.invoke('invoices:delete', id),
+  openInvoicePdf: (id: number) => ipcRenderer.invoke('invoices:openPdf', id),
+  pickPdfFile: () => ipcRenderer.invoke('dialog:openPdf'),
+
+  // X/Z Out
+  getXReport: () => ipcRenderer.invoke('xzout:xReport'),
+  runZReport: (pin: string) => ipcRenderer.invoke('xzout:zReport', pin),
+  getPeriodReport: (opts?: object) => ipcRenderer.invoke('xzout:periodReport', opts),
+  getAgeLog: (opts?: object) => ipcRenderer.invoke('compliance:ageLog', opts),
+
+  // Promos / birthdays
+  getBirthdaysToday: () => ipcRenderer.invoke('promos:birthdaysToday'),
+  runBirthdayPromos: () => ipcRenderer.invoke('promos:runBirthdays'),
+  validatePromo: (code: string) => ipcRenderer.invoke('promos:validate', code),
+
+  // Loyalty rewards
+  getRewards: () => ipcRenderer.invoke('loyalty:rewards'),
+  sendCloseToReward: (opts?: object) => ipcRenderer.invoke('loyalty:closeToReward', opts),
+  expireStalePoints: () => ipcRenderer.invoke('loyalty:expireStale'),
+
+  // Receipt
+  printReceipt: (txnId: number) => ipcRenderer.invoke('receipt:print', txnId),
+  getReceiptConfig: () => ipcRenderer.invoke('receipt:getConfig'),
+  updateReceiptConfig: (data: object) => ipcRenderer.invoke('receipt:updateConfig', data),
+
+  // Settings
+  getSettings: () => ipcRenderer.invoke('settings:getAll'),
+  updateSetting: (key: string, value: string) =>
+    ipcRenderer.invoke('settings:update', key, value),
+
+  // Navigation
+  navigate: (page: string) => ipcRenderer.invoke('navigate', page),
+
+  // Window
+  toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen'),
+
+  // Print current page via native dialog
+  printPage: () => ipcRenderer.invoke('printPage'),
+
+  // Zebra barcode tag printing
+  printBarcodeTags: (products: object[]) => ipcRenderer.invoke('zebra:printTags', products),
+
+  // Customer display
+  updateCustomerDisplay: (data: object) =>
+    ipcRenderer.invoke('customerDisplay:update', data),
+
+  // Listeners
+  on: (channel: string, callback: (...args: unknown[]) => void) => {
+    ipcRenderer.on(channel, (_event, ...args) => callback(...args));
+  },
+  off: (channel: string, callback: (...args: unknown[]) => void) => {
+    ipcRenderer.off(channel, callback as Parameters<typeof ipcRenderer.off>[1]);
+  },
+});
