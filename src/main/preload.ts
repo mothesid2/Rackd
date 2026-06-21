@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('api', {
   getDrawerSummary: () => ipcRenderer.invoke('drawer:summary'),
   getDrawerLog: (limit?: number) => ipcRenderer.invoke('drawer:log', limit),
   recordCashDrop: (amount: number, note?: string) => ipcRenderer.invoke('drawer:drop', amount, note),
+  listDrawerPorts: () => ipcRenderer.invoke('drawer:ports'),
 
   // Customers
   getCustomers: (query?: string) => ipcRenderer.invoke('customers:getAll', query),

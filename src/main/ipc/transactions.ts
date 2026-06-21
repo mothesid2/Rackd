@@ -3,7 +3,6 @@ import { DateTime } from 'luxon';
 import { getDb } from '../db/schema';
 import { getCurrentSession } from './auth';
 import { nowCT, todayCT, TZ } from '../utils/time';
-import { openCashDrawer } from '../services/printer';
 
 interface TransactionItem {
   product_id: number | null;
@@ -265,17 +264,14 @@ export function registerTransactionHandlers(): void {
 
       const { txnId, loyalty } = txn();
 
-      // Auto-pop the cash drawer on cash sales (if enabled) and log it.
+      // Record the cash sale in the drawer activity log (the physical pop happens
+      // the moment the cashier presses Cash — see openCashModal in the POS).
       if (data.payment_method === 'cash' || data.payment_method === 'split') {
-        const autoPop = (db.prepare("SELECT value FROM settings WHERE key = 'drawer_auto_pop'").get() as { value: string } | undefined)?.value !== '0';
-        if (autoPop) {
-          openCashDrawer().then((r) => {
-            db.prepare(`INSERT INTO drawer_log (cashier_id, cashier_name, event, amount, note) VALUES (?, ?, ?, ?, ?)`)
-              .run(session?.userId || null, session?.username || null, 'cash_sale',
-                   data.cash_tendered || data.total,
-                   r.success ? `Txn #${txnId} — drawer opened` : `Txn #${txnId} — ${r.error || 'drawer not opened'}`);
-          }).catch(() => { /* non-fatal */ });
-        }
+        try {
+          db.prepare(`INSERT INTO drawer_log (cashier_id, cashier_name, event, amount, note) VALUES (?, ?, ?, ?, ?)`)
+            .run(session?.userId || null, session?.username || null, 'cash_sale',
+                 data.cash_tendered || data.total, `Txn #${txnId}`);
+        } catch { /* non-fatal */ }
       }
 
       return { success: true, id: txnId, loyalty };

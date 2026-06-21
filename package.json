@@ -10,7 +10,7 @@
     "seed": "electron dist/main/db/seed.js",
     "update": "git pull && npm start",
     "dev": "npm run build:main && electron . --dev",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "postinstall": "electron-rebuild -f -w better-sqlite3 -w serialport"
   },
   "build": {
     "appId": "com.rackd.pos",
@@ -38,6 +38,7 @@
     "luxon": "^3.7.2",
     "mqtt": "^5.15.1",
     "node-thermal-printer": "^4.3.3",
+    "serialport": "^12.0.0",
     "twilio": "^5.0.0"
   },
   "devDependencies": {

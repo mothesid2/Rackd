@@ -261,6 +261,10 @@ export function initSchema(db: Database.Database): void {
     INSERT OR IGNORE INTO settings (key, value) VALUES ('zebra_port', '9100');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('cash_float', '200');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('drawer_auto_pop', '1');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('drawer_type', 'serial');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('drawer_com_port', '');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('drawer_baud', '9600');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('drawer_kick_hex', '1B 70 00 19 FA');
   `);
 
   // Migrate existing DBs — add columns if they don't exist yet

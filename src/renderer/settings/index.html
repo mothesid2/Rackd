@@ -194,6 +194,44 @@
       <button class="btn btn-navy" onclick="savePrinterSettings()">Save Printer Settings</button>
     </div>
 
+    <!-- Cash Drawer -->
+    <div class="card settings-section">
+      <div class="card-title">Cash Drawer</div>
+      <p style="font-size:13px;color:#666;margin-bottom:12px">
+        Pops automatically when the cashier presses <strong>Cash</strong>. A standalone USB drawer
+        (e.g. Clover D100) connects as a serial/COM port — pick it below. A drawer wired into the
+        receipt printer uses "Through receipt printer" instead.
+      </p>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Drawer Type</label>
+          <select id="drawerType" onchange="toggleDrawerFields()">
+            <option value="serial">USB serial drawer (COM port)</option>
+            <option value="printer">Through receipt printer</option>
+            <option value="none">Off / no drawer</option>
+          </select>
+        </div>
+        <div class="form-group" id="drawerPortGroup">
+          <label>COM Port</label>
+          <select id="drawerComPort"><option value="">Auto-detect</option></select>
+        </div>
+      </div>
+      <div class="form-row" id="drawerAdvanced">
+        <div class="form-group" style="max-width:140px"><label>Baud Rate</label><input type="text" id="drawerBaud" placeholder="9600" /></div>
+        <div class="form-group"><label>Kick Code (hex)</label><input type="text" id="drawerKickHex" placeholder="1B 70 00 19 FA" /></div>
+      </div>
+      <p style="font-size:12px;color:#888;margin-top:-8px;margin-bottom:12px">
+        If the drawer doesn't pop with <code>1B 70 00 19 FA</code>, try <code>1B 70 01 19 FA</code> (pin 5),
+        <code>1B 70 00 40 50</code>, or <code>07</code>, then Test.
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-navy" onclick="saveDrawerSettings()">Save Drawer Settings</button>
+        <button class="btn btn-gray" onclick="testDrawer()">Test — Pop Drawer</button>
+        <button class="btn btn-gray" onclick="loadDrawerPorts()">Refresh Ports</button>
+      </div>
+      <div id="drawerStatus" style="font-size:13px;margin-top:10px"></div>
+    </div>
+
     <!-- Zebra Printer -->
     <div class="card settings-section">
       <div class="card-title">Zebra Barcode Printer</div>
@@ -308,6 +346,12 @@
         document.getElementById('twilioFrom').value = s.twilio_from_number || '';
         document.getElementById('zebraIp').value = s.zebra_ip || '';
         document.getElementById('zebraPort').value = s.zebra_port || '9100';
+        document.getElementById('drawerType').value = s.drawer_type || 'serial';
+        document.getElementById('drawerBaud').value = s.drawer_baud || '9600';
+        document.getElementById('drawerKickHex').value = s.drawer_kick_hex || '1B 70 00 19 FA';
+        window._savedDrawerPort = s.drawer_com_port || '';
+        toggleDrawerFields();
+        loadDrawerPorts();
       }
 
       if (termCfgRes.success) {
@@ -345,6 +389,53 @@
       };
       const res = await window.api.updateReceiptConfig(data);
       showToast(res.success ? 'Receipt settings saved!' : (res.error || 'Failed'), res.success ? 'success' : 'error');
+    }
+
+    function toggleDrawerFields() {
+      const type = document.getElementById('drawerType').value;
+      document.getElementById('drawerPortGroup').style.display = type === 'serial' ? 'block' : 'none';
+      document.getElementById('drawerAdvanced').style.display = type === 'serial' ? 'flex' : 'none';
+    }
+
+    async function loadDrawerPorts() {
+      const sel = document.getElementById('drawerComPort');
+      try {
+        const res = await window.api.listDrawerPorts();
+        const ports = (res.success && res.ports) ? res.ports : [];
+        const want = document.getElementById('drawerComPort').value || window._savedDrawerPort || '';
+        sel.innerHTML = '<option value="">Auto-detect</option>' + ports.map(p => {
+          const label = `${p.path}${p.manufacturer ? ' — ' + p.manufacturer : ''}${p.vendorId ? ' (VID ' + p.vendorId + ')' : ''}`;
+          return `<option value="${p.path}">${label}</option>`;
+        }).join('');
+        sel.value = want;
+        document.getElementById('drawerStatus').innerHTML = ports.length
+          ? `<span style="color:#555">${ports.length} serial port(s) found.</span>`
+          : `<span style="color:#b45309">No serial ports detected. Plug in the drawer and click Refresh Ports.</span>`;
+      } catch (e) {
+        document.getElementById('drawerStatus').innerHTML = `<span style="color:#c0392b">${e}</span>`;
+      }
+    }
+
+    async function saveDrawerSettings() {
+      await Promise.all([
+        window.api.updateSetting('drawer_type', document.getElementById('drawerType').value),
+        window.api.updateSetting('drawer_com_port', document.getElementById('drawerComPort').value),
+        window.api.updateSetting('drawer_baud', document.getElementById('drawerBaud').value.trim() || '9600'),
+        window.api.updateSetting('drawer_kick_hex', document.getElementById('drawerKickHex').value.trim() || '1B 70 00 19 FA'),
+      ]);
+      window._savedDrawerPort = document.getElementById('drawerComPort').value;
+      showToast('Drawer settings saved!', 'success');
+    }
+
+    async function testDrawer() {
+      const statusEl = document.getElementById('drawerStatus');
+      statusEl.innerHTML = '<span style="color:#555">Sending kick…</span>';
+      // Save first so the test uses the current selections
+      await saveDrawerSettings();
+      const res = await window.api.popDrawer('Settings test');
+      statusEl.innerHTML = res.success
+        ? `<span style="color:#16a34a">✓ Drawer opened${res.port ? ' on ' + res.port : ''} (${res.via || ''}).</span>`
+        : `<span style="color:#c0392b">✗ ${res.error || 'Could not open drawer'}</span>`;
     }
 
     function onTerminalTypeChange() {

@@ -1276,6 +1276,9 @@
       if (cart.length === 0) return;
       if (cartRequiresAge() && !attachedCustomer) { showToast('Scan a customer ID — this sale has an age-restricted item', 'warning'); openAttachCustomer(); return; }
       if (isAgeBlocked()) return;
+      // Pop the cash drawer the moment Cash is pressed (fire-and-forget — a
+      // misconfigured drawer shouldn't block the sale or nag the cashier).
+      window.api.popDrawer('Opened on Cash').catch(() => {});
       const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
       const total = Math.max(0, subtotal + subtotal * taxRate - discountAmt - loyaltyDiscount - promoDiscount);
       document.getElementById('cashTotalDisplay').textContent = `Total: ${fmt(total)}`;

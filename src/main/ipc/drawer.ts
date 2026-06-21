@@ -1,20 +1,29 @@
 import { ipcMain } from 'electron';
 import { getDb } from '../db/schema';
 import { getCurrentSession } from './auth';
-import { openCashDrawer } from '../services/printer';
+import { popCashDrawer, listSerialPorts } from '../services/cashDrawer';
 import { nowCT } from '../utils/time';
 
 export function registerDrawerHandlers(): void {
-  // ── drawer:open — manual "Pop Drawer" button ──────────────────────────────
+  // ── drawer:open — pop the drawer (manual button or on Cash click) ──────────
   ipcMain.handle('drawer:open', async (_event, note?: string) => {
     try {
       const db = getDb();
       const session = getCurrentSession();
-      const r = await openCashDrawer();
+      const r = await popCashDrawer();
       db.prepare(`INSERT INTO drawer_log (cashier_id, cashier_name, event, amount, note) VALUES (?, ?, ?, ?, ?)`)
         .run(session?.userId || null, session?.username || null, 'manual_open', 0,
-             r.success ? (note || 'Manual pop') : `${note || 'Manual pop'} — ${r.error || 'drawer not opened'}`);
+             r.success ? (note || 'Drawer opened') : `${note || 'Pop'} — ${r.error || 'drawer not opened'}`);
       return r;
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // ── drawer:ports — list serial ports (for Settings) ───────────────────────
+  ipcMain.handle('drawer:ports', async () => {
+    try {
+      return { success: true, ports: await listSerialPorts() };
     } catch (err) {
       return { success: false, error: String(err) };
     }
