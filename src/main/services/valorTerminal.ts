@@ -5,21 +5,14 @@ import { app } from 'electron';
 import type { CardTerminal, TerminalResult, ValorPayload } from './cardTerminal';
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  VALOR VP100 — Semi-Integration TCP Server
+//  VALOR VP100 — Semi-Integration over TCP (POS is the SERVER)
 //
-//  Architecture: POS runs a TCP server. Terminal connects TO the POS.
-//  On connect the POS sends the pending transaction JSON (\n terminated).
-//  Terminal responds with the result JSON.
+//  Per the Valor engineer's reference script: the POS runs a TCP server; the
+//  VP100 connects TO the POS, and the POS pushes the transaction JSON on the
+//  open socket. The terminal processes the card and replies with the result.
 //
-//  Setup (one-time, in Valor Portal):
-//    Device Management → EPI → Edit Parameter
-//    → Terminal & Transaction → Valor Connect
-//    → Enable Connection Type = TCP
-//    → IP = <this PC's IP>  Port = 5000
-//    → Save, then do a Param Download on the terminal
-//
-//  The terminal will then show "Server is Waiting for Transaction" when
-//  it connects.
+//  The VP100's Valor Connect target (in the Valor Portal / EPI) must point at
+//  THIS PC's IP and port. Listen port defaults to 5000.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class ValorTerminal implements CardTerminal {
@@ -30,13 +23,10 @@ export class ValorTerminal implements CardTerminal {
     resolve:       (result: TerminalResult) => void;
     timeoutHandle: ReturnType<typeof setTimeout>;
   } | null = null;
-  private cancelRequested = false;
 
   constructor(private listenPort: number) {
     this.startServer();
   }
-
-  // ── Logging ──────────────────────────────────────────────────────────────
 
   private log(msg: string): void {
     try {
@@ -45,13 +35,10 @@ export class ValorTerminal implements CardTerminal {
     } catch { /* non-fatal */ }
   }
 
-  // ── TCP server ────────────────────────────────────────────────────────────
-
   private startServer(): void {
     this.server = net.createServer((socket) => {
       this.log(`Terminal connected from ${socket.remoteAddress}`);
 
-      // Replace any stale socket
       if (this.connectedSocket && !this.connectedSocket.destroyed) {
         this.connectedSocket.destroy();
       }
@@ -60,9 +47,8 @@ export class ValorTerminal implements CardTerminal {
       const chunks: Buffer[] = [];
 
       socket.on('data', (chunk: Buffer) => {
-        this.log(`DATA (${chunk.length} bytes): ${chunk.toString('utf8').substring(0, 300)}`);
+        this.log(`DATA (${chunk.length} bytes): ${chunk.toString('utf8').substring(0, 400)}`);
         chunks.push(chunk);
-
         const raw = Buffer.concat(chunks).toString('utf8').trim();
         try {
           JSON.parse(raw); // throws if incomplete
@@ -87,8 +73,8 @@ export class ValorTerminal implements CardTerminal {
         this.log(`Socket error: ${err.message}`);
       });
 
-      // If a transaction is already waiting, send it immediately
-      if (this.pendingTransaction && !this.cancelRequested) {
+      // If a sale is already waiting, push it the moment the terminal connects
+      if (this.pendingTransaction) {
         this.log('Terminal connected — sending pending transaction');
         socket.write(this.pendingTransaction.body + '\n');
       }
@@ -105,27 +91,12 @@ export class ValorTerminal implements CardTerminal {
     });
   }
 
-  // ── sendPayment ───────────────────────────────────────────────────────────
-
   sendPayment(payload: ValorPayload): Promise<TerminalResult> {
-    this.cancelRequested = false;
-
+    // Minimal request matching the Valor engineer's reference (AMOUNT = cents).
     const body = JSON.stringify({
       TRAN_MODE: '1',
       TRAN_CODE: '1',
-      AMOUNT: payload.amount.toFixed(2),
-      TAX_AMOUNT: payload.taxAmount.toFixed(2),
-      ...(payload.discountAmount > 0 && { DISCOUNT_AMOUNT: payload.discountAmount.toFixed(2) }),
-      TIP_ENTRY: '1',
-      SIGNATURE: '1',
-      PAPER_RECEIPT: '1',
-      MOBILE_ENTRY: '0',
-      ITEM_DESCRIPTION: payload.lineItems.map(item => ({
-        ITEM_NAME: item.name.substring(0, 40),
-        ITEM_QTY: String(item.qty),
-        ITEM_PRICE: item.unitPrice.toFixed(2),
-        ITEM_TOTAL: item.total.toFixed(2),
-      })),
+      AMOUNT: String(Math.round(payload.amount * 100)),
     });
 
     this.log(`SEND txn=${payload.transactionId} | ${body}`);
@@ -136,7 +107,7 @@ export class ValorTerminal implements CardTerminal {
         this.log('TIMEOUT 90s');
         resolve({
           approved: false,
-          errorMessage: 'Terminal timed out. Make sure the terminal shows "Server is Waiting for Transaction".',
+          errorMessage: 'Terminal timed out. Make sure the VP100 is pointed at this PC and shows "Server is Waiting for Transaction".',
         });
       }, 90_000);
 
@@ -146,15 +117,12 @@ export class ValorTerminal implements CardTerminal {
         this.log('Terminal already connected — sending immediately');
         this.connectedSocket.write(body + '\n');
       } else {
-        this.log('No terminal connected — will send when terminal connects');
+        this.log('No terminal connected yet — will send when it connects');
       }
     });
   }
 
-  // ── cancelTransaction ────────────────────────────────────────────────────
-
   cancelTransaction(): Promise<void> {
-    this.cancelRequested = true;
     if (this.pendingTransaction) {
       const { resolve, timeoutHandle } = this.pendingTransaction;
       this.pendingTransaction = null;
@@ -164,8 +132,6 @@ export class ValorTerminal implements CardTerminal {
     this.log('CANCEL requested by cashier');
     return Promise.resolve();
   }
-
-  // ── testConnection ────────────────────────────────────────────────────────
 
   testConnection(): Promise<boolean> {
     const running   = this.server?.listening ?? false;
@@ -178,15 +144,11 @@ export class ValorTerminal implements CardTerminal {
     return !!(this.connectedSocket && !this.connectedSocket.destroyed);
   }
 
-  // ── destroy ───────────────────────────────────────────────────────────────
-
   destroy(): void {
     if (this.connectedSocket) { try { this.connectedSocket.destroy(); } catch { /* ignore */ } this.connectedSocket = null; }
     if (this.server)          { try { this.server.close();           } catch { /* ignore */ } this.server = null; }
     this.log('ValorTerminal server destroyed');
   }
-
-  // ── parseResponse ─────────────────────────────────────────────────────────
 
   private parseResponse(raw: string): TerminalResult {
     let resp: Record<string, string>;

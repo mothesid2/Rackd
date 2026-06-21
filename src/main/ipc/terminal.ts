@@ -1,12 +1,16 @@
 import { ipcMain, app } from 'electron';
+import os from 'os';
 import path from 'path';
 import fs from 'fs';
 import { getDb } from '../db/schema';
 import { getTerminal } from '../services/cardTerminal';
 import type { ValorPayload } from '../services/cardTerminal';
 
-// Singleton terminal instance — replaced whenever config changes
+// Singleton terminal instance — reused unless the config actually changes.
+// Recreating it would respawn the TCP server and fail to rebind the port,
+// which is why the Test button used to report "server not running".
 let activeTerminal: ReturnType<typeof getTerminal> | null = null;
+let activeKey = '';
 
 function loadTerminal() {
   const db = getDb();
@@ -16,8 +20,19 @@ function loadTerminal() {
   const type = get('terminal_type') || 'mock';
   const ip   = get('terminal_ip');
   const port = parseInt(get('terminal_port') || '5000', 10);
+  const key  = `${type}|${ip}|${port}`;
 
+  // Reuse the live instance (and its already-listening server) if unchanged.
+  if (activeTerminal && key === activeKey) {
+    return { terminal: activeTerminal, type };
+  }
+  // Config changed (or first run) — tear down the old server, start fresh.
+  const old = activeTerminal as unknown as { destroy?: () => void };
+  if (old && typeof old.destroy === 'function') {
+    try { old.destroy(); } catch { /* ignore */ }
+  }
   activeTerminal = getTerminal(type, ip, port);
+  activeKey = key;
   return { terminal: activeTerminal, type };
 }
 
@@ -60,19 +75,31 @@ export function registerTerminalHandlers(): void {
         return { success: true, message: 'Mock terminal always responds OK.' };
       }
       const serverRunning = await terminal.testConnection();
-      const termConnected = typeof (terminal as any).isTerminalConnected === 'function'
-        && (terminal as any).isTerminalConnected();
+      const tt = terminal as unknown as { isTerminalConnected?: () => boolean };
+      const termConnected = typeof tt.isTerminalConnected === 'function' && tt.isTerminalConnected();
       return {
         success: serverRunning,
         message: !serverRunning
           ? 'Server not running — restart the app.'
           : termConnected
             ? '✓ Server running — terminal is connected.'
-            : 'Server running — terminal not yet connected. Complete Valor Portal setup and do a Param Download on the terminal.',
+            : 'Server running — waiting for the VP100 to connect. The terminal must be pointed at this PC\'s IP (see below).',
       };
     } catch (err) {
       return { success: false, message: String(err) };
     }
+  });
+
+  // ── terminal:localIps — this PC's LAN IPv4 address(es) ────────────────────
+  ipcMain.handle('terminal:localIps', () => {
+    const ips: string[] = [];
+    const ifaces = os.networkInterfaces();
+    for (const name of Object.keys(ifaces)) {
+      for (const ni of ifaces[name] || []) {
+        if (ni.family === 'IPv4' && !ni.internal) ips.push(ni.address);
+      }
+    }
+    return { success: true, ips };
   });
 
   // ── terminal:getConfig ───────────────────────────────────────────────────
@@ -109,12 +136,8 @@ export function registerTerminalHandlers(): void {
           db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, config[key]);
         }
       }
-      // Destroy old terminal (closes TCP server) then start fresh
-      if (activeTerminal && typeof (activeTerminal as any).destroy === 'function') {
-        (activeTerminal as any).destroy();
-      }
-      activeTerminal = null;
-      loadTerminal(); // restart server with new port if changed
+      // loadTerminal() detects the config change and restarts the server.
+      loadTerminal();
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };

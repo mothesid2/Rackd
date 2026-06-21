@@ -15,6 +15,7 @@ import { registerTerminalHandlers } from './ipc/terminal';
 import { registerZebraHandlers } from './ipc/zebra';
 import { registerPromoHandlers } from './ipc/promos';
 import { registerLoyaltyHandlers, runPointExpiry } from './ipc/loyalty';
+import { registerDrawerHandlers } from './ipc/drawer';
 
 app.whenReady().then(() => {
   // Initialize DB
@@ -40,6 +41,7 @@ app.whenReady().then(() => {
   registerZebraHandlers();
   registerPromoHandlers();
   registerLoyaltyHandlers();
+  registerDrawerHandlers();
 
   // "Use it or lose it" — expire stale loyalty points once at startup
   try { runPointExpiry(getDb()); } catch { /* non-fatal */ }

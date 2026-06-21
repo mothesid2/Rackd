@@ -436,6 +436,10 @@
 
     <!-- PRODUCT COLUMN -->
     <div class="product-col">
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button class="btn btn-gray" style="flex:1;font-size:13px" onclick="openMiscModal()">+ MISC / Open Item</button>
+        <button class="btn btn-gray" style="flex:1;font-size:13px" onclick="openDrawerModal()">💵 Cash Drawer</button>
+      </div>
       <div class="product-search-wrap">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -506,6 +510,10 @@
           <textarea id="idScanInput" rows="2" placeholder="Waiting for scan…" autocomplete="off"
             style="width:100%;border:1px solid #cdd9ec;border-radius:8px;padding:8px;font-size:12px;font-family:monospace;resize:none;color:#888;background:#fff"></textarea>
           <div id="idScanStatus" style="font-size:12px;margin-top:6px;min-height:16px"></div>
+          <button onclick="noIdVerified()" style="width:100%;margin-top:8px;background:#1e3a5f;color:#fff;border:none;border-radius:8px;padding:8px;font-size:13px;font-weight:600;cursor:pointer">
+            No ID to scan — Customer verified 21+ →
+          </button>
+          <div style="font-size:11px;color:#777;margin-top:4px;text-align:center">Enter their info manually and skip the scan. Logged as a manual age verification.</div>
         </div>
 
         <!-- Tab switcher -->
@@ -648,6 +656,42 @@
     ⚠ Mock terminal mode — no real payments will be processed
   </div>
 
+  <!-- MISC / OPEN-PRICE ITEM MODAL -->
+  <div class="modal-overlay" id="miscModal" style="display:none">
+    <div class="modal" style="max-width:380px">
+      <button class="modal-close" onclick="closeModal('miscModal')">×</button>
+      <div class="modal-title">MISC / Open-Price Item</div>
+      <p style="font-size:13px;color:#666;margin-bottom:14px">For items with no barcode. Enter a price and an optional description.</p>
+      <div class="form-group">
+        <label>Price ($) *</label>
+        <input type="number" id="miscPrice" step="0.01" min="0" style="font-size:20px;text-align:right" placeholder="0.00" />
+      </div>
+      <div class="form-group">
+        <label>Description (optional)</label>
+        <input type="text" id="miscDesc" maxlength="40" placeholder="e.g. Lighter, single item" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('miscModal')">Cancel</button>
+        <button class="btn btn-navy" id="addMiscBtn" onclick="addMiscItem()">Add to Cart</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASH DRAWER MODAL -->
+  <div class="modal-overlay" id="drawerModal" style="display:none">
+    <div class="modal" style="max-width:440px">
+      <button class="modal-close" onclick="closeModal('drawerModal')">×</button>
+      <div class="modal-title">Cash Drawer</div>
+      <div id="drawerSummary" style="font-size:14px;margin:10px 0 14px">Loading…</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <button class="btn btn-navy" style="flex:1" onclick="popDrawer()">Pop Drawer</button>
+        <button class="btn btn-green" style="flex:1" onclick="recordDrop()">Record Cash Drop</button>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px">Recent Activity</div>
+      <div id="drawerLog" style="max-height:200px;overflow-y:auto;border:1px solid #eee;border-radius:8px;font-size:13px"></div>
+    </div>
+  </div>
+
   <!-- SALE COMPLETE MODAL -->
   <div class="modal-overlay" id="saleCompleteModal" style="display:none">
     <div class="modal" style="max-width:400px;text-align:center">
@@ -696,6 +740,7 @@
     let promoCode = '';          // applied promo/birthday code
     let promoBenefit = null;     // { kind, value, category } of the promo
     let promoDiscount = 0;       // computed $ value of the promo
+    let manualAgeVerified = false; // cashier confirmed 21+ visually without an ID scan
 
     // ---- Init ----
     document.addEventListener('DOMContentLoaded', async () => {
@@ -922,6 +967,35 @@
       renderCart();
     }
 
+    // ---- MISC / open-price item (no barcode) ----
+    function openMiscModal() {
+      document.getElementById('miscPrice').value = '';
+      document.getElementById('miscDesc').value = '';
+      openModal('miscModal');
+      setTimeout(() => document.getElementById('miscPrice').focus(), 80);
+    }
+
+    function addMiscItem() {
+      const price = parseFloat(document.getElementById('miscPrice').value);
+      if (isNaN(price)) { showToast('Enter a price', 'warning'); return; }
+      const desc = document.getElementById('miscDesc').value.trim();
+      cart.push({
+        product_id: null,
+        variant_id: null,
+        name: desc || 'Misc Item',
+        description: desc || 'Misc Item',
+        category: 'Misc',
+        qty: 1,
+        unit_price: price,
+        line_total: price,
+        stock_qty: 9999,
+        age_restricted: 0,
+        misc: true,
+      });
+      closeModal('miscModal');
+      renderCart();
+    }
+
     // ---- Cart Rendering ----
     function renderCart() {
       const tbody = document.getElementById('cartBody');
@@ -981,6 +1055,7 @@
       cart = [];
       attachedCustomer = null;
       ageOverride = false;
+      manualAgeVerified = false;
       discountAmt = 0;
       pointsRedeemed = 0;
       loyaltyDiscount = 0;
@@ -1079,7 +1154,8 @@
         age_at_sale: age,
         min_age: minAge,
         result: ageOverride ? 'OVERRIDE' : 'PASS',
-        method: ageOverride ? 'military_override' : (attachedCustomer.dob ? 'id_on_file' : 'manual'),
+        method: ageOverride ? 'military_override'
+          : (attachedCustomer.dob ? 'id_on_file' : (manualAgeVerified ? 'manual_visual_21plus' : 'manual')),
       };
     }
 
@@ -1350,11 +1426,12 @@
       const data = {
         customer_id: attachedCustomer?.id,
         items: cart.map(i => ({
-          product_id: i.product_id,
+          product_id: i.product_id || null,
           variant_id: i.variant_id || undefined,
           qty: i.qty,
           unit_price: i.unit_price,
           line_total: i.line_total,
+          description: i.description || undefined,
         })),
         subtotal,
         tax_rate: taxRate,
@@ -1524,6 +1601,7 @@
     function detachCustomer() {
       attachedCustomer = null;
       ageOverride = false;
+      manualAgeVerified = false;
       pointsRedeemed = 0;
       loyaltyDiscount = 0;
       rewardBenefit = null;
@@ -1863,6 +1941,78 @@
         ` — enter the phone number, then Create &amp; Attach.`;
 
       setTimeout(() => document.getElementById('nc-phone').focus(), 50);
+    }
+
+    // ---- No ID on hand — cashier visually verifies 21+ ----
+    function noIdVerified() {
+      manualAgeVerified = true;
+      switchCustTab('new');
+      document.getElementById('idScanStatus').innerHTML =
+        '<span style="color:#166534;font-weight:600">✓ Manual 21+ verification — enter the customer\'s info, then Create &amp; Attach.</span>';
+      setTimeout(() => document.getElementById('nc-first').focus(), 60);
+    }
+
+    // ---- Cash Drawer ----
+    async function openDrawerModal() {
+      openModal('drawerModal');
+      await refreshDrawer();
+    }
+
+    async function refreshDrawer() {
+      const sumEl = document.getElementById('drawerSummary');
+      const logEl = document.getElementById('drawerLog');
+      try {
+        const res = await window.api.getDrawerSummary();
+        if (res.success) {
+          const s = res.summary;
+          sumEl.innerHTML = `
+            <div style="display:flex;justify-content:space-between;padding:3px 0"><span>Starting float</span><strong>${fmt(s.starting_cash)}</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:3px 0"><span>Cash sales this shift</span><strong>${fmt(s.cash_sales)}</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;color:#888"><span>Card sales (${s.sale_count} sales)</span><span>${fmt(s.card_sales)}</span></div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid #eee;margin-top:4px;font-size:16px"><span>Expected in drawer</span><strong style="color:#2e7d32">${fmt(s.expected_in_drawer)}</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:3px 0"><span>Suggested cash drop</span><strong>${fmt(s.suggested_drop)}</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12px;color:#888"><span>Leaves float of</span><span>${fmt(s.float_after_drop)}</span></div>
+          `;
+        } else { sumEl.textContent = res.error || 'Could not load drawer summary'; }
+      } catch (e) { sumEl.textContent = String(e); }
+
+      try {
+        const lr = await window.api.getDrawerLog(40);
+        if (lr.success) {
+          logEl.innerHTML = lr.log.length ? lr.log.map(e => {
+            const label = { cash_sale: 'Cash sale', manual_open: 'Manual pop', cash_drop: 'Cash drop' }[e.event] || e.event;
+            return `<div style="display:flex;justify-content:space-between;padding:7px 10px;border-bottom:1px solid #f3f3f3">
+              <span><strong>${label}</strong> <span style="color:#999">${esc(e.note || '')}</span></span>
+              <span style="white-space:nowrap;color:#666">${fmtDateTime(e.created_at)}</span>
+            </div>`;
+          }).join('') : '<div style="padding:12px;text-align:center;color:#aaa">No activity yet</div>';
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    async function popDrawer() {
+      const res = await window.api.popDrawer('Manual pop from POS');
+      showToast(res.success ? 'Drawer opened' : (res.error || 'Could not open drawer'), res.success ? 'success' : 'warning');
+      await refreshDrawer();
+    }
+
+    async function recordDrop() {
+      const res = await window.api.getDrawerSummary();
+      const suggested = res.success ? res.summary.suggested_drop : 0;
+      const input = prompt('Cash drop amount to remove from the drawer:', suggested.toFixed(2));
+      if (input == null) return;
+      const amt = parseFloat(input);
+      if (isNaN(amt) || amt < 0) { showToast('Enter a valid amount', 'warning'); return; }
+      const r = await window.api.recordCashDrop(amt, 'End-of-shift drop');
+      showToast(r.success ? `Cash drop of ${fmt(amt)} logged` : (r.error || 'Failed'), r.success ? 'success' : 'error');
+      await refreshDrawer();
+    }
+
+    function fmtDateTime(s) {
+      if (!s) return '';
+      const d = new Date(s.replace(' ', 'T'));
+      if (isNaN(d)) return s;
+      return d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     }
   </script>
 </body>

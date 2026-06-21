@@ -47,6 +47,13 @@ contextBridge.exposeInMainWorld('api', {
   getTerminalConfig: () => ipcRenderer.invoke('terminal:getConfig'),
   saveTerminalConfig: (config: object) => ipcRenderer.invoke('terminal:saveConfig', config),
   getTerminalCertStatus: () => ipcRenderer.invoke('terminal:certStatus'),
+  getLocalIps: () => ipcRenderer.invoke('terminal:localIps'),
+
+  // Cash drawer
+  popDrawer: (note?: string) => ipcRenderer.invoke('drawer:open', note),
+  getDrawerSummary: () => ipcRenderer.invoke('drawer:summary'),
+  getDrawerLog: (limit?: number) => ipcRenderer.invoke('drawer:log', limit),
+  recordCashDrop: (amount: number, note?: string) => ipcRenderer.invoke('drawer:drop', amount, note),
 
   // Customers
   getCustomers: (query?: string) => ipcRenderer.invoke('customers:getAll', query),

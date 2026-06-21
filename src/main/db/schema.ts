@@ -136,6 +136,16 @@ export function initSchema(db: Database.Database): void {
       closed_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS drawer_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cashier_id INTEGER REFERENCES users(id),
+      cashier_name TEXT,
+      event TEXT NOT NULL,
+      amount REAL DEFAULT 0,
+      note TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS receipt_config (
       id INTEGER PRIMARY KEY DEFAULT 1,
       store_name TEXT DEFAULT 'My Store',
@@ -249,6 +259,8 @@ export function initSchema(db: Database.Database): void {
     INSERT OR IGNORE INTO settings (key, value) VALUES ('twilio_from_number', '');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('zebra_ip', '');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('zebra_port', '9100');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('cash_float', '200');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('drawer_auto_pop', '1');
   `);
 
   // Migrate existing DBs — add columns if they don't exist yet
@@ -291,4 +303,8 @@ export function initSchema(db: Database.Database): void {
 
   // Add printer_type setting if not present
   db.exec(`INSERT OR IGNORE INTO settings (key, value) VALUES ('printer_type', 'star')`);
+
+  // Cash drawer: opening float carried per shift; MISC/open-price line descriptions
+  try { db.exec(`ALTER TABLE shift_totals ADD COLUMN starting_cash REAL DEFAULT 200`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE transaction_items ADD COLUMN description TEXT`); } catch { /* already exists */ }
 }

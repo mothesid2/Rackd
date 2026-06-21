@@ -141,13 +141,17 @@
         </select>
       </div>
 
-      <!-- Valor VP100 credential fields — greyed out in mock mode -->
+      <!-- Valor VP100 connection fields — greyed out in mock mode -->
       <div id="valorFields">
         <p style="font-size:12px;color:#666;margin:0 0 12px">
-          The VP100 connects <strong>to this computer</strong>. Set this PC's IP
-          (<strong>11.11.20.50</strong>) and the port below in the Valor Portal under
-          Device Management → EPI → Edit Parameter → Valor Connect, then do a Param Download on the terminal.
+          The VP100 connects <strong>to this computer</strong>. In the Valor Portal
+          (Device Management → EPI → Edit Parameter → Valor Connect) set Connection Type = <strong>TCP</strong>,
+          point it at the IP + port below, then do a <strong>Param Download</strong> on the terminal.
         </p>
+        <div class="form-group" style="max-width:360px">
+          <label>This PC's IP — point the terminal here</label>
+          <input type="text" id="localIp" readonly style="background:#f1f5f9;font-weight:700" />
+        </div>
         <div class="form-row">
           <div class="form-group" style="max-width:160px">
             <label>Listen Port</label>
@@ -312,6 +316,12 @@
         document.getElementById('terminalPort').value = c.terminal_port || '5000';
         onTerminalTypeChange();
       }
+
+      try {
+        const ipRes = await window.api.getLocalIps();
+        const el = document.getElementById('localIp');
+        if (el) el.value = (ipRes.success && ipRes.ips.length) ? ipRes.ips.join('  ·  ') : 'no network';
+      } catch { /* ignore */ }
 
       if (configRes.success && configRes.config) {
         const c = configRes.config;

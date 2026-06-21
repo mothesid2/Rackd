@@ -3,13 +3,15 @@ import { DateTime } from 'luxon';
 import { getDb } from '../db/schema';
 import { getCurrentSession } from './auth';
 import { nowCT, todayCT, TZ } from '../utils/time';
+import { openCashDrawer } from '../services/printer';
 
 interface TransactionItem {
-  product_id: number;
+  product_id: number | null;
   variant_id?: number;
   qty: number;
   unit_price: number;
   line_total: number;
+  description?: string;   // MISC / open-price line label
 }
 
 interface CreateTransactionData {
@@ -107,7 +109,7 @@ export function registerTransactionHandlers(): void {
       if (!transaction) return { success: false, error: 'Transaction not found' };
 
       const items = db.prepare(`
-        SELECT ti.*, COALESCE(p.name || ' - ' || v.label, p.name) AS product_name
+        SELECT ti.*, COALESCE(p.name || ' - ' || v.label, p.name, ti.description, 'Item') AS product_name
         FROM transaction_items ti
         LEFT JOIN products p ON ti.product_id = p.id
         LEFT JOIN product_variants v ON ti.variant_id = v.id
@@ -156,15 +158,16 @@ export function registerTransactionHandlers(): void {
 
         for (const item of data.items) {
           db.prepare(`
-            INSERT INTO transaction_items (transaction_id, product_id, variant_id, qty, unit_price, line_total)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `).run(txnId, item.product_id, item.variant_id || null, item.qty, item.unit_price, item.line_total);
+            INSERT INTO transaction_items (transaction_id, product_id, variant_id, qty, unit_price, line_total, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(txnId, item.product_id || null, item.variant_id || null, item.qty, item.unit_price, item.line_total, item.description || null);
 
-          // Deduct inventory — from the variant if this line is a variant, else the product
+          // Deduct inventory — from the variant if this line is a variant, else the
+          // product. MISC/open-price lines have no product_id, so nothing to deduct.
           if (item.variant_id) {
             db.prepare(`UPDATE product_variants SET stock_qty = MAX(0, stock_qty - ?) WHERE id = ?`)
               .run(item.qty, item.variant_id);
-          } else {
+          } else if (item.product_id) {
             db.prepare(`UPDATE products SET stock_qty = MAX(0, stock_qty - ?), updated_at = ? WHERE id = ?`)
               .run(item.qty, nowCT(), item.product_id);
           }
@@ -176,9 +179,12 @@ export function registerTransactionHandlers(): void {
         ).get(session?.userId || 0) as { id: number } | undefined;
 
         if (!openShift && session?.userId) {
+          const float = parseFloat(
+            (db.prepare("SELECT value FROM settings WHERE key = 'cash_float'").get() as { value: string } | undefined)?.value || '200'
+          ) || 200;
           const newShiftResult = db.prepare(
-            `INSERT INTO shift_totals (cashier_id, opened_at) VALUES (?, ?)`
-          ).run(session.userId, nowCT());
+            `INSERT INTO shift_totals (cashier_id, opened_at, starting_cash) VALUES (?, ?, ?)`
+          ).run(session.userId, nowCT(), float);
           openShift = { id: newShiftResult.lastInsertRowid as number };
         }
 
@@ -258,6 +264,20 @@ export function registerTransactionHandlers(): void {
       });
 
       const { txnId, loyalty } = txn();
+
+      // Auto-pop the cash drawer on cash sales (if enabled) and log it.
+      if (data.payment_method === 'cash' || data.payment_method === 'split') {
+        const autoPop = (db.prepare("SELECT value FROM settings WHERE key = 'drawer_auto_pop'").get() as { value: string } | undefined)?.value !== '0';
+        if (autoPop) {
+          openCashDrawer().then((r) => {
+            db.prepare(`INSERT INTO drawer_log (cashier_id, cashier_name, event, amount, note) VALUES (?, ?, ?, ?, ?)`)
+              .run(session?.userId || null, session?.username || null, 'cash_sale',
+                   data.cash_tendered || data.total,
+                   r.success ? `Txn #${txnId} — drawer opened` : `Txn #${txnId} — ${r.error || 'drawer not opened'}`);
+          }).catch(() => { /* non-fatal */ });
+        }
+      }
+
       return { success: true, id: txnId, loyalty };
     } catch (err) {
       return { success: false, error: String(err) };

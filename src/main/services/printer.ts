@@ -243,6 +243,40 @@ function buildReceiptLines(
 }
 
 /**
+ * Pop the cash drawer.
+ *
+ * Standard retail wiring: the cash drawer plugs into the receipt printer's
+ * RJ11/RJ12 "kick" port and is opened by sending an ESC/POS kick pulse through
+ * the printer. So this reuses the configured receipt printer connection.
+ * If no printer is connected (or interface = none), it returns a soft failure
+ * and the caller just logs it — the drawer can still be opened with its key.
+ */
+export async function openCashDrawer(): Promise<{ success: boolean; error?: string }> {
+  const db = getDb();
+  const printerInterface = (db.prepare("SELECT value FROM settings WHERE key = 'printer_interface'").get() as { value: string } | undefined)?.value || 'printer';
+  if (printerInterface === 'none') {
+    return { success: false, error: 'No receipt printer configured (the drawer pops through the printer).' };
+  }
+  try {
+    const printerType = (db.prepare("SELECT value FROM settings WHERE key = 'printer_type'").get() as { value: string } | undefined)?.value === 'star'
+      ? types.STAR : types.EPSON;
+    const printer = new ThermalPrinterClass({
+      type: printerType,
+      interface: printerInterface,
+      removeSpecialCharacters: false,
+      lineCharacter: '-',
+    });
+    const connected = await printer.isPrinterConnected();
+    if (!connected) return { success: false, error: 'Receipt printer not reachable.' };
+    printer.openCashDrawer();
+    await printer.execute();
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+}
+
+/**
  * Build a plain-text SMS receipt (short form).
  */
 export function buildSmsReceipt(

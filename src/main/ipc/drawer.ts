@@ -1,0 +1,86 @@
+import { ipcMain } from 'electron';
+import { getDb } from '../db/schema';
+import { getCurrentSession } from './auth';
+import { openCashDrawer } from '../services/printer';
+import { nowCT } from '../utils/time';
+
+export function registerDrawerHandlers(): void {
+  // ── drawer:open — manual "Pop Drawer" button ──────────────────────────────
+  ipcMain.handle('drawer:open', async (_event, note?: string) => {
+    try {
+      const db = getDb();
+      const session = getCurrentSession();
+      const r = await openCashDrawer();
+      db.prepare(`INSERT INTO drawer_log (cashier_id, cashier_name, event, amount, note) VALUES (?, ?, ?, ?, ?)`)
+        .run(session?.userId || null, session?.username || null, 'manual_open', 0,
+             r.success ? (note || 'Manual pop') : `${note || 'Manual pop'} — ${r.error || 'drawer not opened'}`);
+      return r;
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // ── drawer:summary — current shift cash position ──────────────────────────
+  ipcMain.handle('drawer:summary', async () => {
+    try {
+      const db = getDb();
+      const session = getCurrentSession();
+      const float = parseFloat(
+        (db.prepare("SELECT value FROM settings WHERE key = 'cash_float'").get() as { value: string } | undefined)?.value || '200'
+      ) || 200;
+
+      const shift = db.prepare(
+        `SELECT * FROM shift_totals WHERE cashier_id = ? AND closed_at IS NULL ORDER BY opened_at DESC LIMIT 1`
+      ).get(session?.userId || 0) as
+        { starting_cash: number; cash_total: number; card_total: number; sale_count: number; opened_at: string } | undefined;
+
+      const startingCash = shift?.starting_cash ?? float;
+      const cashSales = shift?.cash_total ?? 0;       // already nets cash refunds
+      const expectedInDrawer = startingCash + cashSales;
+      const suggestedDrop = Math.max(0, cashSales);   // deposit cash sales, leave the float
+
+      return {
+        success: true,
+        summary: {
+          starting_cash: startingCash,
+          cash_sales: cashSales,
+          card_sales: shift?.card_total ?? 0,
+          sale_count: shift?.sale_count ?? 0,
+          expected_in_drawer: expectedInDrawer,
+          suggested_drop: suggestedDrop,
+          float_after_drop: startingCash,
+          opened_at: shift?.opened_at ?? null,
+          has_shift: !!shift,
+        },
+      };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // ── drawer:log — recent drawer events ─────────────────────────────────────
+  ipcMain.handle('drawer:log', async (_event, limit?: number) => {
+    try {
+      const db = getDb();
+      const rows = db.prepare(
+        `SELECT * FROM drawer_log ORDER BY created_at DESC, id DESC LIMIT ?`
+      ).all(Math.min(limit || 50, 200));
+      return { success: true, log: rows };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // ── drawer:drop — record an end-of-shift cash drop ────────────────────────
+  ipcMain.handle('drawer:drop', async (_event, amount: number, note?: string) => {
+    try {
+      const db = getDb();
+      const session = getCurrentSession();
+      db.prepare(`INSERT INTO drawer_log (cashier_id, cashier_name, event, amount, note, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+        .run(session?.userId || null, session?.username || null, 'cash_drop', amount || 0, note || 'End-of-shift drop', nowCT());
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+}

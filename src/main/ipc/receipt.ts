@@ -22,7 +22,7 @@ export function registerReceiptHandlers(): void {
       if (!transaction) return { success: false, error: 'Transaction not found' };
 
       const items = db.prepare(`
-        SELECT ti.*, COALESCE(p.name || ' - ' || v.label, p.name) AS product_name
+        SELECT ti.*, COALESCE(p.name || ' - ' || v.label, p.name, ti.description, 'Item') AS product_name
         FROM transaction_items ti
         LEFT JOIN products p ON ti.product_id = p.id
         LEFT JOIN product_variants v ON ti.variant_id = v.id

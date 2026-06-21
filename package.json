@@ -8,6 +8,7 @@
     "build:main": "tsc -p tsconfig.json",
     "build": "npm run build:main && electron-builder",
     "seed": "electron dist/main/db/seed.js",
+    "update": "git pull && npm start",
     "dev": "npm run build:main && electron . --dev",
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },

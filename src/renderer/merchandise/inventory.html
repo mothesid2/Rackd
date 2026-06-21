@@ -98,6 +98,9 @@
     </div>
   </div>
 
+  <!-- Saved categories (shared dropdown source) -->
+  <datalist id="categoryList"></datalist>
+
   <!-- Add Product Modal -->
   <div class="modal-overlay" id="addProductModal" style="display:none">
     <div class="modal" style="max-width:500px;width:95%">
@@ -105,7 +108,7 @@
       <div class="modal-title">Add Product</div>
       <div class="form-row">
         <div class="form-group"><label>Barcode</label><input type="text" id="ap-barcode" /></div>
-        <div class="form-group"><label>Category</label><input type="text" id="ap-category" /></div>
+        <div class="form-group"><label>Category</label><input type="text" id="ap-category" list="categoryList" placeholder="Pick or type new…" /></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>Name *</label><input type="text" id="ap-name" /></div>
@@ -279,6 +282,10 @@
       catSel.innerHTML = '<option value="">All Categories</option>' +
         cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
       catSel.value = prevCat;
+
+      // Populate the shared category dropdown (used when adding items)
+      const dl = document.getElementById('categoryList');
+      if (dl) dl.innerHTML = cats.map(c => `<option value="${esc(c)}"></option>`).join('');
 
       // Populate vendor filter
       const vendors = [...new Set(products.map(p => p.vendor).filter(Boolean))].sort();
