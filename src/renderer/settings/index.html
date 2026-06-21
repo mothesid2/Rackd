@@ -184,14 +184,28 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Printer Interface</label>
-          <input type="text" id="printerInterface" placeholder="e.g. printer or \\\\host\\printer" />
+          <label>Printer</label>
+          <select id="printerSelect" onchange="onPrinterSelect()">
+            <option value="">Select a printer…</option>
+            <option value="__network__">Network printer (TCP/IP)…</option>
+            <option value="none">Off — save receipts to file</option>
+          </select>
         </div>
       </div>
-      <p style="font-size:12px;color:#888;margin-top:-8px;margin-bottom:12px">
-        Windows: use "printer" for the default printer, or the exact printer name. If offline, receipt is saved as a .txt file.
+      <div class="form-group" id="printerNetworkGroup" style="display:none">
+        <label>Network address</label>
+        <input type="text" id="printerInterface" placeholder="tcp://192.168.1.50:9100" />
+      </div>
+      <p style="font-size:12px;color:#888;margin-top:-4px;margin-bottom:12px">
+        Pick your installed receipt printer (e.g. Star TSP143). Install the printer's driver first, then click Refresh.
+        Works the same on Windows and Mac. If the printer is off, receipts save as a .txt file.
       </p>
-      <button class="btn btn-navy" onclick="savePrinterSettings()">Save Printer Settings</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-navy" onclick="savePrinterSettings()">Save Printer Settings</button>
+        <button class="btn btn-gray" onclick="testPrinter()">Test Print + Pop Drawer</button>
+        <button class="btn btn-gray" onclick="loadPrinters()">Refresh Printers</button>
+      </div>
+      <div id="printerStatus" style="font-size:13px;margin-top:10px"></div>
     </div>
 
     <!-- Cash Drawer -->
@@ -341,7 +355,9 @@
       if (settingsRes.success) {
         const s = settingsRes.settings;
         document.getElementById('printerType').value = s.printer_type || 'star';
-        document.getElementById('printerInterface').value = s.printer_interface || 'printer';
+        window._savedPrinterIface = s.printer_interface || '';
+        document.getElementById('printerInterface').value = /^tcp:\/\//i.test(window._savedPrinterIface) ? window._savedPrinterIface : '';
+        loadPrinters();
         document.getElementById('twilioSid').value = s.twilio_account_sid || '';
         document.getElementById('twilioFrom').value = s.twilio_from_number || '';
         document.getElementById('zebraIp').value = s.zebra_ip || '';
@@ -480,12 +496,65 @@
       }
     }
 
+    function onPrinterSelect() {
+      const v = document.getElementById('printerSelect').value;
+      document.getElementById('printerNetworkGroup').style.display = v === '__network__' ? 'block' : 'none';
+    }
+
+    async function loadPrinters() {
+      const sel = document.getElementById('printerSelect');
+      const statusEl = document.getElementById('printerStatus');
+      let installed = [];
+      try {
+        const res = await window.api.listPrinters();
+        installed = (res.success && res.printers) ? res.printers : [];
+      } catch { /* none */ }
+
+      const saved = window._savedPrinterIface || '';
+      const isNet = /^tcp:\/\//i.test(saved);
+      sel.innerHTML =
+        '<option value="">Select a printer…</option>' +
+        installed.map(p => `<option value="${esc(p.name)}">${esc(p.name)}${p.isDefault ? ' (default)' : ''}</option>`).join('') +
+        '<option value="__network__">Network printer (TCP/IP)…</option>' +
+        '<option value="none">Off — save receipts to file</option>';
+
+      // Restore the saved selection
+      if (saved === 'none') sel.value = 'none';
+      else if (isNet) sel.value = '__network__';
+      else if (saved && installed.some(p => p.name === saved)) sel.value = saved;
+      else sel.value = '';
+      onPrinterSelect();
+
+      statusEl.innerHTML = installed.length
+        ? `<span style="color:#555">${installed.length} printer(s) found.</span>`
+        : `<span style="color:#b45309">No installed printers detected. Install the printer's driver, then click Refresh Printers.</span>`;
+    }
+
+    function selectedPrinterInterface() {
+      const v = document.getElementById('printerSelect').value;
+      if (v === '__network__') return document.getElementById('printerInterface').value.trim();
+      if (v === 'none' || v === '') return v || 'none';
+      return v; // an installed printer name
+    }
+
     async function savePrinterSettings() {
+      const iface = selectedPrinterInterface();
+      window._savedPrinterIface = iface;
       await Promise.all([
         window.api.updateSetting('printer_type', document.getElementById('printerType').value),
-        window.api.updateSetting('printer_interface', document.getElementById('printerInterface').value),
+        window.api.updateSetting('printer_interface', iface),
       ]);
       showToast('Printer settings saved!', 'success');
+    }
+
+    async function testPrinter() {
+      const statusEl = document.getElementById('printerStatus');
+      statusEl.innerHTML = '<span style="color:#555">Sending test print…</span>';
+      await savePrinterSettings();
+      const res = await window.api.testPrint();
+      statusEl.innerHTML = res.success
+        ? '<span style="color:#16a34a">✓ Test sent — check the printer for a slip and listen for the drawer.</span>'
+        : `<span style="color:#c0392b">✗ ${res.error || 'Test print failed'}</span>`;
     }
 
     async function saveZebraSettings() {

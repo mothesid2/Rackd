@@ -1,11 +1,29 @@
 import { ipcMain } from 'electron';
 import { getDb } from '../db/schema';
-import { printReceiptForTxn } from '../services/printer';
+import { printReceiptForTxn, listInstalledPrinters, testPrint } from '../services/printer';
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
 
 export function registerReceiptHandlers(): void {
+  // ── printer:list — installed OS printers (for Settings dropdown) ───────────
+  ipcMain.handle('printer:list', () => {
+    try {
+      return { success: true, printers: listInstalledPrinters() };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // ── printer:test — print a test receipt + pop the drawer ──────────────────
+  ipcMain.handle('printer:test', async () => {
+    try {
+      return await testPrint();
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
   ipcMain.handle('receipt:print', async (_event, txnId: number) => {
     try {
       const db = getDb();

@@ -102,6 +102,8 @@ contextBridge.exposeInMainWorld('api', {
   printReceipt: (txnId: number) => ipcRenderer.invoke('receipt:print', txnId),
   getReceiptConfig: () => ipcRenderer.invoke('receipt:getConfig'),
   updateReceiptConfig: (data: object) => ipcRenderer.invoke('receipt:updateConfig', data),
+  listPrinters: () => ipcRenderer.invoke('printer:list'),
+  testPrint: () => ipcRenderer.invoke('printer:test'),
 
   // Settings
   getSettings: () => ipcRenderer.invoke('settings:getAll'),

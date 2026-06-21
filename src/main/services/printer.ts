@@ -9,6 +9,84 @@ const { printer: ThermalPrinterClass, types } = ThermalPrinter;
 
 const W = 42; // receipt column width (characters)
 
+// Optional native print-spooler driver (@thiagoelg/node-printer). Lazily
+// required so a missing/unbuilt binding never crashes the app — printing just
+// falls back to the .txt file. This is what lets us print to a USB receipt
+// printer (Star TSP143, Epson TM-T20, …) by its installed name on both
+// Windows and Mac.
+/* eslint-disable @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any */
+let printerDriver: any = null;
+function getPrinterDriver(): any {
+  if (printerDriver === null) {
+    try { printerDriver = require('@thiagoelg/node-printer'); }
+    catch { printerDriver = false; }
+  }
+  return printerDriver || null;
+}
+
+/** Installed OS printers (for the Settings dropdown). */
+export function listInstalledPrinters(): { name: string; isDefault: boolean; status: string }[] {
+  const drv = getPrinterDriver();
+  if (!drv) return [];
+  try {
+    let def = '';
+    try { def = drv.getDefaultPrinterName() || ''; } catch { /* not all platforms */ }
+    return (drv.getPrinters() || []).map((p: any) => ({
+      name: p.name,
+      isDefault: p.name === def,
+      status: Array.isArray(p.status) ? p.status.join(',') : String(p.status || ''),
+    }));
+  } catch { return []; }
+}
+
+/**
+ * Build a configured ThermalPrinter from the saved settings, or null if
+ * printing is disabled / unavailable.
+ *   printer_interface = 'none' or ''        → disabled (file only)
+ *   printer_interface = 'tcp://ip:9100'     → network printer
+ *   printer_interface = '<installed name>'  → print via OS spooler (RAW)
+ */
+function buildPrinterFromSettings(): any | null {
+  const db = getDb();
+  const get = (k: string, d = '') =>
+    (db.prepare('SELECT value FROM settings WHERE key = ?').get(k) as { value: string } | undefined)?.value ?? d;
+  const iface = (get('printer_interface', '') || '').trim();
+  if (!iface || iface.toLowerCase() === 'none') return null;
+  const type = get('printer_type', 'star') === 'epson' ? types.EPSON : types.STAR;
+  const base = { type, removeSpecialCharacters: false, lineCharacter: '-' };
+  if (/^tcp:\/\//i.test(iface)) {
+    return new ThermalPrinterClass({ ...base, interface: iface });
+  }
+  const driver = getPrinterDriver();
+  if (!driver) return null;
+  return new ThermalPrinterClass({ ...base, interface: `printer:${iface}`, driver });
+}
+
+/** Send a quick test receipt so the user can confirm the printer works. */
+export async function testPrint(): Promise<{ success: boolean; error?: string }> {
+  const printer = buildPrinterFromSettings();
+  if (!printer) return { success: false, error: 'No receipt printer selected. Pick one in Settings → Receipt Printer.' };
+  try {
+    printer.alignCenter();
+    printer.bold(true); printer.setTextSize(1, 1); printer.println('*** TEST PRINT ***'); printer.setTextNormal(); printer.bold(false);
+    printer.println('rackd POS');
+    printer.println(fmtCT(new Date().toISOString()));
+    printer.drawLine();
+    printer.alignLeft();
+    printer.println('If you can read this, the receipt');
+    printer.println('printer is connected and working.');
+    printer.drawLine();
+    printer.alignCenter();
+    printer.println('Cash drawer test:');
+    printer.openCashDrawer();
+    printer.partialCut();
+    await printer.execute();
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+}
+
 function formatCurrency(n: number): string {
   const val = Number(n);
   return (val < 0 ? '-$' : '$') + Math.abs(val).toFixed(2);
@@ -40,10 +118,6 @@ export async function printReceiptForTxn(
   items: Record<string, unknown>[],
   config: Record<string, unknown>
 ): Promise<{ success: boolean; error?: string; saved_to?: string }> {
-  const db = getDb();
-  const settingsRow = db.prepare("SELECT value FROM settings WHERE key = 'printer_interface'").get() as { value: string } | undefined;
-  const printerInterface = settingsRow?.value || 'printer';
-
   const isRefund = (transaction.total as number) < 0;
   const lines = buildReceiptLines(transaction, items, config, isRefund);
   const receiptText = lines.join('\n');
@@ -54,21 +128,13 @@ export async function printReceiptForTxn(
   const filePath = path.join(receiptsDir, `receipt-${transaction.id}.txt`);
   fs.writeFileSync(filePath, receiptText, 'utf8');
 
-  // Attempt thermal print (Star or Epson)
-  if (printerInterface !== 'none') {
+  // Attempt thermal print (Star or Epson). We don't hard-gate on
+  // isPrinterConnected() — the spooler reports status unreliably — instead we
+  // try to print and fall back to the saved file if execute() throws.
+  const printer = buildPrinterFromSettings();
+  if (printer) {
     try {
-      const typeRow = db.prepare("SELECT value FROM settings WHERE key = 'printer_type'").get() as { value: string } | undefined;
-      const printerType = typeRow?.value === 'star' ? types.STAR : types.EPSON;
-
-      const printer = new ThermalPrinterClass({
-        type: printerType,
-        interface: printerInterface,
-        removeSpecialCharacters: false,
-        lineCharacter: '-',
-      });
-
-      const isConnected = await printer.isPrinterConnected();
-      if (isConnected) {
+      {
         const storeName = (config.store_name as string) || 'Store';
 
         // ── Header ──────────────────────────────────
@@ -252,22 +318,11 @@ function buildReceiptLines(
  * and the caller just logs it — the drawer can still be opened with its key.
  */
 export async function openCashDrawer(): Promise<{ success: boolean; error?: string }> {
-  const db = getDb();
-  const printerInterface = (db.prepare("SELECT value FROM settings WHERE key = 'printer_interface'").get() as { value: string } | undefined)?.value || 'printer';
-  if (printerInterface === 'none') {
+  const printer = buildPrinterFromSettings();
+  if (!printer) {
     return { success: false, error: 'No receipt printer configured (the drawer pops through the printer).' };
   }
   try {
-    const printerType = (db.prepare("SELECT value FROM settings WHERE key = 'printer_type'").get() as { value: string } | undefined)?.value === 'star'
-      ? types.STAR : types.EPSON;
-    const printer = new ThermalPrinterClass({
-      type: printerType,
-      interface: printerInterface,
-      removeSpecialCharacters: false,
-      lineCharacter: '-',
-    });
-    const connected = await printer.isPrinterConnected();
-    if (!connected) return { success: false, error: 'Receipt printer not reachable.' };
     printer.openCashDrawer();
     await printer.execute();
     return { success: true };
