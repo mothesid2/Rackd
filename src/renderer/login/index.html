@@ -11,8 +11,8 @@
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      background: #070707;
-      background-image: none;
+      background: radial-gradient(130% 120% at 50% 22%, #2b313a 0%, #171b21 48%, #0c0e11 100%);
+      background-image: radial-gradient(130% 120% at 50% 22%, #2b313a 0%, #171b21 48%, #0c0e11 100%);
     }
 
     .login-wrap {
@@ -121,8 +121,9 @@
 <body>
   <div class="login-wrap">
     <div class="logo-area">
-      <img src="../../../assets/logo.svg" alt="RackD" onerror="this.style.display='none'"
-           style="max-width:240px;width:100%;display:block;margin:0 auto" />
+      <img src="../../../assets/logo.png" alt="RackD"
+           onerror="this.onerror=null;this.src='../../../assets/logo.svg'"
+           style="max-width:260px;width:100%;display:block;margin:0 auto;border-radius:14px" />
     </div>
 
     <div class="login-card" id="loginCard">
