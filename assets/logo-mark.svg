@@ -1,6 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 380" width="460" height="380" role="img" aria-label="RackD">
-  <!-- transparent background — sits seamlessly on the dark login screen -->
-  <g fill="none" transform="translate(100,20)">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 230" width="260" height="230" role="img" aria-label="RackD mark">
+  <g fill="none">
     <!-- R stem -->
     <rect x="58" y="40" width="22" height="150" rx="6" fill="#f4f1e8"/>
     <!-- R bowl -->
@@ -11,10 +10,4 @@
     <path d="M214 150 C196 120 240 104 220 74 C206 52 236 44 224 30" stroke="#8d9c5e" stroke-width="16" stroke-linecap="round"/>
     <path d="M236 150 C222 124 256 108 238 82 C228 64 250 54 240 40" stroke="#8d9c5e" stroke-width="12" stroke-linecap="round" opacity="0.95"/>
   </g>
-  <!-- wordmark -->
-  <text x="230" y="340" text-anchor="middle"
-        font-family="'Century Gothic','Questrial','Trebuchet MS','Segoe UI',sans-serif"
-        font-size="60" font-weight="400" letter-spacing="14">
-    <tspan fill="#f4f1e8">Rack</tspan><tspan fill="#8d9c5e">D</tspan>
-  </text>
 </svg>

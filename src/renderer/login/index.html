@@ -11,6 +11,8 @@
       align-items: center;
       justify-content: center;
       min-height: 100vh;
+      background: #070707;
+      background-image: none;
     }
 
     .login-wrap {
@@ -19,25 +21,9 @@
 
     .logo-area {
       text-align: center;
-      margin-bottom: 24px;
-      background: #000;
-      border-radius: 16px;
-      padding: 20px;
-      box-shadow:
-        0 6px 20px rgba(0,0,0,0.3),
-        inset 0 1px 0 rgba(255,255,255,0.12);
-      position: relative;
-      overflow: hidden;
-    }
-
-    .logo-area::before {
-      content: '';
-      position: absolute;
-      top: -60px; left: 50%;
-      transform: translateX(-50%);
-      width: 300px; height: 200px;
-      background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%);
-      pointer-events: none;
+      margin-bottom: 20px;
+      background: transparent;
+      padding: 0 0 4px;
     }
 
     .logo-area .logo-icon {
