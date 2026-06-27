@@ -311,6 +311,8 @@ export function initSchema(db: Database.Database): void {
   // Cash drawer: opening float carried per shift; MISC/open-price line descriptions
   try { db.exec(`ALTER TABLE shift_totals ADD COLUMN starting_cash REAL DEFAULT 200`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE transaction_items ADD COLUMN description TEXT`); } catch { /* already exists */ }
+  // MISC/open-price lines carry their own category so they show up "by department"
+  try { db.exec(`ALTER TABLE transaction_items ADD COLUMN category TEXT`); } catch { /* already exists */ }
 
   // Per-item low-stock alert toggle (off = never surfaced in low-stock alerts)
   try { db.exec(`ALTER TABLE products ADD COLUMN low_stock_alert INTEGER NOT NULL DEFAULT 1`); } catch { /* already exists */ }

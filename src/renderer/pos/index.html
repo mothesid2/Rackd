@@ -661,14 +661,15 @@
     <div class="modal" style="max-width:380px">
       <button class="modal-close" onclick="closeModal('miscModal')">×</button>
       <div class="modal-title">MISC / Open-Price Item</div>
-      <p style="font-size:13px;color:#666;margin-bottom:14px">For items with no barcode. Enter a price and an optional description.</p>
+      <p style="font-size:13px;color:#666;margin-bottom:14px">For items with no barcode. Enter a price and pick a department so it shows up in your X report and audits.</p>
       <div class="form-group">
         <label>Price ($) *</label>
         <input type="number" id="miscPrice" step="0.01" min="0" style="font-size:20px;text-align:right" placeholder="0.00" />
       </div>
       <div class="form-group">
-        <label>Description (optional)</label>
-        <input type="text" id="miscDesc" maxlength="40" placeholder="e.g. Lighter, single item" />
+        <label>Department / Category *</label>
+        <input type="text" id="miscCategory" list="miscCategoryList" placeholder="Pick or type a category…" />
+        <datalist id="miscCategoryList"></datalist>
       </div>
       <div class="modal-actions">
         <button class="btn btn-gray" onclick="closeModal('miscModal')">Cancel</button>
@@ -968,9 +969,15 @@
     }
 
     // ---- MISC / open-price item (no barcode) ----
-    function openMiscModal() {
+    async function openMiscModal() {
       document.getElementById('miscPrice').value = '';
-      document.getElementById('miscDesc').value = '';
+      document.getElementById('miscCategory').value = '';
+      // Populate the department list from existing product categories
+      try {
+        const res = await window.api.getProducts({});
+        const cats = [...new Set((res.products || []).map(p => p.category).filter(Boolean))].sort();
+        document.getElementById('miscCategoryList').innerHTML = cats.map(c => `<option value="${esc(c)}"></option>`).join('');
+      } catch { /* non-fatal */ }
       openModal('miscModal');
       setTimeout(() => document.getElementById('miscPrice').focus(), 80);
     }
@@ -978,13 +985,13 @@
     function addMiscItem() {
       const price = parseFloat(document.getElementById('miscPrice').value);
       if (isNaN(price)) { showToast('Enter a price', 'warning'); return; }
-      const desc = document.getElementById('miscDesc').value.trim();
+      const category = document.getElementById('miscCategory').value.trim();
+      if (!category) { showToast('Pick a department / category', 'warning'); document.getElementById('miscCategory').focus(); return; }
       cart.push({
         product_id: null,
         variant_id: null,
-        name: desc || 'Misc Item',
-        description: desc || 'Misc Item',
-        category: 'Misc',
+        name: category,
+        category: category,
         qty: 1,
         unit_price: price,
         line_total: price,
@@ -1434,7 +1441,7 @@
           qty: i.qty,
           unit_price: i.unit_price,
           line_total: i.line_total,
-          description: i.description || undefined,
+          category: i.misc ? (i.category || undefined) : undefined,
         })),
         subtotal,
         tax_rate: taxRate,

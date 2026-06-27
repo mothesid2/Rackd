@@ -55,14 +55,14 @@ function buildFullReport(db: ReturnType<typeof import('../db/schema').getDb>, sh
 
   const byCategory = db.prepare(`
     SELECT
-      COALESCE(p.category, 'Uncategorized') AS category,
+      COALESCE(p.category, ti.category, 'Uncategorized') AS category,
       SUM(ti.qty) AS qty,
       SUM(ti.line_total) AS revenue
     FROM transaction_items ti
-    JOIN products p ON ti.product_id = p.id
+    LEFT JOIN products p ON ti.product_id = p.id
     JOIN transactions t ON ti.transaction_id = t.id
     WHERE substr(t.created_at, 1, 10) >= ? AND t.payment_status = 'completed'
-    GROUP BY p.category
+    GROUP BY COALESCE(p.category, ti.category, 'Uncategorized')
     ORDER BY revenue DESC
   `).all(openDate) as { category: string; qty: number; revenue: number }[];
 
@@ -168,13 +168,13 @@ function buildPeriodReport(db: ReturnType<typeof import('../db/schema').getDb>, 
   const cardTotal = brands.reduce((s, b) => s + b.amount, 0) + otherCard.amount;
 
   const byCategory = db.prepare(`
-    SELECT COALESCE(p.category, 'Uncategorized') AS category,
+    SELECT COALESCE(p.category, ti.category, 'Uncategorized') AS category,
            SUM(ti.qty) AS qty, SUM(ti.line_total) AS revenue
     FROM transaction_items ti
-    JOIN products p ON ti.product_id = p.id
+    LEFT JOIN products p ON ti.product_id = p.id
     JOIN transactions t ON ti.transaction_id = t.id
     WHERE substr(t.created_at, 1, 10) BETWEEN ? AND ? AND t.payment_status = 'completed'
-    GROUP BY p.category
+    GROUP BY COALESCE(p.category, ti.category, 'Uncategorized')
     ORDER BY revenue DESC
   `).all(startDate, endDate) as { category: string; qty: number; revenue: number }[];
 

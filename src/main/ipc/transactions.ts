@@ -11,6 +11,7 @@ interface TransactionItem {
   unit_price: number;
   line_total: number;
   description?: string;   // MISC / open-price line label
+  category?: string;      // MISC line department (for "by department" reports)
 }
 
 interface CreateTransactionData {
@@ -108,7 +109,7 @@ export function registerTransactionHandlers(): void {
       if (!transaction) return { success: false, error: 'Transaction not found' };
 
       const items = db.prepare(`
-        SELECT ti.*, COALESCE(p.name || ' - ' || v.label, p.name, ti.description, 'Item') AS product_name
+        SELECT ti.*, COALESCE(p.name || ' - ' || v.label, p.name, ti.description, ti.category, 'Item') AS product_name
         FROM transaction_items ti
         LEFT JOIN products p ON ti.product_id = p.id
         LEFT JOIN product_variants v ON ti.variant_id = v.id
@@ -157,9 +158,9 @@ export function registerTransactionHandlers(): void {
 
         for (const item of data.items) {
           db.prepare(`
-            INSERT INTO transaction_items (transaction_id, product_id, variant_id, qty, unit_price, line_total, description)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).run(txnId, item.product_id || null, item.variant_id || null, item.qty, item.unit_price, item.line_total, item.description || null);
+            INSERT INTO transaction_items (transaction_id, product_id, variant_id, qty, unit_price, line_total, description, category)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(txnId, item.product_id || null, item.variant_id || null, item.qty, item.unit_price, item.line_total, item.description || null, item.category || null);
 
           // Deduct inventory — from the variant if this line is a variant, else the
           // product. MISC/open-price lines have no product_id, so nothing to deduct.
