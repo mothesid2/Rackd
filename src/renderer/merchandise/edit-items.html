@@ -128,11 +128,12 @@
               <th>Stock</th>
               <th>Min Stock</th>
               <th style="text-align:center" title="Age restricted">Age</th>
+              <th style="text-align:center" title="Show in low-stock alerts">Alert</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="editBody">
-            <tr><td colspan="10" style="text-align:center;color:#888;padding:24px">Loading…</td></tr>
+            <tr><td colspan="11" style="text-align:center;color:#888;padding:24px">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -179,7 +180,7 @@
 
       const tbody = document.getElementById('editBody');
       if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#888;padding:24px">No products found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#888;padding:24px">No products found</td></tr>';
         return;
       }
 
@@ -194,6 +195,7 @@
           <td><input type="number" data-field="stock_qty" value="${p.stock_qty}" onchange="markDirty(${p.id})" /></td>
           <td><input type="number" data-field="low_stock_threshold" value="${p.low_stock_threshold}" onchange="markDirty(${p.id})" /></td>
           <td style="text-align:center"><input type="checkbox" data-field="age_restricted" style="width:auto" ${p.age_restricted ? 'checked' : ''} onchange="markDirty(${p.id})" /></td>
+          <td style="text-align:center"><input type="checkbox" data-field="low_stock_alert" style="width:auto" ${p.low_stock_alert === 0 ? '' : 'checked'} onchange="markDirty(${p.id})" /></td>
           <td style="white-space:nowrap">
             <button class="save-row-btn" onclick="saveRow(${p.id})" ${dirtyRows.has(p.id) ? '' : 'disabled'}>Save</button>
             <button class="save-row-btn" style="background:#6d28d9" onclick="openVariants(${p.id}, '${esc(p.name).replace(/'/g,"\\'")}')">Variants</button>

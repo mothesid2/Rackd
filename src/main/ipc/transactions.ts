@@ -374,7 +374,7 @@ export function registerTransactionHandlers(): void {
       const lowStock = db.prepare(`
         SELECT name, stock_qty, low_stock_threshold
         FROM products
-        WHERE stock_qty <= low_stock_threshold
+        WHERE stock_qty <= low_stock_threshold AND low_stock_alert = 1
         ORDER BY stock_qty ASC
         LIMIT 5
       `).all() as { name: string; stock_qty: number; low_stock_threshold: number }[];

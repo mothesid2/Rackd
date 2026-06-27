@@ -224,17 +224,6 @@
   <div class="main-layout">
     <!-- LEFT COLUMN -->
     <div class="left-col">
-      <div class="logo-header">
-        <div class="logo-clip">
-          <img src="../../../assets/icon.svg" class="logo-icon" alt="" />
-        </div>
-        <div class="brand">
-          <div class="brand-headline">
-            <span class="brand-wordmark" id="brandName" style="font-size:46px">rackd</span>
-          </div>
-        </div>
-      </div>
-
       <!-- NEW SALE button -->
       <button class="new-sale-btn" onclick="navigate('pos')">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -422,12 +411,6 @@
     let currentRole = null;
 
     document.addEventListener('DOMContentLoaded', async () => {
-      // White-label: show the shop's own store name (falls back to product name)
-      try {
-        const cfg = await window.api.getReceiptConfig();
-        if (cfg?.config?.store_name) document.getElementById('brandName').textContent = cfg.config.store_name;
-      } catch { /* keep default */ }
-
       // Apply role-based UI restrictions
       const { session } = await window.api.getSession();
       currentRole = session?.role;

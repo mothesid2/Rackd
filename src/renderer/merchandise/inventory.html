@@ -120,10 +120,13 @@
       </div>
       <div class="form-row">
         <div class="form-group"><label>Stock Qty</label><input type="number" id="ap-stock" value="0" /></div>
-        <div class="form-group"><label>Low Stock Alert</label><input type="number" id="ap-threshold" value="5" /></div>
+        <div class="form-group"><label>Min Stock (alert at)</label><input type="number" id="ap-threshold" value="5" /></div>
       </div>
       <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;margin:4px 0 8px">
         <input type="checkbox" id="ap-age" style="width:auto" checked /> Age restricted — requires ID at checkout
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;margin:4px 0 8px">
+        <input type="checkbox" id="ap-lowalert" style="width:auto" checked /> Show in low-stock alerts
       </label>
       <div class="modal-actions">
         <button class="btn btn-gray" onclick="closeModal('addProductModal')">Cancel</button>
@@ -482,6 +485,7 @@
         stock_qty: parseInt(document.getElementById('ap-stock').value) || 0,
         low_stock_threshold: parseInt(document.getElementById('ap-threshold').value) || 5,
         age_restricted: document.getElementById('ap-age').checked ? 1 : 0,
+        low_stock_alert: document.getElementById('ap-lowalert').checked ? 1 : 0,
       };
 
       const res = await window.api.addProduct(product);

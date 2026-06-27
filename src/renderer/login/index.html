@@ -135,11 +135,7 @@
 <body>
   <div class="login-wrap">
     <div class="logo-area">
-      <img src="../../../assets/icon.svg" class="logo-icon" alt="" />
-      <div class="brand-headline">
-        <span class="brand-wordmark" id="brandName" style="font-size:34px;color:#fff">rackd</span>
-      </div>
-      <div class="brand-sub">Point of Sale System</div>
+      <div class="brand-sub" style="margin-top:0;font-size:13px">Point of Sale System</div>
     </div>
 
     <div class="login-card" id="loginCard">
@@ -190,15 +186,6 @@
     const passwordEl = document.getElementById('password');
     const errorMsg = document.getElementById('errorMsg');
     const loginCard = document.getElementById('loginCard');
-
-    // White-label: show the shop's own store name (falls back to product name)
-    (async () => {
-      try {
-        const cfg = await window.api.getReceiptConfig();
-        const name = cfg?.config?.store_name;
-        if (name) document.getElementById('brandName').textContent = name;
-      } catch { /* keep default */ }
-    })();
 
     async function doLogin() {
       const username = usernameEl.value.trim();

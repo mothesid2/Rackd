@@ -16,7 +16,7 @@ export function registerProductHandlers(): void {
         params.push(filters.category);
       }
       if (filters?.lowStock) {
-        sql += ' AND stock_qty <= low_stock_threshold';
+        sql += ' AND stock_qty <= low_stock_threshold AND low_stock_alert = 1';
       }
       sql += ' ORDER BY name';
       const rows = db.prepare(sql).all(...params);
@@ -131,15 +131,15 @@ export function registerProductHandlers(): void {
   ipcMain.handle('products:add', async (_event, product: {
     barcode?: string; name: string; category?: string; vendor?: string;
     price: number; cost: number; stock_qty: number; low_stock_threshold: number;
-    age_restricted?: number;
+    age_restricted?: number; low_stock_alert?: number;
   }) => {
     try {
       if (getCurrentSession()?.role !== 'manager') return { success: false, error: 'Manager access required' };
       const db = getDb();
       const result = db
         .prepare(
-          `INSERT INTO products (barcode, name, category, vendor, price, cost, stock_qty, low_stock_threshold, age_restricted)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO products (barcode, name, category, vendor, price, cost, stock_qty, low_stock_threshold, age_restricted, low_stock_alert)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           product.barcode || null,
@@ -150,7 +150,8 @@ export function registerProductHandlers(): void {
           product.cost,
           product.stock_qty,
           product.low_stock_threshold,
-          product.age_restricted ? 1 : 0
+          product.age_restricted ? 1 : 0,
+          product.low_stock_alert === 0 ? 0 : 1
         );
       return { success: true, id: result.lastInsertRowid };
     } catch (err) {
@@ -162,7 +163,7 @@ export function registerProductHandlers(): void {
     try {
       if (getCurrentSession()?.role !== 'manager') return { success: false, error: 'Manager access required' };
       const db = getDb();
-      const allowed = ['barcode', 'name', 'category', 'vendor', 'price', 'cost', 'stock_qty', 'low_stock_threshold', 'age_restricted'];
+      const allowed = ['barcode', 'name', 'category', 'vendor', 'price', 'cost', 'stock_qty', 'low_stock_threshold', 'age_restricted', 'low_stock_alert'];
       const fields = Object.keys(data).filter((k) => allowed.includes(k));
       if (fields.length === 0) return { success: false, error: 'No valid fields' };
 
@@ -249,7 +250,7 @@ export function registerProductHandlers(): void {
       const rows = db.prepare(`
         SELECT p.id, p.name, p.barcode, p.vendor, p.category,
                p.stock_qty + COALESCE(vs.vstock, 0) AS stock_qty,
-               p.low_stock_threshold,
+               p.low_stock_threshold, p.low_stock_alert,
                COALESCE(SUM(CASE WHEN t.id IS NOT NULL AND ti.qty > 0 THEN ti.qty ELSE 0 END), 0) AS sold
         FROM products p
         LEFT JOIN (SELECT product_id, SUM(stock_qty) AS vstock FROM product_variants GROUP BY product_id) vs
@@ -263,13 +264,16 @@ export function registerProductHandlers(): void {
         ORDER BY p.name
       `).all(cutoff) as Array<{
         id: number; name: string; barcode: string | null; vendor: string | null;
-        category: string | null; stock_qty: number; low_stock_threshold: number; sold: number;
+        category: string | null; stock_qty: number; low_stock_threshold: number;
+        low_stock_alert: number; sold: number;
       }>;
 
       const reorder: object[] = [];
       const deadStock: object[] = [];
 
       for (const r of rows) {
+        // Respect the per-item low-stock alert toggle — skip muted items entirely
+        if (!r.low_stock_alert) continue;
         const velocity = r.sold / days;                       // units per day
         const daysRemaining = velocity > 0 ? r.stock_qty / velocity : null;
         const targetStock = Math.ceil(r.sold * 1.2);          // 30-day demand + 20% buffer
