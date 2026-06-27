@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 380" width="480" height="380" role="img" aria-label="RackD">
+  <rect width="480" height="380" fill="#070707"/>
+
+  <!-- Big stylised R -->
+  <text x="150" y="250" text-anchor="middle"
+        font-family="'Trebuchet MS','Gill Sans','Segoe UI',Arial,sans-serif"
+        font-size="260" font-weight="700" fill="#f4f1e8">R</text>
+
+  <!-- Smoke wisps (sage green) -->
+  <g fill="none" stroke="#8d9c5e" stroke-linecap="round">
+    <path d="M322 246 C292 210 352 184 322 146 C298 116 344 90 326 58"
+          stroke-width="15"/>
+    <path d="M356 236 C330 202 384 178 356 144 C337 120 374 98 357 70"
+          stroke-width="11" opacity="0.92"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="240" y="338" text-anchor="middle"
+        font-family="'Trebuchet MS','Gill Sans','Segoe UI',Arial,sans-serif"
+        font-size="62" font-weight="400" letter-spacing="14">
+    <tspan fill="#f4f1e8">Rack</tspan><tspan fill="#8d9c5e">D</tspan>
+  </text>
+</svg>
