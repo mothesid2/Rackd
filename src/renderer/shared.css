@@ -25,7 +25,7 @@ html, body {
 .brand-wordmark {
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-weight: 800;
-  color: #1a2a3f;
+  color: #1b1d21;
   letter-spacing: 0.5px;
   line-height: 1.1;
   text-align: center;
@@ -69,7 +69,7 @@ html, body {
   left: 0;
   right: 0;
   height: 44px;
-  background: linear-gradient(180deg, #1e2a3a 0%, #161f2e 100%);
+  background: linear-gradient(180deg, #1b1e22 0%, #141619 100%);
   border-top: 1px solid rgba(255,255,255,0.06);
   display: flex;
   align-items: center;
@@ -171,7 +171,7 @@ html, body {
 .nav-btn.receipts-btn {
   background:
     repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.04) 3px, rgba(255,255,255,0.04) 4px, transparent 4px, transparent 9px, rgba(255,255,255,0.025) 9px, rgba(255,255,255,0.025) 10px),
-    linear-gradient(180deg, #3a5278 0%, #2c4268 50%, #243660 100%);
+    linear-gradient(180deg, #353b44 0%, #23272d 50%, #20242a 100%);
 }
 .nav-btn.merchandise-btn {
   background:
@@ -191,7 +191,7 @@ html, body {
 .nav-btn.customer-btn {
   background:
     repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.04) 3px, rgba(255,255,255,0.04) 4px, transparent 4px, transparent 9px, rgba(255,255,255,0.025) 9px, rgba(255,255,255,0.025) 10px),
-    linear-gradient(180deg, #344a6a 0%, #263a58 50%, #1e2e48 100%);
+    linear-gradient(180deg, #2f343c 0%, #23272d 50%, #1f232a 100%);
 }
 .nav-btn.inventory-btn {
   background:
@@ -206,7 +206,7 @@ html, body {
 .nav-btn.edit-btn {
   background:
     repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.04) 3px, rgba(255,255,255,0.04) 4px, transparent 4px, transparent 9px, rgba(255,255,255,0.025) 9px, rgba(255,255,255,0.025) 10px),
-    linear-gradient(180deg, #3a5278 0%, #2c4268 50%, #243660 100%);
+    linear-gradient(180deg, #353b44 0%, #23272d 50%, #20242a 100%);
 }
 
 .nav-icon-area {
@@ -301,7 +301,7 @@ html, body {
 .btn:active { filter: brightness(0.9); }
 
 .btn-navy   {
-  background: linear-gradient(180deg, #344f78 0%, #2c4268 100%);
+  background: linear-gradient(180deg, #2f343c 0%, #23272d 100%);
   color: #fff;
   box-shadow: 0 2px 6px rgba(44,66,104,0.35), inset 0 1px 0 rgba(255,255,255,0.12);
 }
@@ -339,7 +339,7 @@ html, body {
   align-items: center;
   margin-bottom: 16px;
   gap: 10px;
-  background: linear-gradient(160deg, #1e2e48 0%, #2c3e5a 100%);
+  background: linear-gradient(160deg, #1f232a 0%, #2a2f37 100%);
   border-radius: 12px;
   padding: 10px 14px;
   box-shadow: 0 3px 10px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
@@ -379,9 +379,9 @@ html, body {
   white-space: nowrap;
 }
 
-.data-table th:hover { color: #2c4a6e; }
+.data-table th:hover { color: #858966; }
 .data-table th .sort-icon { margin-left: 4px; opacity: 0.4; }
-.data-table th.sorted .sort-icon { opacity: 1; color: #2c4a6e; }
+.data-table th.sorted .sort-icon { opacity: 1; color: #858966; }
 
 .data-table td {
   padding: 10px 12px;
@@ -390,7 +390,7 @@ html, body {
 }
 
 .data-table tr:nth-child(even) td { background: #fafafa; }
-.data-table tr:hover td { background: #f0f5ff; cursor: pointer; }
+.data-table tr:hover td { background: #f4f4ec; cursor: pointer; }
 
 .data-table tr.low-stock td { background: #fffbeb !important; }
 .data-table tr.low-stock:hover td { background: #fef3c7 !important; }
@@ -421,8 +421,8 @@ html, body {
 
 .filter-bar input:focus,
 .filter-bar select:focus {
-  border-color: #2c4a6e;
-  box-shadow: 0 0 0 3px rgba(44,74,110,0.1);
+  border-color: #858966;
+  box-shadow: 0 0 0 3px rgba(133,137,102,0.1);
 }
 
 .search-wrap {
@@ -470,8 +470,8 @@ html, body {
   transition: all 0.15s;
 }
 
-.pagination-controls button:hover { background: #f0f5ff; border-color: #2c4a6e; }
-.pagination-controls button.active { background: #2c4a6e; color: #fff; border-color: #2c4a6e; }
+.pagination-controls button:hover { background: #f4f4ec; border-color: #858966; }
+.pagination-controls button.active { background: #858966; color: #fff; border-color: #858966; }
 
 /* ========== MODAL ========== */
 .modal-overlay {
@@ -564,8 +564,8 @@ html, body {
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
-  border-color: #2c4a6e;
-  box-shadow: 0 0 0 3px rgba(44,74,110,0.1);
+  border-color: #858966;
+  box-shadow: 0 0 0 3px rgba(133,137,102,0.1);
 }
 
 .form-row {
@@ -586,7 +586,7 @@ html, body {
 }
 
 .toast {
-  background: #1a2a3f;
+  background: #1b1d21;
   color: #fff;
   padding: 12px 18px;
   border-radius: 10px;
@@ -661,7 +661,7 @@ html, body {
 }
 
 .drop-zone.drag-over {
-  border-color: #2c4a6e;
-  background: #f0f5ff;
-  color: #2c4a6e;
+  border-color: #858966;
+  background: #f4f4ec;
+  color: #858966;
 }

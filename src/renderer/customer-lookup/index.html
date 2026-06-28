@@ -32,8 +32,8 @@
       transition: background 0.1s;
     }
 
-    .customer-item:hover { background: #f0f5ff; }
-    .customer-item.selected { background: #e8f0fe; border-left: 3px solid #2c4a6e; }
+    .customer-item:hover { background: #f4f4ec; }
+    .customer-item.selected { background: #eef0e4; border-left: 3px solid #858966; }
     .customer-item:last-child { border-bottom: none; }
 
     .ci-name { font-size: 15px; font-weight: 600; color: #1a1a1a; }
@@ -72,7 +72,7 @@
       width: 52px;
       height: 52px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #2c3e5a, #1a2a3f);
+      background: linear-gradient(135deg, #2a2f37, #1b1d21);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -543,7 +543,7 @@
             ? '<div style="color:#aaa;font-size:13px;padding:8px 0">No transactions</div>'
             : txns.map(t => `
               <div class="txn-row" onclick="openTxnDetail(${t.id})" style="cursor:pointer;border-radius:6px;padding:8px 4px;margin:0 -4px;transition:background 0.1s"
-                   onmouseover="this.style.background='#f0f5ff'" onmouseout="this.style.background=''">
+                   onmouseover="this.style.background='#f4f4ec'" onmouseout="this.style.background=''">
                 <div>
                   <div style="font-weight:600">#${t.id} <span style="font-size:11px;color:#aaa;font-weight:400">↗</span></div>
                   <div style="font-size:12px;color:#888">${fmtDate(t.created_at)}</div>

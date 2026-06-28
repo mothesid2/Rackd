@@ -30,7 +30,7 @@
       align-items: center;
       gap: 10px;
       margin-bottom: 12px;
-      background: linear-gradient(160deg, #1e2e48 0%, #2c3e5a 100%);
+      background: linear-gradient(160deg, #1f232a 0%, #2a2f37 100%);
       border-radius: 12px;
       padding: 9px 12px;
       box-shadow: 0 3px 10px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
@@ -198,13 +198,13 @@
       border-radius: 8px;
       padding: 8px;
       font-size: 13px;
-      color: #2c4a6e;
+      color: #858966;
       cursor: pointer;
       margin-bottom: 8px;
       transition: all 0.15s;
     }
 
-    .attach-customer-btn:hover { background: #f0f5ff; border-color: #2c4a6e; }
+    .attach-customer-btn:hover { background: #f4f4ec; border-color: #858966; }
 
     /* RIGHT - PRODUCT SEARCH */
     .product-col {
@@ -238,7 +238,7 @@
       transition: border-color 0.15s;
     }
 
-    .product-search-input:focus { border-color: #2c4a6e; box-shadow: 0 0 0 3px rgba(44,74,110,0.1); }
+    .product-search-input:focus { border-color: #858966; box-shadow: 0 0 0 3px rgba(133,137,102,0.1); }
 
     /* Hidden barcode scanner input */
     #barcodeInput {
@@ -267,11 +267,11 @@
       transition: all 0.15s;
     }
 
-    .product-tile:hover { border-color: #2c4a6e; box-shadow: 0 2px 8px rgba(44,74,110,0.12); }
-    .product-tile:active { background: #f0f5ff; }
+    .product-tile:hover { border-color: #858966; box-shadow: 0 2px 8px rgba(133,137,102,0.12); }
+    .product-tile:active { background: #f4f4ec; }
 
     .tile-name { font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px; line-height: 1.3; }
-    .tile-price { font-size: 17px; font-weight: 800; color: #2c4a6e; }
+    .tile-price { font-size: 17px; font-weight: 800; color: #858966; }
     .tile-stock { font-size: 12px; color: #888; margin-top: 4px; }
     .tile-stock.low { color: #f59e0b; font-weight: 600; }
     .tile-stock.out { color: #dc2626; font-weight: 600; }
@@ -282,7 +282,7 @@
     .card-processing-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(26,42,63,0.92);
+      background: rgba(20,22,26,0.93);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -322,10 +322,10 @@
       </div>
 
       <!-- Customer info card (shown when customer is attached) -->
-      <div id="customerInfoCard" style="display:none;background:#e8f0fe;border-radius:10px;padding:10px 14px;margin-bottom:10px;align-items:flex-start;gap:12px">
+      <div id="customerInfoCard" style="display:none;background:#eef0e4;border-radius:10px;padding:10px 14px;margin-bottom:10px;align-items:flex-start;gap:12px">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:32px;height:32px;color:#1a56db;flex-shrink:0;margin-top:2px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         <div style="flex:1;min-width:0">
-          <div id="custInfoName" style="font-weight:700;font-size:14px;color:#1a2a3f"></div>
+          <div id="custInfoName" style="font-weight:700;font-size:14px;color:#1b1d21"></div>
           <div id="custInfoPhone" style="font-size:12px;color:#444;margin-top:2px"></div>
           <div id="custInfoEmail" style="font-size:12px;color:#444;margin-top:1px"></div>
           <div id="custInfoAddress" style="font-size:12px;color:#444;margin-top:1px"></div>
@@ -501,10 +501,10 @@
       </div>
       <div class="modal-body">
         <!-- ID SCAN BOX -->
-        <div id="idScanBox" style="border:1.5px dashed #2c4a6e;background:#f0f5ff;border-radius:10px;padding:12px;margin-bottom:14px">
+        <div id="idScanBox" style="border:1.5px dashed #858966;background:#f4f4ec;border-radius:10px;padding:12px;margin-bottom:14px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#2c4a6e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="9" x2="7" y2="15"/><line x1="11" y1="9" x2="11" y2="15"/><line x1="15" y1="9" x2="15" y2="15"/><line x1="18" y1="9" x2="18" y2="15"/></svg>
-            <strong style="font-size:14px;color:#2c4a6e">Scan Driver's License / ID</strong>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#858966" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="9" x2="7" y2="15"/><line x1="11" y1="9" x2="11" y2="15"/><line x1="15" y1="9" x2="15" y2="15"/><line x1="18" y1="9" x2="18" y2="15"/></svg>
+            <strong style="font-size:14px;color:#858966">Scan Driver's License / ID</strong>
           </div>
           <div style="font-size:12px;color:#555;margin-bottom:8px">Click the box below, then scan the <strong>barcode on the back</strong> of the ID. Name &amp; address fill in automatically — just add the phone number.</div>
           <textarea id="idScanInput" rows="2" placeholder="Waiting for scan…" autocomplete="off"
@@ -519,7 +519,7 @@
         <!-- Tab switcher -->
         <div style="display:flex;gap:0;border-bottom:2px solid #eee;margin-bottom:14px">
           <button id="tabSearch" onclick="switchCustTab('search')"
-            style="flex:1;padding:8px;background:none;border:none;border-bottom:3px solid #2c4a6e;font-weight:700;font-size:13px;cursor:pointer;color:#2c4a6e;margin-bottom:-2px">Search</button>
+            style="flex:1;padding:8px;background:none;border:none;border-bottom:3px solid #858966;font-weight:700;font-size:13px;cursor:pointer;color:#858966;margin-bottom:-2px">Search</button>
           <button id="tabNew" onclick="switchCustTab('new')"
             style="flex:1;padding:8px;background:none;border:none;border-bottom:3px solid transparent;font-weight:700;font-size:13px;cursor:pointer;color:#888;margin-bottom:-2px">+ New Customer</button>
         </div>
@@ -1512,10 +1512,10 @@
       const isSearch = tab === 'search';
       document.getElementById('custSearchTab').style.display = isSearch ? 'block' : 'none';
       document.getElementById('custNewTab').style.display = isSearch ? 'none' : 'block';
-      document.getElementById('tabSearch').style.borderBottomColor = isSearch ? '#2c4a6e' : 'transparent';
-      document.getElementById('tabSearch').style.color = isSearch ? '#2c4a6e' : '#888';
-      document.getElementById('tabNew').style.borderBottomColor = isSearch ? 'transparent' : '#2c4a6e';
-      document.getElementById('tabNew').style.color = isSearch ? '#888' : '#2c4a6e';
+      document.getElementById('tabSearch').style.borderBottomColor = isSearch ? '#858966' : 'transparent';
+      document.getElementById('tabSearch').style.color = isSearch ? '#858966' : '#888';
+      document.getElementById('tabNew').style.borderBottomColor = isSearch ? 'transparent' : '#858966';
+      document.getElementById('tabNew').style.color = isSearch ? '#888' : '#858966';
     }
 
     // ---- Customer Search ----
@@ -1533,7 +1533,7 @@
       el.innerHTML = res.customers.map(c => `
         <div onclick="attachCustomer(${c.id}, '${esc(c.first_name)}', '${esc(c.last_name)}', '${esc(c.phone || '')}')"
              style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:14px;transition:background 0.1s"
-             onmouseover="this.style.background='#f0f5ff'" onmouseout="this.style.background='#fff'">
+             onmouseover="this.style.background='#f4f4ec'" onmouseout="this.style.background='#fff'">
           <strong>${esc(c.first_name)} ${esc(c.last_name)}</strong>
           <span style="color:#888;margin-left:8px">${esc(c.phone || '')}</span>
         </div>
