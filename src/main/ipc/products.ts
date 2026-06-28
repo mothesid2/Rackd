@@ -3,6 +3,8 @@ import { DateTime } from 'luxon';
 import { getDb } from '../db/schema';
 import { nowCT, TZ } from '../utils/time';
 import { getCurrentSession } from './auth';
+import { assertWritable } from '../supabase/licenseCheck';
+import { enqueueInventorySnapshot } from '../supabase/sync';
 
 export function registerProductHandlers(): void {
   ipcMain.handle('products:getAll', async (_event, filters?: { category?: string; lowStock?: boolean }) => {
@@ -66,6 +68,7 @@ export function registerProductHandlers(): void {
     sku?: string; label: string; barcode?: string; price?: number; cost?: number; stock_qty?: number;
   }>) => {
     try {
+      const w = assertWritable('inventory_edit'); if (!w.ok) return { success: false, error: w.error };
       if (getCurrentSession()?.role !== 'manager') return { success: false, error: 'Manager access required' };
       const db = getDb();
       const insert = db.prepare(`
@@ -89,6 +92,7 @@ export function registerProductHandlers(): void {
 
   ipcMain.handle('products:updateVariant', async (_event, id: number, data: Record<string, unknown>) => {
     try {
+      const w = assertWritable('inventory_edit'); if (!w.ok) return { success: false, error: w.error };
       if (getCurrentSession()?.role !== 'manager') return { success: false, error: 'Manager access required' };
       const db = getDb();
       const allowed = ['sku', 'label', 'barcode', 'price', 'cost', 'stock_qty', 'is_active'];
@@ -104,6 +108,7 @@ export function registerProductHandlers(): void {
 
   ipcMain.handle('products:deleteVariant', async (_event, id: number) => {
     try {
+      const w = assertWritable('inventory_edit'); if (!w.ok) return { success: false, error: w.error };
       if (getCurrentSession()?.role !== 'manager') return { success: false, error: 'Manager access required' };
       const db = getDb();
       db.prepare('DELETE FROM product_variants WHERE id = ?').run(id);
@@ -134,6 +139,7 @@ export function registerProductHandlers(): void {
     age_restricted?: number; low_stock_alert?: number;
   }) => {
     try {
+      const w = assertWritable('inventory_edit'); if (!w.ok) return { success: false, error: w.error };
       if (getCurrentSession()?.role !== 'manager') return { success: false, error: 'Manager access required' };
       const db = getDb();
       const result = db
@@ -161,6 +167,7 @@ export function registerProductHandlers(): void {
 
   ipcMain.handle('products:update', async (_event, id: number, data: Record<string, unknown>) => {
     try {
+      const w = assertWritable('inventory_edit'); if (!w.ok) return { success: false, error: w.error };
       if (getCurrentSession()?.role !== 'manager') return { success: false, error: 'Manager access required' };
       const db = getDb();
       const allowed = ['barcode', 'name', 'category', 'vendor', 'price', 'cost', 'stock_qty', 'low_stock_threshold', 'age_restricted', 'low_stock_alert'];
@@ -178,11 +185,16 @@ export function registerProductHandlers(): void {
 
   ipcMain.handle('products:adjustStock', async (_event, id: number, delta: number, _reason: string) => {
     try {
+      const w = assertWritable('inventory_edit'); if (!w.ok) return { success: false, error: w.error };
       if (getCurrentSession()?.role !== 'manager') return { success: false, error: 'Manager access required' };
       const db = getDb();
-      db.prepare(
-        `UPDATE products SET stock_qty = MAX(0, stock_qty + ?), updated_at = ? WHERE id = ?`
-      ).run(delta, nowCT(), id);
+      db.transaction(() => {
+        db.prepare(
+          `UPDATE products SET stock_qty = MAX(0, stock_qty + ?), updated_at = ? WHERE id = ?`
+        ).run(delta, nowCT(), id);
+        // Cloud sync (path 4): push the new stock level to inventory_cloud.
+        enqueueInventorySnapshot(id, 'manual', db);
+      })();
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -191,6 +203,7 @@ export function registerProductHandlers(): void {
 
   ipcMain.handle('products:clearAll', async () => {
     try {
+      const w = assertWritable('inventory_edit'); if (!w.ok) return { success: false, error: w.error };
       if (getCurrentSession()?.role !== 'manager') return { success: false, error: 'Manager access required' };
       const db = getDb();
       db.transaction(() => {
@@ -206,6 +219,7 @@ export function registerProductHandlers(): void {
 
   ipcMain.handle('products:delete', async (_event, id: number) => {
     try {
+      const w = assertWritable('inventory_edit'); if (!w.ok) return { success: false, error: w.error };
       if (getCurrentSession()?.role !== 'manager') return { success: false, error: 'Manager access required' };
       const db = getDb();
       db.transaction(() => {
@@ -326,6 +340,7 @@ export function registerProductHandlers(): void {
 
   ipcMain.handle('products:importCSV', async (_event, csvText: string) => {
     try {
+      const w = assertWritable('inventory_edit'); if (!w.ok) return { success: false, error: w.error };
       if (getCurrentSession()?.role !== 'manager') return { success: false, error: 'Manager access required' };
       const db = getDb();
       const lines = csvText.trim().split('\n');

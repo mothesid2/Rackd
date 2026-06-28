@@ -1,0 +1,65 @@
+import type Database from 'better-sqlite3';
+import { migration001 } from './001_local_tables';
+import { migration002 } from './002_drop_unused_inventory';
+
+/**
+ * A single schema change. Migrations are applied in `id` order exactly once and
+ * recorded in `schema_migrations`. Never edit or renumber a migration that has
+ * shipped — add a new one instead. `down` is the reverse operation (used by
+ * rollbackMigration; the forward runner never calls it).
+ */
+export interface Migration {
+  id: number;
+  name: string;
+  up: (db: Database.Database) => void;
+  down?: (db: Database.Database) => void;
+}
+
+// Ordered registry. Append new migrations here.
+const MIGRATIONS: Migration[] = [migration001, migration002];
+
+/**
+ * Run any migrations that haven't been applied yet. Idempotent: safe to call
+ * on every launch. Each migration runs inside a transaction so a failure
+ * leaves the database untouched rather than half-migrated.
+ */
+export function runMigrations(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  const applied = new Set(
+    (db.prepare('SELECT id FROM schema_migrations').all() as { id: number }[]).map((r) => r.id)
+  );
+
+  const pending = MIGRATIONS.filter((m) => !applied.has(m.id)).sort((a, b) => a.id - b.id);
+
+  for (const m of pending) {
+    const apply = db.transaction(() => {
+      m.up(db);
+      db.prepare('INSERT INTO schema_migrations (id, name) VALUES (?, ?)').run(m.id, m.name);
+    });
+    apply();
+    console.log(`[migrations] applied ${String(m.id).padStart(3, '0')}_${m.name}`);
+  }
+}
+
+/**
+ * Roll back a single applied migration by id (reverse op). Transactional; throws
+ * if the migration doesn't define `down`. Not run automatically — for ops/repair.
+ */
+export function rollbackMigration(db: Database.Database, id: number): void {
+  const m = MIGRATIONS.find((x) => x.id === id);
+  if (!m) throw new Error(`No migration with id ${id}`);
+  if (!m.down) throw new Error(`Migration ${id}_${m.name} is not reversible (no down())`);
+  const revert = db.transaction(() => {
+    m.down!(db);
+    db.prepare('DELETE FROM schema_migrations WHERE id = ?').run(id);
+  });
+  revert();
+  console.log(`[migrations] rolled back ${String(id).padStart(3, '0')}_${m.name}`);
+}

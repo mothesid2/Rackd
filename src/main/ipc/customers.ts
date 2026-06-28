@@ -2,6 +2,8 @@ import { ipcMain } from 'electron';
 import { DateTime } from 'luxon';
 import { getDb } from '../db/schema';
 import { nowCT, TZ } from '../utils/time';
+import { enqueueLocalRow } from '../supabase/sync';
+import { assertWritable } from '../supabase/licenseCheck';
 
 export function registerCustomerHandlers(): void {
   ipcMain.handle('customers:getAll', async (_event, query?: string) => {
@@ -159,25 +161,32 @@ export function registerCustomerHandlers(): void {
     zip?: string; dob?: string; license_number?: string; notes?: string; opt_in_sms?: boolean;
   }) => {
     try {
+      const w = assertWritable('customer_edit'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
-      const result = db.prepare(`
-        INSERT INTO customers (first_name, last_name, phone, email, address, city, state, zip, dob, license_number, notes, opt_in_sms)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        data.first_name,
-        data.last_name,
-        data.phone || null,
-        data.email || null,
-        data.address || null,
-        data.city || null,
-        data.state || null,
-        data.zip || null,
-        data.dob || null,
-        data.license_number || null,
-        data.notes || null,
-        data.opt_in_sms ? 1 : 0
-      );
-      return { success: true, id: result.lastInsertRowid };
+      const id = db.transaction(() => {
+        const result = db.prepare(`
+          INSERT INTO customers (first_name, last_name, phone, email, address, city, state, zip, dob, license_number, notes, opt_in_sms)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          data.first_name,
+          data.last_name,
+          data.phone || null,
+          data.email || null,
+          data.address || null,
+          data.city || null,
+          data.state || null,
+          data.zip || null,
+          data.dob || null,
+          data.license_number || null,
+          data.notes || null,
+          data.opt_in_sms ? 1 : 0
+        );
+        const newId = result.lastInsertRowid as number;
+        // Cloud sync (D.1): enqueue the new customer, atomic with the insert.
+        enqueueLocalRow('customers', 'insert', newId, db);
+        return newId;
+      })();
+      return { success: true, id };
     } catch (err) {
       return { success: false, error: String(err) };
     }
@@ -185,6 +194,7 @@ export function registerCustomerHandlers(): void {
 
   ipcMain.handle('customers:update', async (_event, id: number, data: Record<string, unknown>) => {
     try {
+      const w = assertWritable('customer_edit'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
       const allowed = ['first_name', 'last_name', 'phone', 'email', 'address', 'city', 'state', 'zip', 'dob', 'license_number', 'notes', 'opt_in_sms'];
       const fields = Object.keys(data).filter((k) => allowed.includes(k));
@@ -192,7 +202,11 @@ export function registerCustomerHandlers(): void {
 
       const sets = fields.map((f) => `${f} = ?`).join(', ');
       const vals = fields.map((f) => data[f]);
-      db.prepare(`UPDATE customers SET ${sets}, updated_at = ? WHERE id = ?`).run(...vals, nowCT(), id);
+      db.transaction(() => {
+        db.prepare(`UPDATE customers SET ${sets}, updated_at = ? WHERE id = ?`).run(...vals, nowCT(), id);
+        // Cloud sync (D.1): enqueue the update, atomic with the write.
+        enqueueLocalRow('customers', 'update', id, db);
+      })();
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };

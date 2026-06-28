@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import { getDb } from '../db/schema';
+import { assertWritable } from '../supabase/licenseCheck';
 import { printReceiptForTxn, listInstalledPrinters, testPrint } from '../services/printer';
 import path from 'path';
 import fs from 'fs';
@@ -26,6 +27,7 @@ export function registerReceiptHandlers(): void {
 
   ipcMain.handle('receipt:print', async (_event, txnId: number) => {
     try {
+      const w = assertWritable('receipt_print'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
       const transaction = db.prepare(`
         SELECT t.*,
@@ -80,6 +82,7 @@ export function registerReceiptHandlers(): void {
 
   ipcMain.handle('receipt:updateConfig', async (_event, data: Record<string, unknown>) => {
     try {
+      const w = assertWritable('settings_change'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
       const allowed = ['store_name', 'address', 'phone', 'footer_message', 'tax_rate', 'min_age'];
       const fields = Object.keys(data).filter((k) => allowed.includes(k));

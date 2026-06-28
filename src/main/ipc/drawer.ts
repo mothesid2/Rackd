@@ -3,17 +3,24 @@ import { getDb } from '../db/schema';
 import { getCurrentSession } from './auth';
 import { popCashDrawer, listSerialPorts } from '../services/cashDrawer';
 import { nowCT } from '../utils/time';
+import { assertWritable } from '../supabase/licenseCheck';
+import { enqueueDrawerEvent } from '../supabase/sync';
 
 export function registerDrawerHandlers(): void {
   // ── drawer:open — pop the drawer (manual button or on Cash click) ──────────
   ipcMain.handle('drawer:open', async (_event, note?: string) => {
     try {
+      const w = assertWritable('drawer_open'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
       const session = getCurrentSession();
       const r = await popCashDrawer();
-      db.prepare(`INSERT INTO drawer_log (cashier_id, cashier_name, event, amount, note) VALUES (?, ?, ?, ?, ?)`)
-        .run(session?.userId || null, session?.username || null, 'manual_open', 0,
-             r.success ? (note || 'Drawer opened') : `${note || 'Pop'} — ${r.error || 'drawer not opened'}`);
+      db.transaction(() => {
+        const res = db.prepare(`INSERT INTO drawer_log (cashier_id, cashier_name, event, amount, note) VALUES (?, ?, ?, ?, ?)`)
+          .run(session?.userId || null, session?.username || null, 'manual_open', 0,
+               r.success ? (note || 'Drawer opened') : `${note || 'Pop'} — ${r.error || 'drawer not opened'}`);
+        // Cloud sync (path 5): mirror the drawer event to cash_drawer_sessions_cloud.
+        enqueueDrawerEvent(res.lastInsertRowid as number, db);
+      })();
       return r;
     } catch (err) {
       return { success: false, error: String(err) };
@@ -83,10 +90,15 @@ export function registerDrawerHandlers(): void {
   // ── drawer:drop — record an end-of-shift cash drop ────────────────────────
   ipcMain.handle('drawer:drop', async (_event, amount: number, note?: string) => {
     try {
+      const w = assertWritable('drawer_open'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
       const session = getCurrentSession();
-      db.prepare(`INSERT INTO drawer_log (cashier_id, cashier_name, event, amount, note, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
-        .run(session?.userId || null, session?.username || null, 'cash_drop', amount || 0, note || 'End-of-shift drop', nowCT());
+      db.transaction(() => {
+        const res = db.prepare(`INSERT INTO drawer_log (cashier_id, cashier_name, event, amount, note, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+          .run(session?.userId || null, session?.username || null, 'cash_drop', amount || 0, note || 'End-of-shift drop', nowCT());
+        // Cloud sync (path 5): mirror the drawer event to cash_drawer_sessions_cloud.
+        enqueueDrawerEvent(res.lastInsertRowid as number, db);
+      })();
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };

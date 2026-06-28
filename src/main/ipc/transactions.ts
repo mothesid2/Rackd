@@ -3,6 +3,8 @@ import { DateTime } from 'luxon';
 import { getDb } from '../db/schema';
 import { getCurrentSession } from './auth';
 import { nowCT, todayCT, TZ } from '../utils/time';
+import { enqueueLocalRow, enqueueInventorySnapshot } from '../supabase/sync';
+import { assertWritable } from '../supabase/licenseCheck';
 
 interface TransactionItem {
   product_id: number | null;
@@ -124,6 +126,7 @@ export function registerTransactionHandlers(): void {
 
   ipcMain.handle('transactions:create', async (_event, data: CreateTransactionData) => {
     try {
+      const w = assertWritable('sale'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
       const session = getCurrentSession();
 
@@ -156,11 +159,14 @@ export function registerTransactionHandlers(): void {
 
         const txnId = result.lastInsertRowid as number;
 
+        const itemIds: number[] = [];
+        const affectedProductIds = new Set<number>();
         for (const item of data.items) {
-          db.prepare(`
+          const itemRes = db.prepare(`
             INSERT INTO transaction_items (transaction_id, product_id, variant_id, qty, unit_price, line_total, description, category)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           `).run(txnId, item.product_id || null, item.variant_id || null, item.qty, item.unit_price, item.line_total, item.description || null, item.category || null);
+          itemIds.push(itemRes.lastInsertRowid as number);
 
           // Deduct inventory — from the variant if this line is a variant, else the
           // product. MISC/open-price lines have no product_id, so nothing to deduct.
@@ -170,6 +176,7 @@ export function registerTransactionHandlers(): void {
           } else if (item.product_id) {
             db.prepare(`UPDATE products SET stock_qty = MAX(0, stock_qty - ?), updated_at = ? WHERE id = ?`)
               .run(item.qty, nowCT(), item.product_id);
+            affectedProductIds.add(item.product_id);
           }
         }
 
@@ -260,6 +267,13 @@ export function registerTransactionHandlers(): void {
           }
         }
 
+        // Cloud sync (D.1): enqueue the completed sale + its line items. Atomic
+        // with the writes above (same transaction); no-op if Supabase is off.
+        enqueueLocalRow('transactions', 'insert', txnId, db);
+        for (const itemId of itemIds) enqueueLocalRow('transaction_items', 'insert', itemId, db);
+        // Path 4: push updated stock levels for sold products to inventory_cloud.
+        for (const pid of affectedProductIds) enqueueInventorySnapshot(pid, 'sale', db);
+
         return { txnId, loyalty };
       });
 
@@ -283,6 +297,7 @@ export function registerTransactionHandlers(): void {
 
   ipcMain.handle('transactions:delete', async (_event, id: number) => {
     try {
+      const w = assertWritable('void'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
       const session = getCurrentSession();
       if (session?.role !== 'manager') {

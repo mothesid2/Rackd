@@ -3,6 +3,7 @@ import { getDb } from '../db/schema';
 import { getCurrentSession } from './auth';
 import { getTwilioClient } from '../services/twilio';
 import { buildSmsReceipt } from '../services/printer';
+import { assertWritable } from '../supabase/licenseCheck';
 
 export function registerSmsHandlers(): void {
   ipcMain.handle('sms:blast', async (_event, message: string, filter: {
@@ -10,6 +11,7 @@ export function registerSmsHandlers(): void {
     purchased_within_days?: number;
   }) => {
     try {
+      const w = assertWritable('sms_send'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
       const session = getCurrentSession();
       if (session?.role !== 'manager') return { success: false, error: 'Manager access required' };
@@ -104,6 +106,7 @@ export function registerSmsHandlers(): void {
 
   ipcMain.handle('sms:single', async (_event, phone: string, message: string) => {
     try {
+      const w = assertWritable('sms_send'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
       const client = getTwilioClient();
       if (!client) return { success: false, error: 'Twilio not configured' };

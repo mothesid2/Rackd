@@ -16,10 +16,19 @@ import { registerZebraHandlers } from './ipc/zebra';
 import { registerPromoHandlers } from './ipc/promos';
 import { registerLoyaltyHandlers, runPointExpiry } from './ipc/loyalty';
 import { registerDrawerHandlers } from './ipc/drawer';
+import { registerDatabaseHandlers } from './ipc/database';
+import { registerSyncHandlers } from './ipc/sync';
+import { registerLicenseHandlers } from './ipc/license';
+import { startSyncWorker } from './supabase/sync';
+import { startLicenseChecks } from './supabase/licenseCheck';
 
 app.whenReady().then(() => {
-  // Initialize DB
+  // 1. Initialize SQLite + run pending migrations
   getDb();
+
+  // 2-5. Load cached license, attempt a (non-blocking) Supabase check, and
+  // lock/unlock features from the result. Returns immediately from cache.
+  startLicenseChecks();
 
   // Create main window
   const win = createMainWindow();
@@ -42,6 +51,13 @@ app.whenReady().then(() => {
   registerPromoHandlers();
   registerLoyaltyHandlers();
   registerDrawerHandlers();
+  registerDatabaseHandlers();
+  registerSyncHandlers();
+  registerLicenseHandlers();
+
+  // 6. Cloud layer: start the local-first -> Supabase sync worker (no-op if
+  // Supabase isn't configured; the POS runs fully on local SQLite regardless).
+  startSyncWorker();
 
   // "Use it or lose it" — expire stale loyalty points once at startup
   try { runPointExpiry(getDb()); } catch { /* non-fatal */ }

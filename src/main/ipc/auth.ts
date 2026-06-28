@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import bcrypt from 'bcryptjs';
 import { getDb } from '../db/schema';
 import { nowCT } from '../utils/time';
+import { assertWritable } from '../supabase/licenseCheck';
 
 interface User {
   id: number;
@@ -96,6 +97,7 @@ export function registerAuthHandlers(): void {
   // Create user — manager only; new accounts require password change on first login
   ipcMain.handle('auth:createUser', async (_event, username: string, password: string, role: string) => {
     try {
+      const w = assertWritable('employee_manage'); if (!w.ok) return { success: false, error: w.error };
       if (!currentSession || currentSession.role !== 'manager') {
         return { success: false, error: 'Manager access required' };
       }
@@ -121,6 +123,7 @@ export function registerAuthHandlers(): void {
   // Delete user — manager only, cannot delete own account
   ipcMain.handle('auth:deleteUser', async (_event, userId: number) => {
     try {
+      const w = assertWritable('employee_manage'); if (!w.ok) return { success: false, error: w.error };
       if (!currentSession || currentSession.role !== 'manager') {
         return { success: false, error: 'Manager access required' };
       }

@@ -2,6 +2,7 @@ import { ipcMain, shell } from 'electron';
 import { getDb } from '../db/schema';
 import { getCurrentSession } from './auth';
 import { nowCT, todayCT } from '../utils/time';
+import { assertWritable } from '../supabase/licenseCheck';
 
 interface InvoiceItem {
   product_id: number;
@@ -64,6 +65,7 @@ export function registerInvoiceHandlers(): void {
 
   ipcMain.handle('invoices:delete', async (_event, id: number) => {
     try {
+      const w = assertWritable('invoice_edit'); if (!w.ok) return { success: false, error: w.error };
       const session = getCurrentSession();
       if (session?.role !== 'manager') return { success: false, error: 'Manager access required' };
       const db = getDb();
@@ -106,6 +108,7 @@ export function registerInvoiceHandlers(): void {
     supplier: string; invoice_number?: string; date?: string; items: InvoiceItem[];
   }) => {
     try {
+      const w = assertWritable('invoice_edit'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
       const session = getCurrentSession();
       if (session?.role !== 'manager') return { success: false, error: 'Manager access required' };

@@ -110,6 +110,24 @@ contextBridge.exposeInMainWorld('api', {
   updateSetting: (key: string, value: string) =>
     ipcRenderer.invoke('settings:update', key, value),
 
+  // Generic local database access (renderer never imports better-sqlite3).
+  // Always pass values via the params array so they're bound, not interpolated.
+  dbQuery: (sql: string, params?: unknown[]) => ipcRenderer.invoke('db:query', sql, params),
+  dbGet: (sql: string, params?: unknown[]) => ipcRenderer.invoke('db:get', sql, params),
+  dbRun: (sql: string, params?: unknown[]) => ipcRenderer.invoke('db:run', sql, params),
+
+  // Cloud sync health + dead-letter admin
+  syncTrigger: () => ipcRenderer.invoke('sync:trigger'),
+  syncStatus: () => ipcRenderer.invoke('sync:status'),
+  syncDeadLetters: () => ipcRenderer.invoke('sync:dead-letters'),
+  syncRetryDeadLetter: (id: number) => ipcRenderer.invoke('sync:retry-dead-letter', id),
+  syncClearDeadLetter: (id: number) => ipcRenderer.invoke('sync:clear-dead-letter', id),
+
+  // License
+  licenseStatus: () => ipcRenderer.invoke('license:status'),
+  licenseRefresh: () => ipcRenderer.invoke('license:refresh'),
+  licenseAssertWritable: (action: string) => ipcRenderer.invoke('license:assert-writable', action),
+
   // Navigation
   navigate: (page: string) => ipcRenderer.invoke('navigate', page),
 

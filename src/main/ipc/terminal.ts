@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs';
 import { getDb } from '../db/schema';
+import { assertWritable } from '../supabase/licenseCheck';
 import { getTerminal } from '../services/cardTerminal';
 import type { ValorPayload } from '../services/cardTerminal';
 
@@ -125,6 +126,7 @@ export function registerTerminalHandlers(): void {
   // ── terminal:saveConfig ──────────────────────────────────────────────────
   ipcMain.handle('terminal:saveConfig', (_event, config: Record<string, string>) => {
     try {
+      const w = assertWritable('settings_change'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
       const allowed = [
         'terminal_type', 'terminal_ip', 'terminal_port',

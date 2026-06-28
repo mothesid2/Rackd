@@ -4,6 +4,7 @@ import { getDb } from '../db/schema';
 import { getCurrentSession } from './auth';
 import { getTwilioClient } from '../services/twilio';
 import { nowCT, TZ } from '../utils/time';
+import { assertWritable } from '../supabase/licenseCheck';
 
 interface Customer {
   id: number; first_name: string; last_name: string; phone: string | null;
@@ -48,6 +49,7 @@ export function registerPromoHandlers(): void {
   // Generate birthday codes, award the +50 loyalty bonus (once/year), and text opted-in customers.
   ipcMain.handle('promos:runBirthdays', async () => {
     try {
+      const w = assertWritable('sms_send'); if (!w.ok) return { success: false, error: w.error };
       const session = getCurrentSession();
       if (session?.role !== 'manager') return { success: false, error: 'Manager access required' };
       const db = getDb();
