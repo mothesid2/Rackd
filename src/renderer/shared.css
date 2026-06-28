@@ -6,8 +6,8 @@ html, body {
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 15px;
   color: #1a1a1a;
-  background-color: #e8e8e8;
-  background-image: radial-gradient(circle, #c8c8c8 1px, transparent 1px);
+  background-color: #eceae2;
+  background-image: radial-gradient(circle, #d6d2c6 1px, transparent 1px);
   background-size: 18px 18px;
   overflow: hidden;
 }
