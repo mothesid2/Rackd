@@ -175,6 +175,7 @@
     </div>
     <div class="brand-name" data-brand>rackd</div>
     <div class="welcome-msg"><span data-welcome>Welcome!</span></div>
+    <img data-promo-banner alt="" style="display:none;max-width:60%;max-height:200px;object-fit:contain;border-radius:12px;margin-top:20px" />
     <div data-promo style="display:none;margin-top:18px;max-width:72%;text-align:center;font-size:26px;font-weight:800;color:#b01d2e;text-shadow:0 0 20px rgba(176,29,46,0.55)"></div>
   </div>
 
@@ -275,22 +276,42 @@
 
     // Owner-configured promotional / rebate message (ads foundation). Polled so
     // owner changes appear without restarting the display.
-    async function loadPromo() {
+    // Owner-configured rotating ad / rebate messages + optional banner image.
+    let adsTimer = null, adsSlides = [], adsIdx = 0, lastAdsCfg = null;
+    async function loadAds() {
       try {
         const r = await window.api.ownerGetDisplayConfig();
-        const cfg = r && r.config;
+        const cfg = (r && r.config) || {};
+        const key = JSON.stringify([cfg.promo_enabled, cfg.promo_text, cfg.ads_image, cfg.ads_interval]);
+        if (key === lastAdsCfg) return; // unchanged — keep the current rotation running
+        lastAdsCfg = key;
+
         const el = document.querySelector('[data-promo]');
-        if (!el) return;
-        if (cfg && cfg.promo_enabled && cfg.promo_text) {
-          el.textContent = cfg.promo_text;
-          el.style.display = 'block';
-        } else {
-          el.style.display = 'none';
+        const banner = document.querySelector('[data-promo-banner]');
+        if (adsTimer) { clearInterval(adsTimer); adsTimer = null; }
+
+        if (!cfg.promo_enabled) {
+          if (el) el.style.display = 'none';
+          if (banner) banner.style.display = 'none';
+          return;
+        }
+        if (banner) {
+          if (cfg.ads_image) { banner.src = cfg.ads_image; banner.style.display = 'block'; }
+          else banner.style.display = 'none';
+        }
+        adsSlides = String(cfg.promo_text || '').split('\n').map(s => s.trim()).filter(Boolean);
+        if (!el || !adsSlides.length) { if (el) el.style.display = 'none'; return; }
+        adsIdx = 0;
+        el.textContent = adsSlides[0];
+        el.style.display = 'block';
+        if (adsSlides.length > 1) {
+          const ms = Math.max(3, Math.min(60, Number(cfg.ads_interval) || 8)) * 1000;
+          adsTimer = setInterval(() => { adsIdx = (adsIdx + 1) % adsSlides.length; el.textContent = adsSlides[adsIdx]; }, ms);
         }
       } catch { /* ignore */ }
     }
-    loadPromo();
-    setInterval(loadPromo, 30000);
+    loadAds();
+    setInterval(loadAds, 20000);
 
     function showState(state) {
       document.getElementById('idleScreen').style.display = state === 'idle' ? 'flex' : 'none';

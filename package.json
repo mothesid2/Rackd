@@ -10,6 +10,7 @@
     "seed": "electron dist/main/db/seed.js",
     "update": "git pull && npm start",
     "dev": "npm run build:main && electron . --dev",
+    "test": "npm run build:main && electron scripts/run-tests.js",
     "postinstall": "electron-rebuild -f"
   },
   "build": {

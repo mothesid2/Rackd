@@ -50,20 +50,29 @@ export function registerOwnerHandlers(): void {
     }
   });
 
-  // Owner-only customer-display config (foundation for ads/rebates).
+  // Owner-only customer-display config: rotating ad/rebate messages + optional
+  // banner image shown on the idle display.
   ipcMain.handle('owner:getDisplayConfig', () => ({
     success: true,
     config: {
       promo_enabled: readSetting('display_promo_enabled') === '1',
-      promo_text: readSetting('display_promo_text') || '',
+      promo_text: readSetting('display_promo_text') || '', // one ad/rebate message per line
+      ads_image: readSetting('display_ads_image') || '',
+      ads_interval: Number(readSetting('display_ads_interval')) || 8, // seconds per slide
     },
   }));
 
   // Writing the config is PIN-guarded server-side, not just hidden in the UI.
-  ipcMain.handle('owner:setDisplayConfig', (_e, pin: string, config: { promo_enabled?: boolean; promo_text?: string }) => {
-    if (!pinValid(pin)) return { success: false, error: 'Owner PIN required' };
-    writeSetting('display_promo_enabled', config?.promo_enabled ? '1' : '0');
-    writeSetting('display_promo_text', String(config?.promo_text || ''));
-    return { success: true };
-  });
+  ipcMain.handle(
+    'owner:setDisplayConfig',
+    (_e, pin: string, config: { promo_enabled?: boolean; promo_text?: string; ads_image?: string; ads_interval?: number }) => {
+      if (!pinValid(pin)) return { success: false, error: 'Owner PIN required' };
+      writeSetting('display_promo_enabled', config?.promo_enabled ? '1' : '0');
+      writeSetting('display_promo_text', String(config?.promo_text || ''));
+      writeSetting('display_ads_image', String(config?.ads_image || ''));
+      const iv = Math.max(3, Math.min(60, Number(config?.ads_interval) || 8));
+      writeSetting('display_ads_interval', String(iv));
+      return { success: true };
+    }
+  );
 }
