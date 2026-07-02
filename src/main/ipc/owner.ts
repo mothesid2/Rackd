@@ -25,6 +25,38 @@ function pinValid(pin: unknown): boolean {
   return !!hash && bcrypt.compareSync(String(pin ?? ''), hash);
 }
 
+interface AdSlide {
+  image: string;
+  headline: string;
+  body: string;
+}
+
+/** Read the ad slides; migrate legacy promo_text/ads_image if no slides exist yet. */
+function readAds(): AdSlide[] {
+  const raw = readSetting('display_ads');
+  if (raw) {
+    try {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        return arr.map((s) => ({
+          image: String(s?.image || ''),
+          headline: String(s?.headline || ''),
+          body: String(s?.body || ''),
+        }));
+      }
+    } catch {
+      /* fall through to migration */
+    }
+  }
+  // Legacy: one message per line in display_promo_text + a single banner image.
+  const lines = (readSetting('display_promo_text') || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const img = readSetting('display_ads_image') || '';
+  if (!lines.length && !img) return [];
+  return lines.length
+    ? lines.map((l, i) => ({ image: i === 0 ? img : '', headline: l, body: '' }))
+    : [{ image: img, headline: '', body: '' }];
+}
+
 export function registerOwnerHandlers(): void {
   ipcMain.handle('owner:hasPin', () => ({ success: true, hasPin: !!readSetting(KEY_PIN) }));
 
@@ -50,14 +82,13 @@ export function registerOwnerHandlers(): void {
     }
   });
 
-  // Owner-only customer-display config: rotating ad/rebate messages + optional
-  // banner image shown on the idle display.
+  // Owner-only customer-display config: rotating ad/rebate slides (image +
+  // headline + body) shown on the idle display.
   ipcMain.handle('owner:getDisplayConfig', () => ({
     success: true,
     config: {
       promo_enabled: readSetting('display_promo_enabled') === '1',
-      promo_text: readSetting('display_promo_text') || '', // one ad/rebate message per line
-      ads_image: readSetting('display_ads_image') || '',
+      ads: readAds(),
       ads_interval: Number(readSetting('display_ads_interval')) || 8, // seconds per slide
     },
   }));
@@ -65,11 +96,16 @@ export function registerOwnerHandlers(): void {
   // Writing the config is PIN-guarded server-side, not just hidden in the UI.
   ipcMain.handle(
     'owner:setDisplayConfig',
-    (_e, pin: string, config: { promo_enabled?: boolean; promo_text?: string; ads_image?: string; ads_interval?: number }) => {
+    (_e, pin: string, config: { promo_enabled?: boolean; ads?: AdSlide[]; ads_interval?: number }) => {
       if (!pinValid(pin)) return { success: false, error: 'Owner PIN required' };
       writeSetting('display_promo_enabled', config?.promo_enabled ? '1' : '0');
-      writeSetting('display_promo_text', String(config?.promo_text || ''));
-      writeSetting('display_ads_image', String(config?.ads_image || ''));
+      const ads: AdSlide[] = Array.isArray(config?.ads)
+        ? config.ads
+            .slice(0, 20)
+            .map((s) => ({ image: String(s?.image || ''), headline: String(s?.headline || ''), body: String(s?.body || '') }))
+            .filter((s) => s.image || s.headline || s.body)
+        : [];
+      writeSetting('display_ads', JSON.stringify(ads));
       const iv = Math.max(3, Math.min(60, Number(config?.ads_interval) || 8));
       writeSetting('display_ads_interval', String(iv));
       return { success: true };

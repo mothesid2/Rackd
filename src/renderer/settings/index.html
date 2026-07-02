@@ -291,8 +291,11 @@
             Show promotional / rebate message on the customer display
           </label>
         </div>
-        <div class="form-group"><label>Ad / rebate messages (one per line — they rotate)</label><textarea id="promoText" rows="3" style="resize:vertical" placeholder="Ask about manufacturer rebates today!&#10;New arrivals every Friday"></textarea></div>
-        <div class="form-group"><label>Banner image URL (optional)</label><input type="text" id="adsImage" placeholder="https://…/banner.png" /></div>
+        <div class="form-group">
+          <label>Ad / rebate slides (rotate on the customer display)</label>
+          <div id="adsList"></div>
+          <button type="button" class="btn btn-gray" style="padding:5px 12px;font-size:12px;margin-top:6px" onclick="addAdSlide()">+ Add slide</button>
+        </div>
         <div class="form-group" style="max-width:240px"><label>Rotate every (seconds)</label><input type="number" id="adsInterval" min="3" max="60" value="8" /></div>
         <button class="btn btn-navy" onclick="saveOwnerDisplay()">Save Display Settings</button>
       </div>
@@ -457,17 +460,42 @@
       const cfg = await window.api.ownerGetDisplayConfig();
       if (cfg && cfg.config) {
         document.getElementById('promoEnabled').checked = !!cfg.config.promo_enabled;
-        document.getElementById('promoText').value = cfg.config.promo_text || '';
-        document.getElementById('adsImage').value = cfg.config.ads_image || '';
         document.getElementById('adsInterval').value = cfg.config.ads_interval || 8;
+        const list = document.getElementById('adsList');
+        list.innerHTML = '';
+        const ads = cfg.config.ads || [];
+        if (ads.length) ads.forEach(addAdSlide); else addAdSlide();
       }
+    }
+    function addAdSlide(slide) {
+      slide = slide || {};
+      const row = document.createElement('div');
+      row.className = 'ad-slide-row';
+      row.style.cssText = 'border:1px solid #eee;border-radius:8px;padding:10px;margin-bottom:8px;background:#fafafa';
+      row.innerHTML =
+        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">' +
+        '<input type="text" class="ad-headline" placeholder="Headline (e.g. Manufacturer rebate today!)" style="flex:1" />' +
+        '<button type="button" class="btn btn-gray" style="padding:2px 10px;font-size:12px" onclick="this.closest(\'.ad-slide-row\').remove()">Remove</button>' +
+        '</div>' +
+        '<input type="text" class="ad-body" placeholder="Sub-text (optional)" style="width:100%;margin-bottom:6px" />' +
+        '<input type="text" class="ad-image" placeholder="Image URL (optional)" style="width:100%" />';
+      row.querySelector('.ad-headline').value = slide.headline || '';
+      row.querySelector('.ad-body').value = slide.body || '';
+      row.querySelector('.ad-image').value = slide.image || '';
+      document.getElementById('adsList').appendChild(row);
+    }
+    function collectAds() {
+      return Array.from(document.querySelectorAll('#adsList .ad-slide-row')).map((r) => ({
+        headline: r.querySelector('.ad-headline').value.trim(),
+        body: r.querySelector('.ad-body').value.trim(),
+        image: r.querySelector('.ad-image').value.trim(),
+      })).filter((s) => s.headline || s.body || s.image);
     }
     async function saveOwnerDisplay() {
       if (!ownerPinCached) { showToast('Unlock the Owner Console first', 'warning'); return; }
       const res = await window.api.ownerSetDisplayConfig(ownerPinCached, {
         promo_enabled: document.getElementById('promoEnabled').checked,
-        promo_text: document.getElementById('promoText').value.trim(),
-        ads_image: document.getElementById('adsImage').value.trim(),
+        ads: collectAds(),
         ads_interval: parseInt(document.getElementById('adsInterval').value, 10) || 8,
       });
       showToast(res.success ? 'Display settings saved' : (res.error || 'Failed'), res.success ? 'success' : 'error');
