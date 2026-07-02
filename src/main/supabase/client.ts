@@ -43,13 +43,21 @@ export function getSupabase(): SupabaseClient | null {
 
   const { url, key } = readConfig();
   try {
-    // TODO: Replace with signed per-install JWT carrying tenant_id and license_key
-    // claims before production. Today this uses the anon key with no tenant
-    // context, so the tenant-scoped RLS policies in supabase/migrations/*.sql
-    // will reject reads/writes until that JWT is attached here (e.g. via
-    // global headers Authorization: Bearer <jwt> or supabase.auth.setSession).
+    // Attach a per-install JWT (tenant_id + license_key claims) on every request
+    // via the accessToken hook. tokenManager serves a valid token (refreshing as
+    // needed); if none is available we fall back to the anon key so RLS blocks
+    // tenant data naturally rather than erroring. Lazy require breaks the
+    // client -> tokenManager -> licenseCheck -> client import cycle.
     client = createClient(url as string, key as string, {
-      auth: { persistSession: false, autoRefreshToken: false },
+      accessToken: async () => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { getValidToken } = require('./tokenManager') as typeof import('./tokenManager');
+          return await getValidToken();
+        } catch {
+          return key as string; // anon -> RLS blocks tenant-scoped rows
+        }
+      },
     });
   } catch (err) {
     console.error('[supabase] failed to create client:', String(err));
@@ -69,8 +77,16 @@ export async function checkConnection(): Promise<boolean> {
   try {
     const { error } = await supabase.from('licenses').select('id').limit(1);
     if (!error) return true;
-    // PostgREST 42P01 = undefined_table -> server reachable, table just absent.
-    if (error.code === '42P01' || /does not exist/i.test(error.message)) return true;
+    // Server reachable but the table just isn't there yet (migrations not run):
+    //  - Postgres 42P01 = undefined_table
+    //  - PostgREST PGRST205 = "Could not find the table ... in the schema cache"
+    if (
+      error.code === '42P01' ||
+      error.code === 'PGRST205' ||
+      /does not exist|could not find the table/i.test(error.message)
+    ) {
+      return true;
+    }
     console.warn('[supabase] connection check returned an error:', error.message);
     return false;
   } catch (err) {

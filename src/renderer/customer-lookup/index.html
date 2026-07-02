@@ -33,7 +33,7 @@
     }
 
     .customer-item:hover { background: #f4f4ec; }
-    .customer-item.selected { background: #eef0e4; border-left: 3px solid #858966; }
+    .customer-item.selected { background: #fce8ea; border-left: 3px solid #b01d2e; }
     .customer-item:last-child { border-bottom: none; }
 
     .ci-name { font-size: 15px; font-weight: 600; color: #1a1a1a; }
@@ -186,7 +186,7 @@
         </div>
       </div>
 
-      <button class="btn btn-green" style="width:100%" onclick="openModal('addCustomerModal')">
+      <button class="btn btn-green" style="width:100%" onclick="openAddCustomer()">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Add New Customer
       </button>
@@ -249,9 +249,21 @@
           Opt in for SMS promotions
         </label>
       </div>
+      <div id="ac-consent-block" style="display:none;margin-top:4px;border:1px solid #eee;border-radius:8px;padding:12px;background:#fafafa">
+        <div style="font-size:12px;color:#555;line-height:1.5;margin-bottom:8px">
+          By signing, the customer agrees to receive recurring automated marketing &amp; transactional
+          text messages at the number provided. Consent is not a condition of purchase. Msg &amp; data
+          rates may apply; msg frequency varies. Reply STOP to opt out, HELP for help.
+        </div>
+        <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#888">Customer signature</label>
+        <canvas id="ac-sig" width="440" height="120" style="width:100%;height:120px;border:1px dashed #bbb;border-radius:6px;background:#fff;touch-action:none;cursor:crosshair"></canvas>
+        <div style="text-align:right;margin-top:4px">
+          <button type="button" class="btn btn-gray" style="padding:4px 10px;font-size:12px" onclick="clearSignature()">Clear</button>
+        </div>
+      </div>
       <div class="modal-actions">
         <button class="btn btn-gray" onclick="closeModal('addCustomerModal')">Cancel</button>
-        <button class="btn btn-navy" id="addCustomerBtn">Save Customer</button>
+        <button class="btn btn-navy" id="addCustomerBtn" data-write-action="customer_edit">Save Customer</button>
       </div>
     </div>
   </div>
@@ -279,7 +291,7 @@
       <div class="form-group"><label>Notes</label><textarea id="ec-notes" rows="2" style="resize:vertical"></textarea></div>
       <div class="modal-actions">
         <button class="btn btn-gray" onclick="closeModal('editCustomerModal')">Cancel</button>
-        <button class="btn btn-navy" id="editCustomerBtn">Save Changes</button>
+        <button class="btn btn-navy" id="editCustomerBtn" data-write-action="customer_edit">Save Changes</button>
       </div>
     </div>
   </div>
@@ -378,6 +390,9 @@
   </div>
 
   <script src="../shared.js"></script>
+  <script src="../lib/writeGuard.js"></script>
+  <script src="../lib/licenseUi.js"></script>
+  <script src="../lib/syncUi.js"></script>
   <script>
     let customers = [];
     let selectedCustomer = null;
@@ -401,6 +416,8 @@
       });
 
       document.getElementById('addCustomerBtn').addEventListener('click', addCustomer);
+      document.getElementById('ac-optin').addEventListener('change', toggleConsent);
+      initSignaturePad();
       document.getElementById('editCustomerBtn').addEventListener('click', editCustomer);
 
       document.getElementById('sendBlastBtn').addEventListener('click', sendBlast);
@@ -675,6 +692,43 @@
       }
     }
 
+    // ── Signature pad for SMS consent ──────────────────────────────────────
+    let sigCtx = null, sigDrawing = false, sigHas = false;
+    function initSignaturePad() {
+      const c = document.getElementById('ac-sig');
+      if (!c) return;
+      sigCtx = c.getContext('2d');
+      sigCtx.lineWidth = 2; sigCtx.lineCap = 'round'; sigCtx.strokeStyle = '#1a1a1a';
+      const pos = (e) => {
+        const r = c.getBoundingClientRect();
+        const t = e.touches ? e.touches[0] : e;
+        return { x: (t.clientX - r.left) * (c.width / r.width), y: (t.clientY - r.top) * (c.height / r.height) };
+      };
+      const start = (e) => { sigDrawing = true; sigHas = true; const p = pos(e); sigCtx.beginPath(); sigCtx.moveTo(p.x, p.y); e.preventDefault(); };
+      const move = (e) => { if (!sigDrawing) return; const p = pos(e); sigCtx.lineTo(p.x, p.y); sigCtx.stroke(); e.preventDefault(); };
+      const end = () => { sigDrawing = false; };
+      c.addEventListener('mousedown', start); c.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
+      c.addEventListener('touchstart', start, { passive: false }); c.addEventListener('touchmove', move, { passive: false }); c.addEventListener('touchend', end);
+    }
+    function clearSignature() {
+      const c = document.getElementById('ac-sig');
+      if (sigCtx && c) sigCtx.clearRect(0, 0, c.width, c.height);
+      sigHas = false;
+    }
+    function toggleConsent() {
+      const on = document.getElementById('ac-optin').checked;
+      document.getElementById('ac-consent-block').style.display = on ? 'block' : 'none';
+      if (!on) clearSignature();
+    }
+    function openAddCustomer() {
+      ['ac-first','ac-last','ac-phone','ac-email','ac-address','ac-city','ac-state','ac-zip','ac-notes']
+        .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      document.getElementById('ac-optin').checked = false;
+      toggleConsent();
+      clearSignature();
+      openModal('addCustomerModal');
+    }
+
     async function addCustomer() {
       const data = {
         first_name: document.getElementById('ac-first').value.trim(),
@@ -690,6 +744,12 @@
       };
 
       if (!data.first_name || !data.last_name) { showToast('Name required', 'warning'); return; }
+
+      // SMS opt-in requires a signed consent (Twilio A2P).
+      if (data.opt_in_sms) {
+        if (!sigHas) { showToast('Customer signature required to opt in for SMS', 'warning'); return; }
+        data.sms_consent_signature = document.getElementById('ac-sig').toDataURL('image/png');
+      }
 
       const res = await window.api.addCustomer(data);
       if (res.success) {

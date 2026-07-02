@@ -19,8 +19,10 @@ import { registerDrawerHandlers } from './ipc/drawer';
 import { registerDatabaseHandlers } from './ipc/database';
 import { registerSyncHandlers } from './ipc/sync';
 import { registerLicenseHandlers } from './ipc/license';
+import { registerOwnerHandlers } from './ipc/owner';
 import { startSyncWorker } from './supabase/sync';
 import { startLicenseChecks } from './supabase/licenseCheck';
+import { startTokenAutoRefresh } from './supabase/tokenManager';
 
 app.whenReady().then(() => {
   // 1. Initialize SQLite + run pending migrations
@@ -29,6 +31,10 @@ app.whenReady().then(() => {
   // 2-5. Load cached license, attempt a (non-blocking) Supabase check, and
   // lock/unlock features from the result. Returns immediately from cache.
   startLicenseChecks();
+
+  // 5b. Fetch/refresh the per-install auth JWT in the background (non-blocking;
+  // POS starts even if this fails). Result is logged to the settings table.
+  startTokenAutoRefresh();
 
   // Create main window
   const win = createMainWindow();
@@ -54,6 +60,7 @@ app.whenReady().then(() => {
   registerDatabaseHandlers();
   registerSyncHandlers();
   registerLicenseHandlers();
+  registerOwnerHandlers();
 
   // 6. Cloud layer: start the local-first -> Supabase sync worker (no-op if
   // Supabase isn't configured; the POS runs fully on local SQLite regardless).

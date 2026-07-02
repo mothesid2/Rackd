@@ -159,14 +159,15 @@ export function registerCustomerHandlers(): void {
     first_name: string; last_name: string; phone?: string;
     email?: string; address?: string; city?: string; state?: string;
     zip?: string; dob?: string; license_number?: string; notes?: string; opt_in_sms?: boolean;
+    sms_consent_signature?: string;
   }) => {
     try {
       const w = assertWritable('customer_edit'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
       const id = db.transaction(() => {
         const result = db.prepare(`
-          INSERT INTO customers (first_name, last_name, phone, email, address, city, state, zip, dob, license_number, notes, opt_in_sms)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO customers (first_name, last_name, phone, email, address, city, state, zip, dob, license_number, notes, opt_in_sms, sms_consent_at, sms_consent_signature)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           data.first_name,
           data.last_name,
@@ -179,7 +180,9 @@ export function registerCustomerHandlers(): void {
           data.dob || null,
           data.license_number || null,
           data.notes || null,
-          data.opt_in_sms ? 1 : 0
+          data.opt_in_sms ? 1 : 0,
+          data.opt_in_sms ? nowCT() : null,
+          data.opt_in_sms ? (data.sms_consent_signature || null) : null
         );
         const newId = result.lastInsertRowid as number;
         // Cloud sync (D.1): enqueue the new customer, atomic with the insert.

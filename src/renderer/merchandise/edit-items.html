@@ -65,7 +65,7 @@
     }
 
     .edit-table td input:focus {
-      border-color: #858966;
+      border-color: #b01d2e;
       background: #f4f4ec;
     }
 
@@ -73,7 +73,7 @@
     .edit-table tr.dirty td { background: #fffbeb !important; }
 
     .save-row-btn {
-      background: #858966;
+      background: #b01d2e;
       color: #fff;
       border: none;
       border-radius: 5px;
@@ -139,7 +139,7 @@
       </div>
       <div class="bulk-save">
         <span id="dirtyCount" style="font-size:13px;color:#888;align-self:center"></span>
-        <button class="btn btn-navy" id="saveAllBtn" disabled>Save All Changes</button>
+        <button class="btn btn-navy" id="saveAllBtn" data-write-action="inventory_edit" disabled>Save All Changes</button>
       </div>
     </div>
   </div>
@@ -150,6 +150,9 @@
   </div>
 
   <script src="../shared.js"></script>
+  <script src="../lib/writeGuard.js"></script>
+  <script src="../lib/licenseUi.js"></script>
+  <script src="../lib/syncUi.js"></script>
   <script>
     let products = [];
     let dirtyRows = new Set();
@@ -197,7 +200,7 @@
           <td style="text-align:center"><input type="checkbox" data-field="age_restricted" style="width:auto" ${p.age_restricted ? 'checked' : ''} onchange="markDirty(${p.id})" /></td>
           <td style="text-align:center"><input type="checkbox" data-field="low_stock_alert" style="width:auto" ${p.low_stock_alert === 0 ? '' : 'checked'} onchange="markDirty(${p.id})" /></td>
           <td style="white-space:nowrap">
-            <button class="save-row-btn" onclick="saveRow(${p.id})" ${dirtyRows.has(p.id) ? '' : 'disabled'}>Save</button>
+            <button class="save-row-btn" data-write-action="inventory_edit" onclick="saveRow(${p.id})" ${dirtyRows.has(p.id) ? '' : 'disabled'}>Save</button>
             <button class="save-row-btn" style="background:#6d28d9" onclick="openVariants(${p.id}, '${esc(p.name).replace(/'/g,"\\'")}')">Variants</button>
           </td>
         </tr>

@@ -175,6 +175,7 @@
     </div>
     <div class="brand-name" data-brand>rackd</div>
     <div class="welcome-msg"><span data-welcome>Welcome!</span></div>
+    <div data-promo style="display:none;margin-top:18px;max-width:72%;text-align:center;font-size:26px;font-weight:800;color:#b01d2e;text-shadow:0 0 20px rgba(176,29,46,0.55)"></div>
   </div>
 
   <!-- CART -->
@@ -187,6 +188,7 @@
         </svg>
       </div>
       <span data-brand>rackd</span>
+      <span id="cartGreeting" style="margin-left:auto;font-size:22px;font-weight:700;color:#b01d2e;text-shadow:0 0 14px rgba(176,29,46,0.5);display:none"></span>
     </div>
 
     <div class="cart-items" id="cartItems"></div>
@@ -263,12 +265,32 @@
       try {
         const cfg = await window.api.getReceiptConfig();
         const name = cfg?.config?.store_name;
+        window.__storeWelcome = name ? `Welcome to ${name}!` : 'Welcome!';
         if (name) {
           document.querySelectorAll('[data-brand]').forEach(el => { el.textContent = name; });
-          document.querySelectorAll('[data-welcome]').forEach(el => { el.textContent = `Welcome to ${name}!`; });
+          document.querySelectorAll('[data-welcome]').forEach(el => { el.textContent = window.__storeWelcome; });
         }
       } catch { /* keep defaults */ }
     })();
+
+    // Owner-configured promotional / rebate message (ads foundation). Polled so
+    // owner changes appear without restarting the display.
+    async function loadPromo() {
+      try {
+        const r = await window.api.ownerGetDisplayConfig();
+        const cfg = r && r.config;
+        const el = document.querySelector('[data-promo]');
+        if (!el) return;
+        if (cfg && cfg.promo_enabled && cfg.promo_text) {
+          el.textContent = cfg.promo_text;
+          el.style.display = 'block';
+        } else {
+          el.style.display = 'none';
+        }
+      } catch { /* ignore */ }
+    }
+    loadPromo();
+    setInterval(loadPromo, 30000);
 
     function showState(state) {
       document.getElementById('idleScreen').style.display = state === 'idle' ? 'flex' : 'none';
@@ -276,8 +298,32 @@
       document.getElementById('cardScreen').style.display = state === 'card_processing' ? 'flex' : 'none';
     }
 
+    function itemsHtml(items) {
+      return (items || []).map(item => `
+          <div class="cart-item">
+            <span>
+              <span class="item-name">${item.name}</span>
+              <span class="item-qty">× ${item.qty}</span>
+            </span>
+            <span class="item-total">${fmt(item.total)}</span>
+          </div>
+        `).join('');
+    }
+
+    // "Welcome back, {name}" on idle + cart when a customer is attached.
+    function updateGreeting(name) {
+      const idleWelcome = document.querySelector('[data-welcome]');
+      if (idleWelcome) idleWelcome.textContent = name ? `Welcome back, ${name}!` : (window.__storeWelcome || 'Welcome!');
+      const cartGreet = document.getElementById('cartGreeting');
+      if (cartGreet) {
+        cartGreet.textContent = name ? `Welcome back, ${name}` : '';
+        cartGreet.style.display = name ? 'block' : 'none';
+      }
+    }
+
     window.api.on('update-display', (data) => {
       if (!data) { showState('idle'); return; }
+      updateGreeting(data.customer || null);
 
       if (data.state === 'idle') {
         showState('idle');
@@ -285,7 +331,13 @@
       }
 
       if (data.state === 'card_processing') {
-        document.getElementById('cardAmount').textContent = fmt(data.total);
+        document.getElementById('cardCartItems').innerHTML = itemsHtml(data.cart);
+        document.getElementById('cardSubtotal').textContent = fmt(data.subtotal);
+        document.getElementById('cardTax').textContent = fmt(data.tax);
+        document.getElementById('cardTotal').textContent = fmt(data.total);
+        const cdr = document.getElementById('cardDiscountRow');
+        if (data.discount > 0) { cdr.style.display = 'flex'; document.getElementById('cardDiscount').textContent = `-${fmt(data.discount)}`; }
+        else { cdr.style.display = 'none'; }
         showState('card_processing');
         return;
       }

@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import bcrypt from 'bcryptjs';
 import path from 'path';
 import { runMigrations } from './migrations';
 
@@ -318,4 +319,20 @@ export function initSchema(db: Database.Database): void {
 
   // Per-item low-stock alert toggle (off = never surfaced in low-stock alerts)
   try { db.exec(`ALTER TABLE products ADD COLUMN low_stock_alert INTEGER NOT NULL DEFAULT 1`); } catch { /* already exists */ }
+
+  // SMS consent capture (Twilio A2P): when a customer opts in we record when they
+  // consented and store their signature (data URL) as proof.
+  try { db.exec(`ALTER TABLE customers ADD COLUMN sms_consent_at TEXT`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE customers ADD COLUMN sms_consent_signature TEXT`); } catch { /* already exists */ }
+
+  // First-run bootstrap: if there are no users yet (fresh install on a new
+  // computer), create a default manager account that MUST change its password
+  // on first login. This makes a brand-new install both usable and secure.
+  const userCount = (db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n;
+  if (userCount === 0) {
+    const hash = bcrypt.hashSync('admin123', 10);
+    db.prepare(
+      "INSERT INTO users (username, password_hash, role, must_change_password) VALUES ('admin', ?, 'manager', 1)"
+    ).run(hash);
+  }
 }

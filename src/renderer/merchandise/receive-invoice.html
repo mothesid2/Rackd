@@ -38,7 +38,7 @@
       border: 1px solid #ddd; border-radius: 6px; padding: 6px 8px;
       font-size: 14px; width: 100%; outline: none;
     }
-    .line-items-table td input:focus { border-color: #858966; }
+    .line-items-table td input:focus { border-color: #b01d2e; }
     .remove-btn { background:#fee2e2;color:#991b1b;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px; }
     .remove-btn:hover { background:#fecaca; }
 
@@ -369,7 +369,7 @@
       pendingPdfPath = path;
       const parts = path.split(/[\\/]/);
       document.getElementById('pdfPathLabel').textContent = parts[parts.length - 1];
-      document.getElementById('pdfPathLabel').style.color = '#858966';
+      document.getElementById('pdfPathLabel').style.color = '#b01d2e';
     }
 
     function handleSearch() {
@@ -389,7 +389,7 @@
              onmouseover="this.style.background='#f4f4ec'" onmouseout="this.style.background='#fff'">
           <strong>${esc(p.name)}</strong>
           <span style="color:#888;margin-left:8px">${esc(p.barcode || '')}</span>
-          <span style="float:right;color:#858966">Stock: ${p.stock_qty}</span>
+          <span style="float:right;color:#b01d2e">Stock: ${p.stock_qty}</span>
         </div>
       `).join('');
       el.style.display = 'block';

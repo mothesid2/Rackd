@@ -379,9 +379,9 @@ html, body {
   white-space: nowrap;
 }
 
-.data-table th:hover { color: #858966; }
+.data-table th:hover { color: #b01d2e; }
 .data-table th .sort-icon { margin-left: 4px; opacity: 0.4; }
-.data-table th.sorted .sort-icon { opacity: 1; color: #858966; }
+.data-table th.sorted .sort-icon { opacity: 1; color: #b01d2e; }
 
 .data-table td {
   padding: 10px 12px;
@@ -421,8 +421,8 @@ html, body {
 
 .filter-bar input:focus,
 .filter-bar select:focus {
-  border-color: #858966;
-  box-shadow: 0 0 0 3px rgba(133,137,102,0.1);
+  border-color: #b01d2e;
+  box-shadow: 0 0 0 3px rgba(176,29,46,0.1);
 }
 
 .search-wrap {
@@ -470,8 +470,8 @@ html, body {
   transition: all 0.15s;
 }
 
-.pagination-controls button:hover { background: #f4f4ec; border-color: #858966; }
-.pagination-controls button.active { background: #858966; color: #fff; border-color: #858966; }
+.pagination-controls button:hover { background: #f4f4ec; border-color: #b01d2e; }
+.pagination-controls button.active { background: #b01d2e; color: #fff; border-color: #b01d2e; }
 
 /* ========== MODAL ========== */
 .modal-overlay {
@@ -564,8 +564,8 @@ html, body {
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
-  border-color: #858966;
-  box-shadow: 0 0 0 3px rgba(133,137,102,0.1);
+  border-color: #b01d2e;
+  box-shadow: 0 0 0 3px rgba(176,29,46,0.1);
 }
 
 .form-row {
@@ -661,7 +661,7 @@ html, body {
 }
 
 .drop-zone.drag-over {
-  border-color: #858966;
+  border-color: #b01d2e;
   background: #f4f4ec;
-  color: #858966;
+  color: #b01d2e;
 }

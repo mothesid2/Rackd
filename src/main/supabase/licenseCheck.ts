@@ -146,8 +146,10 @@ export function computeStatusFrom(
   // Cloud not configured -> licensing disabled, full local-first access.
   if (!configured) return full('unenforced', { level: 'none', message: '' });
 
-  // Configured but we've never cached a license (e.g. first run, still offline).
-  if (!cached) return lock('cache_expired', 'Unable to verify license — reconnect to the internet to continue');
+  // Configured but this install has never held a license yet (pre-provisioning).
+  // Do NOT brick it — enforcement kicks in only once a license has been seen and
+  // then lapses (invalid / expired / stale cache below).
+  if (!cached) return full('unlicensed', { level: 'none', message: '' });
 
   // Hard states from the license record itself.
   if (!cached.active) return lock('invalid', 'License inactive — contact your administrator');
