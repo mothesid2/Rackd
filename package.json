@@ -1,12 +1,12 @@
 {
   "name": "sei-vape-pos",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "rackd Point of Sale System",
   "main": "dist/main/index.js",
   "scripts": {
     "start": "npm run build:main && electron .",
     "build:main": "tsc -p tsconfig.json",
-    "build": "npm run build:main && electron-builder",
+    "build": "npm run build:main && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
     "seed": "electron dist/main/db/seed.js",
     "update": "git pull && npm start",
     "dev": "npm run build:main && electron . --dev",
@@ -63,6 +63,7 @@
     "@types/better-sqlite3": "^7.6.8",
     "@types/luxon": "^3.7.1",
     "@types/node": "^20.19.39",
+    "cross-env": "^10.1.0",
     "electron": "^41.2.0",
     "electron-builder": "^24.13.3",
     "typescript": "^5.3.3"
