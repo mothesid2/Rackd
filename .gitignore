@@ -26,3 +26,4 @@ Thumbs.db
 
 # Ad-hoc script compile output
 .tmp/
+supabase/.temp/
