@@ -11,12 +11,18 @@
     "update": "git pull && npm start",
     "dev": "npm run build:main && electron . --dev",
     "test": "npm run build:main && electron scripts/run-tests.js",
+    "release:staging": "npm run build && node scripts/publish-update.js staging",
+    "release": "npm run build && node scripts/publish-update.js production",
     "postinstall": "electron-rebuild -f"
   },
   "build": {
     "appId": "com.rackd.pos",
     "productName": "rackd POS",
     "npmRebuild": false,
+    "publish": {
+      "provider": "generic",
+      "url": "https://zougcsomgqnfumqkwuoj.supabase.co/storage/v1/object/public/app-updates/production"
+    },
     "directories": {
       "output": "release"
     },
@@ -41,6 +47,7 @@
     "@supabase/supabase-js": "^2.108.2",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^12.8.0",
+    "electron-updater": "^6.8.9",
     "luxon": "^3.7.2",
     "mqtt": "^5.15.1",
     "node-thermal-printer": "^4.3.3",

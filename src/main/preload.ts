@@ -133,6 +133,12 @@ contextBridge.exposeInMainWorld('api', {
   licenseActivate: (key: string) => ipcRenderer.invoke('license:activate', key),
   licenseDeactivate: () => ipcRenderer.invoke('license:deactivate'),
 
+  // Auto-update
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateInstall: () => ipcRenderer.invoke('update:install'),
+  updateGetChannel: () => ipcRenderer.invoke('update:getChannel'),
+  updateSetChannel: (ch: string) => ipcRenderer.invoke('update:setChannel', ch),
+
   // Admin console (tenant/license provisioning — owner only)
   adminHasSecret: () => ipcRenderer.invoke('admin:hasSecret'),
   adminSetSecret: (pin: string, secret: string) => ipcRenderer.invoke('admin:setSecret', pin, secret),

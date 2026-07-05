@@ -26,6 +26,7 @@ import { isSupabaseConfigured } from './supabase/client';
 import { startSyncWorker } from './supabase/sync';
 import { startLicenseChecks } from './supabase/licenseCheck';
 import { startTokenAutoRefresh } from './supabase/tokenManager';
+import { startUpdater, registerUpdaterHandlers } from './updater';
 
 app.whenReady().then(() => {
   // 1. Initialize SQLite + run pending migrations
@@ -43,6 +44,8 @@ app.whenReady().then(() => {
   // screen calls it). Boot into activation when the cloud is configured but this
   // register hasn't been bound to a license yet; otherwise straight to login.
   registerActivationHandlers();
+  registerUpdaterHandlers();
+  startUpdater(); // background auto-update (packaged builds only)
   const bootPage = isSupabaseConfigured() && !isActivated() ? 'activation' : 'login';
 
   // Create main window

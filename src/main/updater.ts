@@ -1,0 +1,80 @@
+import { app, BrowserWindow, ipcMain } from 'electron';
+import { autoUpdater } from 'electron-updater';
+import { getDb } from './db/schema';
+import { PUBLIC_SUPABASE_URL } from './supabase/publicConfig';
+
+/**
+ * Auto-update via a public Supabase Storage bucket.
+ *
+ * Two channels live in the bucket as folders:
+ *   app-updates/production/   <- customer installs point here (default)
+ *   app-updates/staging/      <- your test machine points here
+ *
+ * Releasing is manual (npm run release[:staging]) — nothing ships until you run
+ * it. Your test register (Owner Console → update channel = staging) gets the
+ * staging build first; promote to production when you're happy.
+ */
+const BUCKET = 'app-updates';
+
+function channel(): 'production' | 'staging' {
+  try {
+    const row = getDb().prepare("SELECT value FROM settings WHERE key = 'update_channel'").get() as { value: string } | undefined;
+    return row?.value === 'staging' ? 'staging' : 'production';
+  } catch {
+    return 'production';
+  }
+}
+
+function feedUrl(): string {
+  return `${PUBLIC_SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/${BUCKET}/${channel()}`;
+}
+
+function broadcast(state: string, extra: Record<string, unknown> = {}): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) {
+      try { w.webContents.send('update:status', { state, ...extra }); } catch { /* window gone */ }
+    }
+  }
+}
+
+let started = false;
+
+export function startUpdater(): void {
+  if (started) return;
+  started = true;
+  if (!app.isPackaged) return; // never auto-update a dev run
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  try { autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl() }); } catch { /* ignore */ }
+
+  autoUpdater.on('checking-for-update', () => broadcast('checking'));
+  autoUpdater.on('update-available', (info) => broadcast('available', { version: info.version }));
+  autoUpdater.on('update-not-available', () => broadcast('none'));
+  autoUpdater.on('download-progress', (p) => broadcast('downloading', { percent: Math.round(p.percent) }));
+  autoUpdater.on('update-downloaded', (info) => broadcast('ready', { version: info.version }));
+  autoUpdater.on('error', (err) => broadcast('error', { error: String(err) }));
+
+  const check = () => autoUpdater.checkForUpdates().catch(() => {});
+  setTimeout(check, 8000); // shortly after launch
+  setInterval(check, 6 * 60 * 60 * 1000); // and every 6 hours
+}
+
+export function registerUpdaterHandlers(): void {
+  ipcMain.handle('update:check', () => {
+    if (app.isPackaged) autoUpdater.checkForUpdates().catch(() => {});
+    return { success: true, packaged: app.isPackaged };
+  });
+  ipcMain.handle('update:install', () => {
+    autoUpdater.quitAndInstall();
+    return { success: true };
+  });
+  ipcMain.handle('update:getChannel', () => ({ success: true, channel: channel() }));
+  ipcMain.handle('update:setChannel', (_e, ch: string) => {
+    getDb()
+      .prepare("INSERT INTO settings (key, value) VALUES ('update_channel', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run(ch === 'staging' ? 'staging' : 'production');
+    try { autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl() }); } catch { /* ignore */ }
+    return { success: true };
+  });
+}

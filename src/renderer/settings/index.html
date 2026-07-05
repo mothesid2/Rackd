@@ -299,6 +299,13 @@
         <div class="form-group" style="max-width:240px"><label>Rotate every (seconds)</label><input type="number" id="adsInterval" min="3" max="60" value="8" /></div>
         <button class="btn btn-navy" onclick="saveOwnerDisplay()">Save Display Settings</button>
         <button class="btn btn-gray" style="margin-left:8px" onclick="navigate('admin')">Tenant Admin →</button>
+        <div class="form-group" style="max-width:280px;margin-top:18px">
+          <label>Update channel (this register)</label>
+          <select id="updateChannel" onchange="setUpdateChannel()">
+            <option value="production">Production (stable)</option>
+            <option value="staging">Staging (test builds first)</option>
+          </select>
+        </div>
       </div>
     </div>
   </div>
@@ -467,6 +474,12 @@
         const ads = cfg.config.ads || [];
         if (ads.length) ads.forEach(addAdSlide); else addAdSlide();
       }
+      try { const uc = await window.api.updateGetChannel(); if (uc && uc.channel) document.getElementById('updateChannel').value = uc.channel; } catch (e) {}
+    }
+    async function setUpdateChannel() {
+      const ch = document.getElementById('updateChannel').value;
+      const r = await window.api.updateSetChannel(ch);
+      showToast(r.success ? ('Update channel: ' + ch) : 'Failed', r.success ? 'success' : 'error');
     }
     function addAdSlide(slide) {
       slide = slide || {};
