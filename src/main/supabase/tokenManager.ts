@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import { getDb } from '../db/schema';
 import { loadCachedLicense } from './licenseCheck';
 import { loadEnv } from './env';
+import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from './publicConfig';
 
 /**
  * Per-install auth token lifecycle. Fetches a signed JWT from the jwt-issuer
@@ -33,8 +34,10 @@ function writeSetting(key: string, value: string, db: Database.Database = getDb(
 
 function functionUrl(): { url: string; anonKey: string } | null {
   loadEnv();
-  const base = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  // .env overrides in dev; otherwise the baked public config (so the packaged
+  // installer can reach the Edge Function without a local .env).
+  const base = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || PUBLIC_SUPABASE_ANON_KEY;
   if (!base || !anonKey) return null;
   return { url: `${base.replace(/\/$/, '')}/functions/v1/jwt-issuer`, anonKey };
 }

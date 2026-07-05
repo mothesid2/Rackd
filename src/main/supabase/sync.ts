@@ -2,6 +2,7 @@ import { net, BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
 import { getDb } from '../db/schema';
 import { getSupabase, isSupabaseConfigured } from './client';
+import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from './publicConfig';
 import { loadCachedLicense } from './licenseCheck';
 import type { SyncOp, SyncQueueRow } from '../db/types';
 
@@ -216,8 +217,8 @@ async function pingSupabase(): Promise<boolean> {
   }
   if (!osOnline) return false;
 
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return false;
 
   const controller = new AbortController();

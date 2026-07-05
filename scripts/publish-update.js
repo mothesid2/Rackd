@@ -34,9 +34,15 @@ if (!fs.existsSync(path.join(releaseDir, 'latest.yml'))) {
   process.exit(1);
 }
 
-const files = fs.readdirSync(releaseDir).filter(
-  (f) => f === 'latest.yml' || f.endsWith('.exe') || f.endsWith('.blockmap')
-);
+// Only publish the CURRENT version's files (the installer named in latest.yml),
+// not stale installers left over from previous builds.
+const yml = fs.readFileSync(path.join(releaseDir, 'latest.yml'), 'utf8');
+const exe = (yml.match(/^path:\s*(.+)$/m) || [])[1]?.trim();
+const files = ['latest.yml'];
+if (exe && fs.existsSync(path.join(releaseDir, exe))) {
+  files.push(exe);
+  if (fs.existsSync(path.join(releaseDir, exe + '.blockmap'))) files.push(exe + '.blockmap');
+}
 
 const sb = createClient(URL, KEY, { auth: { persistSession: false } });
 
