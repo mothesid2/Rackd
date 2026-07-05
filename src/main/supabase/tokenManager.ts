@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import type Database from 'better-sqlite3';
 import { getDb } from '../db/schema';
 import { loadCachedLicense } from './licenseCheck';
@@ -38,6 +39,16 @@ function functionUrl(): { url: string; anonKey: string } | null {
   return { url: `${base.replace(/\/$/, '')}/functions/v1/jwt-issuer`, anonKey };
 }
 
+/** Stable per-install id used to count/limit machines (seats) per license key. */
+export function getMachineId(db: Database.Database = getDb()): string {
+  let id = readSetting('machine_id', db);
+  if (!id) {
+    id = randomUUID();
+    writeSetting('machine_id', id, db);
+  }
+  return id;
+}
+
 /** Call the jwt-issuer Edge Function and return the signed token + expiry. */
 export async function fetchToken(licenseKey: string): Promise<{ token: string; expires_at: string }> {
   const cfg = functionUrl();
@@ -49,7 +60,7 @@ export async function fetchToken(licenseKey: string): Promise<{ token: string; e
       apikey: cfg.anonKey,
       Authorization: `Bearer ${cfg.anonKey}`,
     },
-    body: JSON.stringify({ license_key: licenseKey }),
+    body: JSON.stringify({ license_key: licenseKey, machine_id: getMachineId() }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');

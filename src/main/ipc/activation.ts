@@ -86,6 +86,9 @@ export function registerActivationHandlers(): void {
     } catch (err) {
       const msg = String(err);
       if (/\b401\b|invalid or inactive/i.test(msg)) return { success: false, error: 'License key invalid or inactive.' };
+      if (/\b403\b|seat limit/i.test(msg)) {
+        return { success: false, error: 'This license has reached its machine limit. Deactivate another register or contact support to add seats.' };
+      }
       if (/\b429\b/.test(msg)) return { success: false, error: 'Too many attempts — wait a minute and try again.' };
       return { success: false, error: 'Could not reach the license server. Check the internet connection and try again.' };
     }

@@ -50,12 +50,14 @@ async function signToken(secret: string, claims: Record<string, unknown>): Promi
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
 
-  let licenseKey: string | undefined;
+  let body: { license_key?: string; machine_id?: string };
   try {
-    licenseKey = (await req.json())?.license_key;
+    body = await req.json();
   } catch {
     return json({ error: 'invalid JSON body' }, 400);
   }
+  const licenseKey = body?.license_key;
+  const machineId = body?.machine_id;
   if (!licenseKey) return json({ error: 'license_key is required' }, 400);
 
   if (rateLimited(licenseKey)) return json({ error: 'rate limit exceeded' }, 429);
@@ -71,13 +73,42 @@ Deno.serve(async (req: Request) => {
   const admin = createClient(url, serviceRole, { auth: { persistSession: false } });
   const { data: license, error } = await admin
     .from('licenses')
-    .select('tenant_id, license_key, tier, features, active')
+    .select('tenant_id, license_key, tier, features, active, max_registers')
     .eq('license_key', licenseKey)
     .maybeSingle();
 
   if (error) return json({ error: error.message }, 500);
   if (!license || license.active !== true) {
     return json({ error: 'license invalid or inactive' }, 401);
+  }
+
+  // Seat limit: a license may activate up to max_registers distinct machines.
+  // A machine already registered just refreshes (no new seat consumed).
+  if (machineId) {
+    const { data: regs, error: rErr } = await admin
+      .from('license_registrations')
+      .select('machine_id')
+      .eq('license_key', licenseKey);
+    if (rErr) return json({ error: rErr.message }, 500);
+
+    const already = (regs ?? []).some((r) => r.machine_id === machineId);
+    if (already) {
+      await admin
+        .from('license_registrations')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('license_key', licenseKey)
+        .eq('machine_id', machineId);
+    } else {
+      const max = Number(license.max_registers ?? 1);
+      if ((regs ?? []).length >= max) {
+        return json({ error: 'seat limit reached', max_registers: max }, 403);
+      }
+      await admin.from('license_registrations').insert({
+        license_key: licenseKey,
+        tenant_id: license.tenant_id,
+        machine_id: machineId,
+      });
+    }
   }
 
   const exp = getNumericDate(TOKEN_TTL_SECONDS);

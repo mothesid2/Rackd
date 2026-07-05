@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { loadEnv } from './env';
+import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from './publicConfig';
 
 /**
  * Supabase client — main process ONLY. Never exposed to the renderer (the
@@ -19,8 +20,10 @@ function readConfig(): { url?: string; key?: string } {
   // Accept both the correct main-process names and the VITE_ names from the
   // spec's .env.example, so whichever the operator sets just works. (VITE_ is
   // only meaningful to the Vite-bundled renderer; here we just read process.env.)
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  // Dev overrides via .env; otherwise fall back to the baked public config so the
+  // packaged/installed app is cloud-configured out of the box.
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || PUBLIC_SUPABASE_ANON_KEY;
   return { url, key };
 }
 
