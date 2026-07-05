@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import bcrypt from 'bcryptjs';
 import { getDb } from '../db/schema';
+import { loadCachedLicense } from '../supabase/licenseCheck';
 
 /**
  * Owner gate — a PIN only the business owner knows, separate from the client's
@@ -84,14 +85,31 @@ export function registerOwnerHandlers(): void {
 
   // Owner-only customer-display config: rotating ad/rebate slides (image +
   // headline + body) shown on the idle display.
-  ipcMain.handle('owner:getDisplayConfig', () => ({
-    success: true,
-    config: {
-      promo_enabled: readSetting('display_promo_enabled') === '1',
-      ads: readAds(),
-      ads_interval: Number(readSetting('display_ads_interval')) || 8, // seconds per slide
-    },
-  }));
+  ipcMain.handle('owner:getDisplayConfig', () => {
+    // Prefer owner-managed cloud config (set per-tenant in the admin console);
+    // fall back to this register's local ads when the cloud config is empty.
+    const dc = loadCachedLicense()?.display_config;
+    if (dc && (dc.promo_enabled || (Array.isArray(dc.ads) && dc.ads.length))) {
+      return {
+        success: true,
+        source: 'cloud',
+        config: {
+          promo_enabled: !!dc.promo_enabled,
+          ads: Array.isArray(dc.ads) ? dc.ads : [],
+          ads_interval: Number(dc.ads_interval) || 8,
+        },
+      };
+    }
+    return {
+      success: true,
+      source: 'local',
+      config: {
+        promo_enabled: readSetting('display_promo_enabled') === '1',
+        ads: readAds(),
+        ads_interval: Number(readSetting('display_ads_interval')) || 8,
+      },
+    };
+  });
 
   // Writing the config is PIN-guarded server-side, not just hidden in the UI.
   ipcMain.handle(

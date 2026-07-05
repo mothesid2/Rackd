@@ -30,6 +30,8 @@ export interface LicenseRecord {
   expires_at: string | null; // ISO; null = no hard expiry
   tenant_id: string | null; // needed to scope cloud writes (sync worker injects this)
   license_key: string | null;
+  // Owner-managed customer-display / ads config, set centrally in the admin console.
+  display_config?: { promo_enabled?: boolean; ads?: unknown[]; ads_interval?: number } | null;
 }
 
 export type LicenseMode = 'full' | 'read_only';
@@ -194,6 +196,7 @@ function normalize(row: Record<string, unknown>): LicenseRecord {
     expires_at: (row.expires_at as string) ?? null,
     tenant_id: (row.tenant_id as string) ?? null,
     license_key: (row.license_key as string) ?? null,
+    display_config: (row.display_config as LicenseRecord['display_config']) ?? null,
   };
 }
 

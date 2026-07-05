@@ -79,6 +79,21 @@
     </div>
   </div>
 
+  <!-- Ads modal (per-tenant) -->
+  <div class="overlay" id="adsModal" style="display:none">
+    <div class="panel">
+      <h2 id="adsTitle">Ads</h2>
+      <input type="hidden" id="adsKey" />
+      <div class="fg"><label style="display:flex;align-items:center;gap:8px;text-transform:none"><input type="checkbox" id="adsEnabled" style="width:auto" /> Show ads on this tenant's customer display</label></div>
+      <div class="fg"><label>Ad / rebate slides</label><div id="adsList"></div><button type="button" class="rowbtn" style="margin-top:6px" onclick="addAdSlide()">+ Add slide</button></div>
+      <div class="fg" style="max-width:200px"><label>Rotate every (seconds)</label><input type="number" id="adsInterval" min="3" max="60" value="8" /></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-gray" onclick="document.getElementById('adsModal').style.display='none'">Cancel</button>
+        <button class="btn btn-navy" id="adsSave" onclick="saveAds()">Save Ads</button>
+      </div>
+    </div>
+  </div>
+
   <script src="../shared.js"></script>
   <script>
     const FEATURES = [
@@ -139,6 +154,7 @@
           <td>${(l.features||[]).map(f=>`<span class="chip">${esc(FEATLABEL[f]||f)}</span>`).join('') || '<span style="color:#bbb">none</span>'}</td>
           <td style="white-space:nowrap;text-align:right">
             <button class="rowbtn" onclick='openEdit(${JSON.stringify(l)})'>Edit</button>
+            <button class="rowbtn" onclick='openAds(${JSON.stringify(l)})'>Ads</button>
             <button class="rowbtn danger" onclick="delTenant('${esc(l.license_key)}','${esc(l.name||l.license_key)}')">Delete</button>
           </td>
         </tr>`).join('');
@@ -191,6 +207,56 @@
       const r = await window.api.adminDelete(key);
       if (!r.success) { showToast(r.error || 'Failed', 'error'); return; }
       showToast('Tenant deleted', 'success'); loadTenants();
+    }
+
+    // ── Ads (per-tenant) ──────────────────────────────────────────────────
+    function adRow(slide) {
+      slide = slide || {};
+      const row = document.createElement('div');
+      row.className = 'ad-slide-row';
+      row.style.cssText = 'border:1px solid #eee;border-radius:8px;padding:9px;margin-bottom:7px;background:#fafafa';
+      row.innerHTML =
+        '<div style="display:flex;gap:6px;margin-bottom:5px"><input type="text" class="ad-h" placeholder="Headline" style="flex:1;padding:7px" />' +
+        '<button type="button" class="rowbtn danger" onclick="this.closest(\'.ad-slide-row\').remove()">×</button></div>' +
+        '<input type="text" class="ad-b" placeholder="Sub-text (optional)" style="width:100%;padding:7px;margin-bottom:5px" />' +
+        '<input type="text" class="ad-i" placeholder="Image URL (optional)" style="width:100%;padding:7px" />';
+      row.querySelector('.ad-h').value = slide.headline || '';
+      row.querySelector('.ad-b').value = slide.body || '';
+      row.querySelector('.ad-i').value = slide.image || '';
+      return row;
+    }
+    function addAdSlide(slide) { document.getElementById('adsList').appendChild(adRow(slide)); }
+    function collectAds() {
+      return Array.from(document.querySelectorAll('#adsList .ad-slide-row')).map(r => ({
+        headline: r.querySelector('.ad-h').value.trim(),
+        body: r.querySelector('.ad-b').value.trim(),
+        image: r.querySelector('.ad-i').value.trim(),
+      })).filter(s => s.headline || s.body || s.image);
+    }
+    function openAds(l) {
+      document.getElementById('adsTitle').textContent = 'Ads — ' + (l.name || l.license_key);
+      document.getElementById('adsKey').value = l.license_key;
+      const dc = l.display_config || {};
+      document.getElementById('adsEnabled').checked = !!dc.promo_enabled;
+      document.getElementById('adsInterval').value = dc.ads_interval || 8;
+      const list = document.getElementById('adsList'); list.innerHTML = '';
+      const ads = Array.isArray(dc.ads) ? dc.ads : [];
+      if (ads.length) ads.forEach(addAdSlide); else addAdSlide();
+      document.getElementById('adsModal').style.display = 'flex';
+    }
+    async function saveAds() {
+      const key = document.getElementById('adsKey').value;
+      const cfg = {
+        promo_enabled: document.getElementById('adsEnabled').checked,
+        ads: collectAds(),
+        ads_interval: parseInt(document.getElementById('adsInterval').value, 10) || 8,
+      };
+      const btn = document.getElementById('adsSave'); btn.disabled = true; btn.textContent = 'Saving…';
+      const r = await window.api.adminSetAds(key, cfg);
+      btn.disabled = false; btn.textContent = 'Save Ads';
+      if (!r.success) { showToast(r.error || 'Failed', 'error'); return; }
+      document.getElementById('adsModal').style.display = 'none';
+      showToast('Ads saved', 'success'); loadTenants();
     }
 
     document.getElementById('gatePin').addEventListener('keydown', e => { if (e.key==='Enter') gateSubmit(); });
