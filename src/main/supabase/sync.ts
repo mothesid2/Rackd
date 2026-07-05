@@ -390,8 +390,23 @@ async function pushRecord(
     if (rErr) throw new Error(rErr.message);
     const remoteUpdated = (remote?.updated_at as string) ?? null;
     if (localUpdated && remoteUpdated && new Date(remoteUpdated).getTime() > new Date(localUpdated).getTime()) {
-      // TODO: Push resolved conflicts to conflicts cloud table once auth JWT is in place
       recordConflict(row, localUpdated, remoteUpdated);
+      // Surface the conflict in the cloud conflicts table for the manager PWA.
+      // The per-install JWT scopes this insert to the tenant via RLS. Non-fatal:
+      // the local conflicts table already has the record either way.
+      try {
+        await supabase.from('conflicts').insert({
+          tenant_id: tenantId,
+          table_name: row.table_name,
+          record_id: row.record_id,
+          local_updated_at: localUpdated,
+          remote_updated_at: remoteUpdated,
+          local_payload: JSON.parse(row.payload),
+          resolved: false,
+        });
+      } catch {
+        /* non-fatal — the local conflicts table still has it */
+      }
       return; // resolved by keeping local; cloud untouched
     }
     const { error } = await supabase.from(cloudTable).upsert(payload, { onConflict: UPSERT_ON_CONFLICT });
