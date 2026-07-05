@@ -133,6 +133,16 @@ contextBridge.exposeInMainWorld('api', {
   licenseActivate: (key: string) => ipcRenderer.invoke('license:activate', key),
   licenseDeactivate: () => ipcRenderer.invoke('license:deactivate'),
 
+  // Admin console (tenant/license provisioning — owner only)
+  adminHasSecret: () => ipcRenderer.invoke('admin:hasSecret'),
+  adminSetSecret: (pin: string, secret: string) => ipcRenderer.invoke('admin:setSecret', pin, secret),
+  adminList: () => ipcRenderer.invoke('admin:list'),
+  adminCreate: (payload: object) => ipcRenderer.invoke('admin:create', payload),
+  adminUpdate: (payload: object) => ipcRenderer.invoke('admin:update', payload),
+  adminDelete: (licenseKey: string) => ipcRenderer.invoke('admin:delete', licenseKey),
+  adminSetAds: (licenseKey: string, displayConfig: object) => ipcRenderer.invoke('admin:setAds', licenseKey, displayConfig),
+  adminFreeSeat: (licenseKey: string, machineId: string) => ipcRenderer.invoke('admin:freeSeat', licenseKey, machineId),
+
   // Owner gate (owner-only config, PIN-protected)
   ownerHasPin: () => ipcRenderer.invoke('owner:hasPin'),
   ownerVerifyPin: (pin: string) => ipcRenderer.invoke('owner:verifyPin', pin),

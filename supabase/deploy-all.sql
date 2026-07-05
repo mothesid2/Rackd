@@ -1,5 +1,4 @@
 -- Rackd cloud schema — paste into Supabase SQL editor and Run.
--- Generated from supabase/migrations/*.sql (in order).
 
 -- ==================== supabase/migrations/001_licenses.sql ====================
 -- 001_licenses.sql
@@ -506,4 +505,13 @@ create index if not exists idx_license_registrations_tenant on public.license_re
 
 alter table public.license_registrations enable row level security;
 -- No policies on purpose: only the service_role (Edge Function) reads/writes seats.
+
+-- ==================== supabase/migrations/012_licenses_admin_fields.sql ====================
+-- 012_licenses_admin_fields.sql
+-- Fields for the owner admin console: a human-readable tenant name, and a
+-- per-tenant display/ads config the owner manages centrally (registers read
+-- their own license row and apply it).
+
+alter table public.licenses add column if not exists name text;
+alter table public.licenses add column if not exists display_config jsonb not null default '{}'::jsonb;
 

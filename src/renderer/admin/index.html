@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd — Tenant Admin</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <style>
+    body { overflow: hidden; }
+    .admin-layout { padding: 18px 22px 56px; height: 100vh; overflow-y: auto; }
+    .admin-head { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+    .admin-head h1 { font-size: 22px; font-weight: 800; }
+    .t-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+    .t-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #888; padding: 10px 12px; background: #f7f6f3; }
+    .t-table td { padding: 10px 12px; border-top: 1px solid #f0efe9; font-size: 14px; vertical-align: middle; }
+    .keycell { font-family: ui-monospace,Consolas,monospace; font-size: 13px; }
+    .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .pill.on { background: #dcfce7; color: #166534; } .pill.off { background: #fee2e2; color: #991b1b; }
+    .pill.tier { background: #eef2ff; color: #3730a3; text-transform: capitalize; }
+    .chip { display: inline-block; background: #f1f0ea; color: #555; border-radius: 6px; padding: 1px 7px; font-size: 11px; margin: 1px; }
+    .rowbtn { padding: 4px 9px; font-size: 12px; border-radius: 6px; border: 1px solid #ddd; background: #fff; cursor: pointer; margin-left: 4px; }
+    .rowbtn:hover { background: #f4f4ec; }
+    .rowbtn.danger { color: #b01d2e; border-color: #f3c6cc; }
+    /* gate + modal overlays */
+    .overlay { position: fixed; inset: 0; background: rgba(12,14,17,0.75); display: flex; align-items: center; justify-content: center; z-index: 500; }
+    .panel { background: #fff; border-radius: 14px; padding: 26px; width: 460px; max-width: 94vw; max-height: 90vh; overflow-y: auto; }
+    .panel h2 { font-size: 18px; font-weight: 800; margin-bottom: 14px; }
+    .fg { margin-bottom: 12px; } .fg label { display:block; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#666; margin-bottom:5px; }
+    .fg input, .fg select { width: 100%; padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-size: 15px; }
+    .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .feat-grid label { display: flex; align-items: center; gap: 7px; font-size: 13px; text-transform: none; font-weight: 500; color: #333; cursor: pointer; }
+    .feat-grid input { width: auto; }
+  </style>
+</head>
+<body>
+  <div class="admin-layout">
+    <div class="admin-head">
+      <button class="btn btn-back" onclick="navigate('main-menu')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1>Tenant Admin</h1>
+      <button class="btn btn-navy" style="margin-left:auto" onclick="openEdit(null)">+ New Tenant</button>
+      <button class="btn btn-gray" onclick="loadTenants()">Refresh</button>
+    </div>
+    <table class="t-table">
+      <thead><tr><th>Name</th><th>License Key</th><th>Tier</th><th>Seats</th><th>Status</th><th>Permissions</th><th></th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="7" style="text-align:center;color:#aaa;padding:24px">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- Gate (owner PIN + admin secret) -->
+  <div class="overlay" id="gate">
+    <div class="panel">
+      <h2 id="gateTitle">Owner access</h2>
+      <p style="font-size:13px;color:#888;margin-bottom:14px" id="gateMsg">Enter your Owner PIN.</p>
+      <div class="fg" id="pinFg"><label>Owner PIN</label><input type="password" id="gatePin" /></div>
+      <div class="fg" id="secretFg" style="display:none"><label>Admin secret</label><input type="password" id="gateSecret" placeholder="the ADMIN_SECRET set on the admin function" /></div>
+      <button class="btn btn-navy" style="width:100%" id="gateBtn" onclick="gateSubmit()">Unlock</button>
+      <div class="msg error" id="gateErr" style="display:none;background:#fee2e2;color:#991b1b;border-radius:8px;padding:9px 12px;font-size:13px;margin-top:10px"></div>
+    </div>
+  </div>
+
+  <!-- Create / Edit modal -->
+  <div class="overlay" id="editModal" style="display:none">
+    <div class="panel">
+      <h2 id="editTitle">New Tenant</h2>
+      <input type="hidden" id="editKey" />
+      <div class="fg"><label>Store / Tenant name</label><input type="text" id="fName" placeholder="Acme Vape — Main St" /></div>
+      <div class="fg"><label>Tier</label><select id="fTier"><option>core</option><option selected>standard</option><option>pro</option><option>enterprise</option></select></div>
+      <div class="fg"><label>Machines (seats)</label><input type="number" id="fSeats" min="1" value="1" /></div>
+      <div class="fg"><label style="margin-bottom:8px">Permissions</label><div class="feat-grid" id="featGrid"></div></div>
+      <div class="fg"><label style="display:flex;align-items:center;gap:8px;text-transform:none"><input type="checkbox" id="fActive" checked style="width:auto" /> Active</label></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-gray" onclick="document.getElementById('editModal').style.display='none'">Cancel</button>
+        <button class="btn btn-navy" id="editSave" onclick="saveTenant()">Save</button>
+      </div>
+      <div id="createdKey" style="display:none;margin-top:14px;background:#dcfce7;color:#166534;border-radius:8px;padding:12px;font-size:14px"></div>
+    </div>
+  </div>
+
+  <script src="../shared.js"></script>
+  <script>
+    const FEATURES = [
+      ['cloud_access','Cloud access'],['ad_free','Ad-free'],['inventory_management','Inventory management'],
+      ['rebate_reporting','Automated rebate reporting'],['sms_marketing','SMS marketing'],['loyalty','Loyalty & rewards'],
+      ['promotions','Promotions'],['advanced_reports','Advanced reports'],['reports_app','Phone reports app'],['web_store','Online store'],
+    ];
+    const FEATLABEL = Object.fromEntries(FEATURES);
+    let ownerPin = null;
+
+    // Build feature checkboxes
+    document.getElementById('featGrid').innerHTML = FEATURES.map(([id,label]) =>
+      `<label><input type="checkbox" class="feat" value="${id}" /> ${label}</label>`).join('');
+
+    // ── Gate ──────────────────────────────────────────────────────────────
+    async function gateSubmit() {
+      const err = document.getElementById('gateErr'); err.style.display = 'none';
+      const pin = document.getElementById('gatePin').value.trim();
+      if (!ownerPin) {
+        const v = await window.api.ownerVerifyPin(pin);
+        if (!v.success) { err.textContent = 'Incorrect Owner PIN.'; err.style.display='block'; return; }
+        ownerPin = pin;
+        const hs = await window.api.adminHasSecret();
+        if (!hs.hasSecret) {
+          document.getElementById('gateTitle').textContent = 'Admin secret';
+          document.getElementById('gateMsg').textContent = 'Enter the ADMIN_SECRET you set on the admin function (one time).';
+          document.getElementById('pinFg').style.display = 'none';
+          document.getElementById('secretFg').style.display = 'block';
+          document.getElementById('gateBtn').textContent = 'Save & Unlock';
+          return;
+        }
+        return unlock();
+      }
+      // setting secret
+      const secret = document.getElementById('gateSecret').value.trim();
+      if (!secret) { err.textContent = 'Enter the admin secret.'; err.style.display='block'; return; }
+      const r = await window.api.adminSetSecret(ownerPin, secret);
+      if (!r.success) { err.textContent = r.error || 'Failed.'; err.style.display='block'; return; }
+      unlock();
+    }
+    function unlock() { document.getElementById('gate').style.display = 'none'; loadTenants(); }
+
+    // ── List ──────────────────────────────────────────────────────────────
+    async function loadTenants() {
+      const tb = document.getElementById('tbody');
+      tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:24px">Loading…</td></tr>';
+      const r = await window.api.adminList();
+      if (!r.success) { tb.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#b01d2e;padding:24px">${esc(r.error||'Failed')}</td></tr>`; return; }
+      const list = r.licenses || [];
+      if (!list.length) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:24px">No tenants yet. Click “New Tenant”.</td></tr>'; return; }
+      tb.innerHTML = list.map(l => `
+        <tr>
+          <td><strong>${esc(l.name||'—')}</strong></td>
+          <td class="keycell">${esc(l.license_key)} <button class="rowbtn" onclick="copyKey('${esc(l.license_key)}')">Copy</button></td>
+          <td><span class="pill tier">${esc(l.tier||'—')}</span></td>
+          <td>${l.used_registers||0} / ${l.max_registers||1}</td>
+          <td><span class="pill ${l.active?'on':'off'}">${l.active?'Active':'Inactive'}</span></td>
+          <td>${(l.features||[]).map(f=>`<span class="chip">${esc(FEATLABEL[f]||f)}</span>`).join('') || '<span style="color:#bbb">none</span>'}</td>
+          <td style="white-space:nowrap;text-align:right">
+            <button class="rowbtn" onclick='openEdit(${JSON.stringify(l)})'>Edit</button>
+            <button class="rowbtn danger" onclick="delTenant('${esc(l.license_key)}','${esc(l.name||l.license_key)}')">Delete</button>
+          </td>
+        </tr>`).join('');
+    }
+
+    function copyKey(k) { navigator.clipboard.writeText(k); showToast('Key copied', 'success', 1500); }
+
+    // ── Create / Edit ─────────────────────────────────────────────────────
+    function openEdit(l) {
+      document.getElementById('editTitle').textContent = l ? 'Edit Tenant' : 'New Tenant';
+      document.getElementById('editKey').value = l ? l.license_key : '';
+      document.getElementById('fName').value = l ? (l.name||'') : '';
+      document.getElementById('fTier').value = l ? (l.tier||'standard') : 'standard';
+      document.getElementById('fSeats').value = l ? (l.max_registers||1) : 1;
+      document.getElementById('fActive').checked = l ? !!l.active : true;
+      const feats = new Set(l ? (l.features||[]) : []);
+      document.querySelectorAll('.feat').forEach(c => { c.checked = feats.has(c.value); });
+      document.getElementById('createdKey').style.display = 'none';
+      document.getElementById('editModal').style.display = 'flex';
+    }
+
+    async function saveTenant() {
+      const key = document.getElementById('editKey').value;
+      const payload = {
+        name: document.getElementById('fName').value.trim(),
+        tier: document.getElementById('fTier').value,
+        max_registers: parseInt(document.getElementById('fSeats').value,10) || 1,
+        active: document.getElementById('fActive').checked,
+        features: Array.from(document.querySelectorAll('.feat:checked')).map(c=>c.value),
+      };
+      const btn = document.getElementById('editSave'); btn.disabled = true; btn.textContent = 'Saving…';
+      let r;
+      if (key) { payload.license_key = key; r = await window.api.adminUpdate(payload); }
+      else r = await window.api.adminCreate(payload);
+      btn.disabled = false; btn.textContent = 'Save';
+      if (!r.success) { showToast(r.error || 'Failed', 'error'); return; }
+      if (!key && r.license) {
+        const ck = document.getElementById('createdKey');
+        ck.innerHTML = `Created. License key:<br><strong style="font-family:ui-monospace,monospace;font-size:16px">${esc(r.license.license_key)}</strong> <button class="rowbtn" onclick="copyKey('${esc(r.license.license_key)}')">Copy</button>`;
+        ck.style.display = 'block';
+        loadTenants();
+      } else {
+        document.getElementById('editModal').style.display = 'none';
+        showToast('Saved', 'success'); loadTenants();
+      }
+    }
+
+    async function delTenant(key, name) {
+      if (!confirm(`Delete tenant “${name}”? This removes the license and frees all its seats. This cannot be undone.`)) return;
+      const r = await window.api.adminDelete(key);
+      if (!r.success) { showToast(r.error || 'Failed', 'error'); return; }
+      showToast('Tenant deleted', 'success'); loadTenants();
+    }
+
+    document.getElementById('gatePin').addEventListener('keydown', e => { if (e.key==='Enter') gateSubmit(); });
+    document.getElementById('gateSecret').addEventListener('keydown', e => { if (e.key==='Enter') gateSubmit(); });
+    document.getElementById('gatePin').focus();
+  </script>
+</body>
+</html>

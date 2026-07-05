@@ -20,6 +20,7 @@ import { registerDatabaseHandlers } from './ipc/database';
 import { registerSyncHandlers } from './ipc/sync';
 import { registerLicenseHandlers } from './ipc/license';
 import { registerOwnerHandlers } from './ipc/owner';
+import { registerAdminHandlers } from './ipc/admin';
 import { registerActivationHandlers, isActivated } from './ipc/activation';
 import { isSupabaseConfigured } from './supabase/client';
 import { startSyncWorker } from './supabase/sync';
@@ -69,6 +70,7 @@ app.whenReady().then(() => {
   registerSyncHandlers();
   registerLicenseHandlers();
   registerOwnerHandlers();
+  registerAdminHandlers();
 
   // 6. Cloud layer: start the local-first -> Supabase sync worker (no-op if
   // Supabase isn't configured; the POS runs fully on local SQLite regardless).
