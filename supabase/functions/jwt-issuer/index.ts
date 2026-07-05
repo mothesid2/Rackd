@@ -7,9 +7,10 @@
 // Responses: 200 { token, expires_at } | 400 missing key | 401 invalid/inactive
 // Rate limited to 10 requests/min per license_key (best-effort, per instance).
 //
-// Required function secrets (supabase secrets set ...):
-//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (auto in deployed functions),
-//   SUPABASE_JWT_SECRET (must be set — the project's JWT secret used to sign).
+// Function env:
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY  — auto-injected in deployed functions
+//   JWT_SECRET                               — set via `supabase secrets set JWT_SECRET=...`
+//     (the project's legacy JWT secret; custom secrets can't be SUPABASE_-prefixed)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { create, getNumericDate } from 'https://deno.land/x/djwt@v3.0.2/mod.ts';
@@ -61,7 +62,7 @@ Deno.serve(async (req: Request) => {
 
   const url = Deno.env.get('SUPABASE_URL');
   const serviceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  const jwtSecret = Deno.env.get('SUPABASE_JWT_SECRET');
+  const jwtSecret = Deno.env.get('JWT_SECRET');
   if (!url || !serviceRole || !jwtSecret) {
     return json({ error: 'function not configured' }, 500);
   }

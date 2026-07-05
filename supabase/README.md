@@ -24,8 +24,10 @@ Note the `license_key` and put it in `.env` as `TEST_LICENSE_KEY`.
 
 ## 3. Deploy the jwt-issuer Edge Function
 ```bash
-supabase secrets set SUPABASE_JWT_SECRET=<project JWT secret>   # Settings → API → JWT Settings
-supabase functions deploy jwt-issuer
+# Custom secrets can't be SUPABASE_-prefixed, so the function reads JWT_SECRET.
+# Value = Settings → JWT Keys → (Legacy) JWT Secret.
+supabase secrets set JWT_SECRET=<project JWT secret> --project-ref <ref>
+supabase functions deploy jwt-issuer --project-ref <ref>
 ```
 (`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected into deployed
 functions automatically.)
