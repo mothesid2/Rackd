@@ -16,6 +16,7 @@
   "build": {
     "appId": "com.rackd.pos",
     "productName": "rackd POS",
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },
