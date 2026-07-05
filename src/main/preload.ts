@@ -128,6 +128,11 @@ contextBridge.exposeInMainWorld('api', {
   licenseRefresh: () => ipcRenderer.invoke('license:refresh'),
   licenseAssertWritable: (action: string) => ipcRenderer.invoke('license:assert-writable', action),
 
+  // License activation (onboarding gate)
+  licenseActivationState: () => ipcRenderer.invoke('license:activationState'),
+  licenseActivate: (key: string) => ipcRenderer.invoke('license:activate', key),
+  licenseDeactivate: () => ipcRenderer.invoke('license:deactivate'),
+
   // Owner gate (owner-only config, PIN-protected)
   ownerHasPin: () => ipcRenderer.invoke('owner:hasPin'),
   ownerVerifyPin: (pin: string) => ipcRenderer.invoke('owner:verifyPin', pin),

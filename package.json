@@ -26,11 +26,14 @@
       "node_modules/**/*"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "assets/logo.png"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Rackd-POS-Setup-${version}.${ext}",
+      "shortcutName": "Rackd POS"
     }
   },
   "dependencies": {

@@ -20,6 +20,8 @@ import { registerDatabaseHandlers } from './ipc/database';
 import { registerSyncHandlers } from './ipc/sync';
 import { registerLicenseHandlers } from './ipc/license';
 import { registerOwnerHandlers } from './ipc/owner';
+import { registerActivationHandlers, isActivated } from './ipc/activation';
+import { isSupabaseConfigured } from './supabase/client';
 import { startSyncWorker } from './supabase/sync';
 import { startLicenseChecks } from './supabase/licenseCheck';
 import { startTokenAutoRefresh } from './supabase/tokenManager';
@@ -36,8 +38,14 @@ app.whenReady().then(() => {
   // POS starts even if this fails). Result is logged to the settings table.
   startTokenAutoRefresh();
 
+  // Activation must be registered before the window loads (the activation
+  // screen calls it). Boot into activation when the cloud is configured but this
+  // register hasn't been bound to a license yet; otherwise straight to login.
+  registerActivationHandlers();
+  const bootPage = isSupabaseConfigured() && !isActivated() ? 'activation' : 'login';
+
   // Create main window
-  const win = createMainWindow();
+  const win = createMainWindow(bootPage);
 
   // Try to create customer display on second monitor
   createCustomerDisplayWindow();

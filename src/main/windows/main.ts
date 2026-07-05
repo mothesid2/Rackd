@@ -3,7 +3,7 @@ import path from 'path';
 
 let mainWindow: BrowserWindow | null = null;
 
-export function createMainWindow(): BrowserWindow {
+export function createMainWindow(initialPage = 'login'): BrowserWindow {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
 
   mainWindow = new BrowserWindow({
@@ -25,7 +25,7 @@ export function createMainWindow(): BrowserWindow {
     mainWindow?.show();
   });
 
-  mainWindow.loadFile(path.join(__dirname, '../../../src/renderer/login/index.html'));
+  mainWindow.loadFile(path.join(__dirname, `../../../src/renderer/${initialPage}/index.html`));
 
   return mainWindow;
 }

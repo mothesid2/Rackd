@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Activate</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <style>
+    body {
+      display: flex; align-items: center; justify-content: center; min-height: 100vh;
+      background: radial-gradient(130% 120% at 50% 22%, #2b313a 0%, #171b21 48%, #0c0e11 100%);
+    }
+    .wrap { width: 400px; }
+    .logo-area { text-align: center; margin-bottom: 20px; padding: 24px 0 6px; }
+    .brand {
+      font-family: 'Tw Cen MT','Century Gothic','Futura','Gill Sans','Segoe UI',sans-serif;
+      font-size: 46px; font-weight: 500; letter-spacing: 6px; line-height: 1;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.45);
+    }
+    .card {
+      background: #fff; border-radius: 16px; box-shadow: 0 6px 28px rgba(0,0,0,0.18); padding: 32px;
+    }
+    .card h2 { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-bottom: 6px; }
+    .card p.sub { font-size: 13px; color: #666; margin-bottom: 20px; line-height: 1.5; }
+    label { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #666; margin-bottom: 6px; }
+    input {
+      width: 100%; padding: 12px 14px; border: 1.5px solid #ddd; border-radius: 10px; font-size: 16px;
+      letter-spacing: 1px; color: #1a1a1a; background: #fafafa; outline: none; text-transform: uppercase;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    input:focus { border-color: #b01d2e; background: #fff; box-shadow: 0 0 0 3px rgba(176,29,46,0.12); }
+    .btn-activate {
+      width: 100%; padding: 13px; margin-top: 16px; background: linear-gradient(180deg, #2a2f37 0%, #1b1d21 100%);
+      color: #fff; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; transition: filter 0.15s;
+    }
+    .btn-activate:hover { filter: brightness(1.15); }
+    .btn-activate:disabled { opacity: 0.6; cursor: default; }
+    .msg { border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-top: 14px; display: none; }
+    .msg.error { background: #fee2e2; color: #991b1b; }
+    .msg.ok { background: #dcfce7; color: #166534; }
+    .foot { text-align: center; margin-top: 16px; font-size: 12px; color: rgba(255,255,255,0.4); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo-area">
+      <img src="../../../assets/logo-mark.svg" alt="rackd" style="width:120px;height:auto;display:block;margin:0 auto 8px;filter:drop-shadow(0 6px 16px rgba(0,0,0,0.55))" />
+      <div class="brand"><span style="color:#fff">Rack</span><span style="color:#b01d2e;text-shadow:0 0 6px rgba(176,29,46,0.3)">D</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Activate this register</h2>
+      <p class="sub">Enter the license key from your Rackd account. It links this register to your store, sets your plan, and connects it to the cloud. Use the same key on every register in your store.</p>
+      <label>License Key</label>
+      <input type="text" id="licenseKey" placeholder="RACKD-XXXX-XXXX" autocomplete="off" spellcheck="false" />
+      <button class="btn-activate" id="activateBtn">Activate</button>
+      <div class="msg error" id="msgError"></div>
+      <div class="msg ok" id="msgOk"></div>
+    </div>
+
+    <div class="foot">Need a key? Contact Rackd support.</div>
+  </div>
+
+  <script src="../shared.js"></script>
+  <script>
+    const keyEl = document.getElementById('licenseKey');
+    const btn = document.getElementById('activateBtn');
+    const err = document.getElementById('msgError');
+    const ok = document.getElementById('msgOk');
+
+    async function activate() {
+      const key = keyEl.value.trim();
+      err.style.display = 'none'; ok.style.display = 'none';
+      if (!key) { err.textContent = 'Enter your license key.'; err.style.display = 'block'; return; }
+
+      btn.disabled = true; btn.textContent = 'Activating…';
+      const res = await window.api.licenseActivate(key);
+
+      if (res.success) {
+        const tier = res.tier ? res.tier.charAt(0).toUpperCase() + res.tier.slice(1) : '';
+        ok.textContent = `Activated${tier ? ' — ' + tier + ' plan' : ''}. Starting…`;
+        ok.style.display = 'block';
+        setTimeout(() => window.api.navigate('login'), 1200);
+      } else {
+        err.textContent = res.error || 'Activation failed.';
+        err.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Activate';
+      }
+    }
+
+    btn.addEventListener('click', activate);
+    keyEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') activate(); });
+    keyEl.focus();
+  </script>
+</body>
+</html>
