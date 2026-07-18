@@ -1,0 +1,53 @@
+{
+  "name": "rackd-manager-portal",
+  "version": "1.0.0",
+  "description": "rackd Manager Portal — cross-location reporting & light management (not a POS).",
+  "main": "main.js",
+  "author": "rackd",
+  "scripts": {
+    "start": "electron .",
+    "dist": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",
+    "dist:mac": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
+    "release:staging": "npm run dist && node ../scripts/publish-update.js staging manager dist",
+    "release": "npm run dist && node ../scripts/publish-update.js production manager dist"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^41.2.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.rackd.manager",
+    "productName": "rackd Manager Portal",
+    "npmRebuild": false,
+    "directories": { "output": "dist" },
+    "publish": {
+      "provider": "generic",
+      "url": "https://zougcsomgqnfumqkwuoj.supabase.co/storage/v1/object/public/app-updates/manager/production"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "config.js",
+      "renderer/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/logo.png"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/logo.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Rackd-Manager-Portal-Setup-${version}.${ext}",
+      "shortcutName": "rackd Manager Portal"
+    }
+  }
+}

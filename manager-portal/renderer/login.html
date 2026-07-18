@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rackd — Management Portal</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-brand">
+        <img src="../assets/logo-mark.svg" alt="Rackd" />
+        <div>
+          <div class="wordmark" style="font-size:30px">Rack<span class="d">D</span></div>
+          <div class="tag">Management Portal</div>
+        </div>
+      </div>
+      <h1>Sign in to your business</h1>
+      <div class="sub">Enter your business key to oversee every location — sales, inventory, customers, and online orders — from one place.</div>
+      <label for="code">Business key</label>
+      <input id="code" placeholder="RACKD-XXXX-XXXX-XXXX" autofocus autocapitalize="characters" spellcheck="false" />
+      <button class="btn btn-accent" id="go" style="width:100%;margin-top:16px">Sign in</button>
+      <div class="err" id="err"></div>
+    </div>
+  </div>
+  <script>
+    const codeEl = document.getElementById('code');
+    const errEl = document.getElementById('err');
+    const btn = document.getElementById('go');
+
+    async function signIn() {
+      const code = codeEl.value.trim();
+      if (!code) return;
+      errEl.style.display = 'none';
+      btn.disabled = true; btn.textContent = 'Signing in…';
+      const r = await window.portal.login(code);
+      btn.disabled = false; btn.textContent = 'Sign in';
+      if (!r.success) { errEl.textContent = r.error || 'Sign-in failed.'; errEl.style.display = 'block'; return; }
+      window.location.href = 'portal.html';
+    }
+    btn.addEventListener('click', signIn);
+    codeEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') signIn(); });
+  </script>
+</body>
+</html>

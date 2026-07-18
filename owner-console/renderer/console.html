@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rackd — Owner Console</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .topbar select { width: auto; min-width: 160px; padding: 7px 10px; font-size: 13px; background: var(--panel-2); }
+    .stack { display: grid; gap: 14px; }
+    .rowflex { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .keycode { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 3px 8px; }
+    .sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .badge { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+    .badge.on { background: rgba(70,180,95,0.14); color: var(--good); }
+    .badge.warn { background: rgba(224,161,58,0.15); color: var(--warn); }
+    .badge.dim { background: var(--panel-2); color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <div class="brand-lockup">
+        <img src="../assets/logo-mark.svg" alt="Rackd" />
+        <span class="brand">Rack<span class="d">D</span></span>
+        <span class="biz">Owner Console</span>
+      </div>
+      <div class="spacer"></div>
+      <select id="bizSelect" aria-label="Business"></select>
+      <button class="btn" id="logout">Sign out</button>
+    </div>
+
+    <div class="side">
+      <div class="nav-label">Manage</div>
+      <button class="navbtn active" data-tab="businesses">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>
+        Businesses
+      </button>
+      <button class="navbtn" data-tab="kiosks">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        Kiosks
+      </button>
+      <button class="navbtn" data-tab="orders">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+        Online orders
+      </button>
+      <div class="nav-label">Release</div>
+      <button class="navbtn" data-tab="publish">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+        Publish updates
+      </button>
+    </div>
+
+    <div class="content" id="view"><div class="spin">Loading…</div></div>
+  </div>
+
+  <!-- New business modal -->
+  <div class="overlay" id="bizModal">
+    <div class="modal">
+      <h3>New business</h3>
+      <div class="fg"><label>Business name</label><input id="bName" placeholder="e.g. Cloud Nine Vapes" /></div>
+      <div class="fg"><label>Locations (one per line)</label>
+        <textarea id="bLocs" rows="3" style="width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:10px;color:var(--ink);font:inherit" placeholder="Downtown&#10;Westside"></textarea>
+        <div class="muted" style="font-size:11px;margin-top:4px">One business key is issued for all of them. Each POS picks its location once.</div>
+      </div>
+      <div class="fg"><label>Total kiosks allowed (seats)</label><input id="bSeats" type="number" min="1" value="3" /></div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('bizModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="bCreate">Create business</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add location modal -->
+  <div class="overlay" id="locModal">
+    <div class="modal" style="width:400px">
+      <h3>Add location</h3>
+      <input type="hidden" id="lTenant" />
+      <div class="fg"><label>Location name</label><input id="lName" placeholder="e.g. Airport" /></div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('locModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="lCreate">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reset kiosk confirm -->
+  <div class="overlay" id="resetModal">
+    <div class="modal" style="width:430px">
+      <h3>Reset this kiosk</h3>
+      <input type="hidden" id="rTenant" /><input type="hidden" id="rMachine" />
+      <div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:14px" id="rSub"></div>
+      <div class="muted" style="font-size:12px;line-height:1.5;margin-bottom:14px">The kiosk unlocks from its location and returns to setup on its next sync. It finishes syncing pending sales first and waits until the day is closed — it won't interrupt a shift. If it's offline, it applies when it reconnects.</div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('resetModal').style.display='none'">Cancel</button>
+        <button class="btn" style="background:#5a2323;color:#f2c7c7" id="rConfirm">Queue reset</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="console.js"></script>
+</body>
+</html>
