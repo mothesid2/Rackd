@@ -1,0 +1,77 @@
+// storefront-order-ready — store staff move an online order through the queue.
+//
+// The caller passes their POS/portal license token; the status update runs AS the
+// caller so RLS (oo_update_staff) enforces that they own that store's order.
+// Transitions: 'preparing', 'ready' (→ SMS), 'cancelled'.
+//
+// Cancelling a PAID order (it already left pending_payment) also (a) refunds the
+// Stripe charge and (b) emits a positive stock_movement so the POS pull path puts
+// the units back — mirror of the negative movement the payment webhook emitted.
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import Stripe from 'npm:stripe@14';
+import { CORS, json, sendSms } from '../_shared/notify.ts';
+
+const PAID = ['new', 'preparing', 'ready'];
+
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const anon = Deno.env.get('SUPABASE_ANON_KEY')!;
+  const svc = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const authHeader = req.headers.get('Authorization') ?? '';
+
+  let body: { order_id?: string; status?: string; cancel_reason?: string };
+  try { body = await req.json(); } catch { return json({ error: 'invalid JSON' }, 400); }
+  const orderId = body.order_id;
+  const status = body.status || 'ready';
+  if (!orderId || !['preparing', 'ready', 'cancelled'].includes(status)) return json({ error: 'order_id + valid status required' }, 400);
+
+  const admin = createClient(url, svc, { auth: { persistSession: false } });
+
+  // Capture pre-state (prior status + payment intent) BEFORE the update, so a
+  // cancel can tell a paid order (needs refund) from an unpaid reservation.
+  const { data: pre } = await admin.from('online_orders')
+    .select('status, stripe_payment_intent_id, tenant_id, location_id').eq('id', orderId).maybeSingle();
+
+  // Update AS the caller — RLS confirms they're staff for this store's order.
+  const staff = createClient(url, anon, { global: { headers: { Authorization: authHeader } } });
+  const patch: Record<string, unknown> = { status };
+  if (status === 'ready') patch.ready_at = new Date().toISOString();
+  if (status === 'cancelled') patch.cancel_reason = body.cancel_reason || 'store_cancelled';
+  const { data: updated, error } = await staff.from('online_orders').update(patch).eq('id', orderId).select('id, order_number, customer_id').maybeSingle();
+  if (error) return json({ error: error.message }, 400);
+  if (!updated) return json({ error: 'not found or not authorized' }, 403);
+
+  // Refund + restore stock when a PAID order is cancelled by the store.
+  let refunded = false;
+  if (status === 'cancelled' && pre && PAID.includes(pre.status)) {
+    if (pre.stripe_payment_intent_id) {
+      const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
+      if (stripeKey) {
+        try {
+          const stripe = new Stripe(stripeKey, { apiVersion: '2024-06-20' });
+          await stripe.refunds.create({ payment_intent: pre.stripe_payment_intent_id });
+          refunded = true;
+        } catch (e) { console.error('refund failed', String(e)); }
+      }
+    }
+    // Put the units back: positive movement the POS pulls (mirror of webhook's -qty).
+    const { data: items } = await admin.from('online_order_items').select('barcode, qty').eq('order_id', orderId);
+    for (const it of items ?? []) {
+      if (!it.barcode) continue;
+      await admin.from('stock_movements_cloud').insert({
+        movement_uid: crypto.randomUUID(), tenant_id: pre.tenant_id, location_id: pre.location_id,
+        register_id: 'online', barcode: it.barcode, delta: Math.abs(it.qty || 1),
+        reason: 'online_order_cancel', created_at: new Date().toISOString(),
+      });
+    }
+  }
+
+  const { data: cust } = await admin.from('storefront_customers').select('phone').eq('id', updated.customer_id).single();
+  if (status === 'ready') await sendSms(cust?.phone, `Your order #${updated.order_number} is ready for pickup! Bring a valid ID (21+).`);
+  else if (status === 'cancelled') await sendSms(cust?.phone, `Your order #${updated.order_number} was cancelled${refunded ? ' and refunded' : ''}.`);
+
+  return json({ success: true, status, refunded });
+});

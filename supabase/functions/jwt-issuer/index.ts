@@ -1,10 +1,18 @@
 // Supabase Edge Function: jwt-issuer
 //
-// POST { "license_key": "..." }
+// POST { "license_key": "...", "machine_id"?, "location_id"?, "list_locations"? }
 //   -> validates the key is present + active in `licenses` (service role)
 //   -> returns a signed JWT with tenant_id, license_key, tier, features (24h)
 //
-// Responses: 200 { token, expires_at } | 400 missing key | 401 invalid/inactive
+// Business-key model: a single kind='business' key serves both surfaces.
+//   • list_locations:true   -> returns { locations:[{id,name}], kind } (no token,
+//                              no seat) so the POS can show its one-time picker.
+//   • location_id supplied  -> POS: validate it belongs to the key's tenant, mint
+//                              a LOCATION-SCOPED token, consume a seat.
+//   • location_id omitted   -> Owner Console / manager: tenant-wide token, no seat.
+// Legacy kind='register' (per-location key) and kind='manager' still work as before.
+//
+// Responses: 200 { token, expires_at } | 200 { locations } | 400 missing key | 401 invalid/inactive
 // Rate limited to 10 requests/min per license_key (best-effort, per instance).
 //
 // Function env:
@@ -50,7 +58,7 @@ async function signToken(secret: string, claims: Record<string, unknown>): Promi
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
 
-  let body: { license_key?: string; machine_id?: string };
+  let body: { license_key?: string; machine_id?: string; location_id?: string; list_locations?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -58,6 +66,8 @@ Deno.serve(async (req: Request) => {
   }
   const licenseKey = body?.license_key;
   const machineId = body?.machine_id;
+  const requestedLocation = body?.location_id?.trim() || null;
+  const listLocations = body?.list_locations === true;
   if (!licenseKey) return json({ error: 'license_key is required' }, 400);
 
   if (rateLimited(licenseKey)) return json({ error: 'rate limit exceeded' }, 429);
@@ -73,7 +83,7 @@ Deno.serve(async (req: Request) => {
   const admin = createClient(url, serviceRole, { auth: { persistSession: false } });
   const { data: license, error } = await admin
     .from('licenses')
-    .select('tenant_id, license_key, tier, features, active, max_registers')
+    .select('tenant_id, location_id, license_key, tier, features, active, max_registers, kind')
     .eq('license_key', licenseKey)
     .maybeSingle();
 
@@ -82,9 +92,64 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'license invalid or inactive' }, 401);
   }
 
+  const kind = (license.kind as string) ?? 'register';
+  const isManager = kind === 'manager';
+  const isBusiness = kind === 'business';
+
+  // list_locations: the POS one-time picker asks which stores this business has.
+  // Validated key only; no token, no seat. (Owner Console reads locations via its
+  // tenant-wide token instead.)
+  if (listLocations) {
+    const { data: locs, error: lErr } = await admin
+      .from('locations')
+      .select('id, name, is_storefront_enabled')
+      .eq('tenant_id', license.tenant_id)
+      .order('name', { ascending: true });
+    if (lErr) return json({ error: lErr.message }, 500);
+    return json({ locations: locs ?? [], kind, tenant_id: license.tenant_id }, 200);
+  }
+
+  // Resolve the location this token is scoped to.
+  //   business + requested location -> validate it belongs to the tenant (POS lock)
+  //   business + no location        -> tenant-wide (Owner Console)
+  //   manager                       -> tenant-wide
+  //   register (legacy)             -> the key's own single location
+  let effectiveLocation: string | null;
+  if (isBusiness) {
+    if (requestedLocation) {
+      const { data: loc, error: locErr } = await admin
+        .from('locations')
+        .select('id')
+        .eq('id', requestedLocation)
+        .eq('tenant_id', license.tenant_id)
+        .maybeSingle();
+      if (locErr) return json({ error: locErr.message }, 500);
+      if (!loc) return json({ error: 'location does not belong to this business' }, 403);
+      effectiveLocation = requestedLocation;
+    } else {
+      effectiveLocation = null; // tenant-wide owner/console token
+    }
+  } else if (isManager) {
+    effectiveLocation = null;
+  } else {
+    // Legacy per-location register key. A register token MUST be location-scoped.
+    effectiveLocation = license.location_id ?? null;
+    if (!effectiveLocation) return json({ error: 'license is not assigned to a location' }, 403);
+  }
+
+  // Hardening (review L-1): 'manager' is a reserved register_id sentinel used to
+  // fan writes down to every register; a register may not claim it as its machine.
+  if (machineId === 'manager') {
+    return json({ error: 'invalid machine_id' }, 400);
+  }
+
   // Seat limit: a license may activate up to max_registers distinct machines.
-  // A machine already registered just refreshes (no new seat consumed).
-  if (machineId) {
+  // A machine already registered just refreshes (no new seat consumed). Only a
+  // LOCATION-SCOPED token (an actual kiosk) consumes a seat; tenant-wide
+  // owner/manager tokens do not. For a business key, seats are counted across all
+  // the business's kiosks (one key for the whole business).
+  const consumesSeat = !!machineId && !!effectiveLocation;
+  if (consumesSeat) {
     const { data: regs, error: rErr } = await admin
       .from('license_registrations')
       .select('machine_id')
@@ -95,7 +160,7 @@ Deno.serve(async (req: Request) => {
     if (already) {
       await admin
         .from('license_registrations')
-        .update({ last_seen_at: new Date().toISOString() })
+        .update({ last_seen_at: new Date().toISOString(), location_id: effectiveLocation })
         .eq('license_key', licenseKey)
         .eq('machine_id', machineId);
     } else {
@@ -107,6 +172,7 @@ Deno.serve(async (req: Request) => {
         license_key: licenseKey,
         tenant_id: license.tenant_id,
         machine_id: machineId,
+        location_id: effectiveLocation,
       });
     }
   }
@@ -120,6 +186,13 @@ Deno.serve(async (req: Request) => {
     exp,
     // Custom claims our RLS policies read:
     tenant_id: license.tenant_id,
+    // location_id scopes a register to its store (current_location_id()). A
+    // manager/owner-console token omits this so tenant-wide policies apply.
+    location_id: effectiveLocation,
+    // register (till) identity, stamped onto rows the register produces.
+    register_id: machineId ?? null,
+    // 'register' | 'manager' | 'business' — surfaces read this to gate their UI.
+    kind,
     license_key: license.license_key,
     tier: license.tier,
     features: license.features ?? [],
