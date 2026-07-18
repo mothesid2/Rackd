@@ -57,6 +57,7 @@
         <input type="checkbox" id="lowStockOnly" /> Low Stock Only
       </label>
       <div class="spacer"></div>
+      <button class="btn btn-navy" onclick="navigate('xz-out/dead-stock')">Slow-Moving Inventory</button>
       <button class="btn btn-navy" onclick="openModal('addProductModal')">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Add Product
@@ -107,9 +108,10 @@
       <button class="modal-close" onclick="closeModal('addProductModal')">×</button>
       <div class="modal-title">Add Product</div>
       <div class="form-row">
-        <div class="form-group"><label>Barcode</label><input type="text" id="ap-barcode" /></div>
+        <div class="form-group"><label>Barcode</label><input type="text" id="ap-barcode" onchange="apCatalogLookup()" placeholder="Scan to auto-fill from catalog" /></div>
         <div class="form-group"><label>Category</label><input type="text" id="ap-category" list="categoryList" placeholder="Pick or type new…" /></div>
       </div>
+      <div id="ap-catalog-status" style="font-size:12px;margin:-4px 0 8px;min-height:15px"></div>
       <div class="form-row">
         <div class="form-group"><label>Name *</label><input type="text" id="ap-name" /></div>
         <div class="form-group"><label>Vendor / Brand</label><input type="text" id="ap-vendor" /></div>
@@ -469,6 +471,28 @@
         }
       };
       openModal('clearConfirmModal');
+    }
+
+    // Catalog-first (spec §3): when a barcode is entered/scanned, look it up in the
+    // distributor catalog and auto-fill EMPTY fields (never clobber typed values).
+    async function apCatalogLookup() {
+      const barcode = document.getElementById('ap-barcode').value.trim();
+      const statusEl = document.getElementById('ap-catalog-status');
+      if (!barcode) { statusEl.textContent = ''; return; }
+      const res = await window.api.catalogLookup({ barcode });
+      if (!res || !res.success) { statusEl.textContent = ''; return; }
+      if (res.confidence === 'not_found' || !res.item) {
+        statusEl.innerHTML = '<span style="color:#b45309">Not in catalog — enter details manually.</span>';
+        return;
+      }
+      const it = res.item;
+      const fill = (id, val) => { const el = document.getElementById(id); if (el && !el.value && val != null && val !== '') el.value = val; };
+      fill('ap-name', it.product_name);
+      fill('ap-category', it.category);
+      fill('ap-vendor', it.brand);
+      if (it.suggested_retail_price != null) fill('ap-price', it.suggested_retail_price);
+      if (it.unit_cost != null) fill('ap-cost', it.unit_cost);
+      statusEl.innerHTML = `<span style="color:#166534">✓ Auto-filled from <strong>${esc(it.source)}</strong> catalog${res.confidence === 'fuzzy' ? ' (fuzzy — verify)' : ''}.</span>`;
     }
 
     async function addProduct() {

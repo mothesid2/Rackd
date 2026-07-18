@@ -5,14 +5,21 @@ import { popCashDrawer, listSerialPorts } from '../services/cashDrawer';
 import { nowCT } from '../utils/time';
 import { assertWritable } from '../supabase/licenseCheck';
 import { enqueueDrawerEvent } from '../supabase/sync';
+import { requirePermission } from '../permissions';
 
 export function registerDrawerHandlers(): void {
   // ── drawer:open — pop the drawer (manual button or on Cash click) ──────────
-  ipcMain.handle('drawer:open', async (_event, note?: string) => {
+  ipcMain.handle('drawer:open', async (_event, note?: string, opts?: { noSale?: boolean; override?: string }) => {
     try {
       const w = assertWritable('drawer_open'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
       const session = getCurrentSession();
+      // A NO-SALE drawer open (manual pop) is permission-gated; opening the drawer
+      // as part of a cash sale is not.
+      if (opts?.noSale) {
+        const perm = requirePermission('open_drawer_no_sale', { override: opts.override, action: 'open_drawer_no_sale' }, db);
+        if (!perm.ok) return { success: false, error: perm.error, needsOverride: perm.needsOverride };
+      }
       const r = await popCashDrawer();
       db.transaction(() => {
         const res = db.prepare(`INSERT INTO drawer_log (cashier_id, cashier_name, event, amount, note) VALUES (?, ?, ?, ?, ?)`)

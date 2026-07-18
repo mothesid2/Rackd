@@ -68,6 +68,23 @@
       <h1 class="page-title">Settings</h1>
     </div>
 
+    <!-- Onboarding checklist (spec §7) — auto-hides when complete & dismissed -->
+    <div class="card settings-section" id="onboardingCard" style="display:none;border:1px solid #ddd6fe;background:#faf9ff">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div class="card-title" style="margin:0">🚀 Setup Checklist</div>
+        <div style="font-size:13px;color:#6d28d9;font-weight:700"><span id="obPct">0</span>% complete</div>
+      </div>
+      <div style="height:8px;background:#ede9fe;border-radius:6px;margin:10px 0 14px;overflow:hidden">
+        <div id="obBar" style="height:100%;width:0;background:linear-gradient(90deg,#7c3aed,#6d28d9);transition:width .3s"></div>
+      </div>
+      <div id="obList"></div>
+      <div id="obNext" style="font-size:13px;color:#444;margin-top:10px"></div>
+      <div id="obCall" style="display:none;margin-top:12px;background:#eff6ff;border:1px solid #dbeafe;border-radius:8px;padding:10px 12px;font-size:13px;color:#1d4ed8"></div>
+      <div style="margin-top:12px">
+        <button class="btn btn-gray" id="obDismiss" style="display:none;padding:5px 12px;font-size:12px" onclick="dismissOnboarding()">Hide checklist</button>
+      </div>
+    </div>
+
     <!-- User Management -->
     <div class="card settings-section">
       <div class="card-title">User Management</div>
@@ -113,6 +130,12 @@
       </div>
       <div class="form-group"><label>Address</label><input type="text" id="storeAddress" /></div>
       <div class="form-group"><label>Footer Message</label><input type="text" id="storeFooter" /></div>
+      <div class="form-group"><label>Refund Policy (printed at the bottom of every receipt)</label><textarea id="refundPolicy" rows="3" style="width:100%;resize:vertical" placeholder="e.g. Tobacco & vapor are non-refundable. Gift-shop items returnable within 7 days with receipt…"></textarea></div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;cursor:pointer"><input type="checkbox" id="tipEnabled" style="width:auto" /> Ask for a tip on the customer display (card sales)</label>
+        <div style="font-size:12px;color:#888;margin-top:4px">When on, the customer picks a tip on their screen before the card is charged. Turn OFF the tip prompt on the card terminal itself to avoid asking twice.</div>
+      </div>
+      <div class="form-group" style="max-width:260px"><label>Tip presets (% of subtotal)</label><input type="text" id="tipPresets" placeholder="15,18,20" /></div>
       <div class="form-row">
         <div class="form-group" style="max-width:180px">
           <label>Tax Rate (%)</label>
@@ -130,6 +153,33 @@
       <button class="btn btn-navy" data-write-action="settings_change" onclick="saveReceiptConfig()">Save Receipt Settings</button>
     </div>
 
+    <!-- Staff & Permissions -->
+    <div class="card settings-section">
+      <div class="card-title">Staff &amp; Permissions</div>
+      <p style="font-size:13px;color:#666;margin:-4px 0 12px">Manage cashier/manager accounts, per-employee permissions, PINs, and the manager-override audit log.</p>
+      <button class="btn btn-navy" onclick="navigate('staff/permissions')">Manage Staff &amp; Permissions →</button>
+    </div>
+
+    <!-- Manufacturer Rebates -->
+    <div class="card settings-section">
+      <div class="card-title">Manufacturer Rebates</div>
+      <p style="font-size:13px;color:#666;margin:-4px 0 12px">How qualifying tobacco/vape manufacturer rebates are handled at checkout.</p>
+      <div class="form-group">
+        <label style="display:flex;align-items:flex-start;gap:8px;text-transform:none;cursor:pointer;margin-bottom:8px">
+          <input type="radio" name="rebateMode" value="0" id="rebateModeOff" style="width:auto;margin-top:3px" />
+          <span><strong>Off — banner only.</strong> The cashier sees a “Rebate available” prompt and taps to apply the discount manually.</span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:8px;text-transform:none;cursor:pointer">
+          <input type="radio" name="rebateMode" value="1" id="rebateModeOn" style="width:auto;margin-top:3px" />
+          <span><strong>On — auto-apply.</strong> Qualifying rebates are inserted automatically as a discount line; the cashier just sees a confirmation.</span>
+        </label>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn btn-navy" data-write-action="settings_change" onclick="saveRebateMode()">Save</button>
+        <button class="btn btn-gray" onclick="navigate('rebates/rules')">Manage Rebate Rules →</button>
+      </div>
+    </div>
+
     <!-- Terminal Config -->
     <div class="card settings-section">
       <div class="card-title">Card Terminal</div>
@@ -144,17 +194,27 @@
       <!-- Valor VP100 connection fields — greyed out in mock mode -->
       <div id="valorFields">
         <p style="font-size:12px;color:#666;margin:0 0 12px">
-          The VP100 connects <strong>to this computer</strong>. In the Valor Portal
-          (Device Management → EPI → Edit Parameter → Valor Connect) set Connection Type = <strong>TCP</strong>,
-          point it at the IP + port below, then do a <strong>Param Download</strong> on the terminal.
+          Valor Connect semi-integration: the <strong>terminal is the server</strong> and the POS connects to it.
+          On the VP100 — Portal → Device Management → EPI → Edit Parameter →
+          <strong>Terminal &amp; Transaction → Valor Connect</strong> → enable <strong>TCP</strong> or
+          <strong>WebSocket</strong> (match the selector below) → Param Download; it shows
+          <em>"Server is Waiting for Transaction"</em>. Then enter the <strong>terminal's IP</strong> and port here.
+          <span id="pcIpHint" style="color:#94a3b8"></span>
         </p>
-        <div class="form-group" style="max-width:360px">
-          <label>This PC's IP — point the terminal here</label>
-          <input type="text" id="localIp" readonly style="background:#f1f5f9;font-weight:700" />
-        </div>
         <div class="form-row">
-          <div class="form-group" style="max-width:160px">
-            <label>Listen Port</label>
+          <div class="form-group" style="max-width:200px">
+            <label>Connection type — match the terminal</label>
+            <select id="terminalTransport">
+              <option value="tcp">TCP</option>
+              <option value="websocket">WebSocket</option>
+            </select>
+          </div>
+          <div class="form-group" style="max-width:200px">
+            <label>Terminal IP address</label>
+            <input type="text" id="terminalIp" placeholder="e.g. 11.11.20.78" style="font-weight:700" />
+          </div>
+          <div class="form-group" style="max-width:110px">
+            <label>Port</label>
             <input type="number" id="terminalPort" placeholder="5000" />
           </div>
         </div>
@@ -179,8 +239,8 @@
         <div class="form-group">
           <label>Printer Type</label>
           <select id="printerType">
+            <option value="epson">Epson / ESC-POS — most USB printers (EOM-200, TM-T20)</option>
             <option value="star">Star (mC-Print, TSP100, TSP650)</option>
-            <option value="epson">Epson (TM-T20, TM-T88)</option>
           </select>
         </div>
         <div class="form-group">
@@ -282,6 +342,7 @@
           <div class="form-group" id="ownerPinConfirmWrap" style="display:none"><label>Confirm PIN</label><input type="password" id="ownerPinConfirm" /></div>
         </div>
         <button class="btn btn-navy" id="ownerUnlockBtn" onclick="ownerUnlock()">Unlock</button>
+        <button class="btn btn-gray" id="ownerResetPinBtn" style="display:none;margin-left:8px" onclick="ownerResetPin()">Forgot PIN? Reset</button>
       </div>
       <div id="ownerConsole" style="display:none">
         <p style="font-size:13px;color:#16a34a;margin-bottom:12px">Owner unlocked — these settings are hidden from store managers.</p>
@@ -292,9 +353,9 @@
           </label>
         </div>
         <div class="form-group">
-          <label>Ad / rebate slides (rotate on the customer display)</label>
+          <label>Ad images / GIFs (each fills the whole customer display)</label>
           <div id="adsList"></div>
-          <button type="button" class="btn btn-gray" style="padding:5px 12px;font-size:12px;margin-top:6px" onclick="addAdSlide()">+ Add slide</button>
+          <button type="button" class="btn btn-gray" style="padding:5px 12px;font-size:12px;margin-top:6px" onclick="addAdSlide()">+ Add image</button>
         </div>
         <div class="form-group" style="max-width:240px"><label>Rotate every (seconds)</label><input type="number" id="adsInterval" min="3" max="60" value="8" /></div>
         <button class="btn btn-navy" onclick="saveOwnerDisplay()">Save Display Settings</button>
@@ -386,6 +447,7 @@
 
       loadUsers();
       ownerInitCard();
+      loadOnboarding();
 
       const [settingsRes, configRes, termCfgRes] = await Promise.all([
         window.api.getSettings(),
@@ -395,7 +457,7 @@
 
       if (settingsRes.success) {
         const s = settingsRes.settings;
-        document.getElementById('printerType').value = s.printer_type || 'star';
+        document.getElementById('printerType').value = s.printer_type || 'epson';
         window._savedPrinterIface = s.printer_interface || '';
         document.getElementById('printerInterface').value = /^tcp:\/\//i.test(window._savedPrinterIface) ? window._savedPrinterIface : '';
         loadPrinters();
@@ -414,14 +476,17 @@
       if (termCfgRes.success) {
         const c = termCfgRes.config;
         document.getElementById('terminalType').value = c.terminal_type || 'valor_vp100';
+        document.getElementById('terminalTransport').value = c.terminal_transport || 'tcp';
+        document.getElementById('terminalIp').value = c.terminal_ip || '';
         document.getElementById('terminalPort').value = c.terminal_port || '5000';
         onTerminalTypeChange();
       }
 
+      // Show this PC's IP as a hint only (the target is the TERMINAL's IP).
       try {
         const ipRes = await window.api.getLocalIps();
-        const el = document.getElementById('localIp');
-        if (el) el.value = (ipRes.success && ipRes.ips.length) ? ipRes.ips.join('  ·  ') : 'no network';
+        const el = document.getElementById('pcIpHint');
+        if (el && ipRes.success && ipRes.ips.length) el.textContent = ` (This PC is ${ipRes.ips.join(', ')}.)`;
       } catch { /* ignore */ }
 
       if (configRes.success && configRes.config) {
@@ -430,23 +495,82 @@
         document.getElementById('storePhone').value = c.phone || '';
         document.getElementById('storeAddress').value = c.address || '';
         document.getElementById('storeFooter').value = c.footer_message || '';
+        document.getElementById('refundPolicy').value = c.refund_policy || '';
+        document.getElementById('tipEnabled').checked = c.tip_enabled == 1 || c.tip_enabled === true;
+        document.getElementById('tipPresets').value = c.tip_presets || '15,18,20';
+        document.getElementById(c.rebate_auto_apply == 1 ? 'rebateModeOn' : 'rebateModeOff').checked = true;
         document.getElementById('taxRate').value = ((c.tax_rate || 0.0825) * 100).toFixed(2);
         document.getElementById('minAge').value = String(c.min_age ?? 21);
       }
     });
 
+    // ── Onboarding checklist (spec §7) ─────────────────────────────────────
+    async function loadOnboarding() {
+      const res = await window.api.getOnboardingStatus();
+      if (!res || !res.success) return;
+      // Hide once the store is fully set up and the checklist was dismissed.
+      if (res.complete && res.dismissed) { document.getElementById('onboardingCard').style.display = 'none'; return; }
+
+      document.getElementById('onboardingCard').style.display = 'block';
+      document.getElementById('obPct').textContent = res.overall_progress;
+      document.getElementById('obBar').style.width = res.overall_progress + '%';
+
+      document.getElementById('obList').innerHTML = res.checklist.map(s => {
+        const icon = s.status === 'complete' ? '✓' : (s.status === 'current' ? '▶' : '○');
+        const color = s.status === 'complete' ? '#16a34a' : (s.status === 'current' ? '#6d28d9' : '#bbb');
+        const weight = s.status === 'current' ? '700' : '500';
+        return `<div style="display:flex;align-items:center;gap:9px;padding:5px 0;font-size:14px">
+          <span style="color:${color};font-weight:800;width:16px;text-align:center">${icon}</span>
+          <span style="color:${s.status==='complete'?'#666':'#1a1a1a'};font-weight:${weight}">${esc(s.label)}${s.optional ? ' <span style="font-size:11px;color:#aaa">(optional)</span>' : ''}</span>
+        </div>`;
+      }).join('');
+
+      document.getElementById('obNext').innerHTML = res.next_action
+        ? `<strong>Next:</strong> ${esc(res.next_action)}` : '';
+
+      const call = document.getElementById('obCall');
+      if (res.book_a_call) {
+        call.style.display = 'block';
+        call.innerHTML = `${esc(res.book_a_call.message)} <a href="${esc(res.book_a_call.booking_url)}" target="_blank" style="font-weight:700;color:#1d4ed8">Book a call →</a>`;
+      } else { call.style.display = 'none'; }
+
+      document.getElementById('obDismiss').style.display = res.complete ? 'inline-flex' : 'none';
+    }
+    async function dismissOnboarding() {
+      await window.api.dismissOnboarding();
+      document.getElementById('onboardingCard').style.display = 'none';
+    }
+
     // ── Owner Console (PIN-gated) ──────────────────────────────────────────
     let ownerPinCached = null;
     async function ownerInitCard() {
+      // The Owner Console is only available in the owner's demo build. On client
+      // installs it is hidden entirely (managers never see it).
+      let demo = false;
+      try { const d = await window.api.appIsDemo(); demo = !!(d && d.demo); } catch { /* not demo */ }
+      const card = document.getElementById('ownerCard');
+      if (!demo) { card.style.display = 'none'; return; }
+      card.style.display = '';
+
       const r = await window.api.ownerHasPin();
       const hasPin = !!(r && r.hasPin);
-      document.getElementById('ownerCard')._hasPin = hasPin;
+      card._hasPin = hasPin;
       document.getElementById('ownerLockMsg').textContent = hasPin
         ? 'Enter your Owner PIN to unlock owner-only settings.'
         : 'Create an Owner PIN to protect owner-only settings.';
       document.getElementById('ownerPinLabel').textContent = hasPin ? 'Owner PIN' : 'New Owner PIN';
       document.getElementById('ownerPinConfirmWrap').style.display = hasPin ? 'none' : 'block';
       document.getElementById('ownerUnlockBtn').textContent = hasPin ? 'Unlock' : 'Create PIN';
+      document.getElementById('ownerResetPinBtn').style.display = hasPin ? 'inline-block' : 'none';
+    }
+    async function ownerResetPin() {
+      if (!confirm('Reset the Owner PIN? You will set a new one right after.')) return;
+      const res = await window.api.ownerResetPin();
+      if (!res.success) { showToast(res.error || 'Reset failed', 'error'); return; }
+      showToast('Owner PIN cleared — create a new one', 'success');
+      document.getElementById('ownerPin').value = '';
+      document.getElementById('ownerPinConfirm').value = '';
+      await ownerInitCard();
     }
     async function ownerUnlock() {
       const hasPin = document.getElementById('ownerCard')._hasPin;
@@ -487,23 +611,17 @@
       row.className = 'ad-slide-row';
       row.style.cssText = 'border:1px solid #eee;border-radius:8px;padding:10px;margin-bottom:8px;background:#fafafa';
       row.innerHTML =
-        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">' +
-        '<input type="text" class="ad-headline" placeholder="Headline (e.g. Manufacturer rebate today!)" style="flex:1" />' +
+        '<div style="display:flex;gap:8px;align-items:center">' +
+        '<input type="text" class="ad-image" placeholder="Image or GIF URL — fills the whole screen" style="flex:1" />' +
         '<button type="button" class="btn btn-gray" style="padding:2px 10px;font-size:12px" onclick="this.closest(\'.ad-slide-row\').remove()">Remove</button>' +
-        '</div>' +
-        '<input type="text" class="ad-body" placeholder="Sub-text (optional)" style="width:100%;margin-bottom:6px" />' +
-        '<input type="text" class="ad-image" placeholder="Image URL (optional)" style="width:100%" />';
-      row.querySelector('.ad-headline').value = slide.headline || '';
-      row.querySelector('.ad-body').value = slide.body || '';
+        '</div>';
       row.querySelector('.ad-image').value = slide.image || '';
       document.getElementById('adsList').appendChild(row);
     }
     function collectAds() {
       return Array.from(document.querySelectorAll('#adsList .ad-slide-row')).map((r) => ({
-        headline: r.querySelector('.ad-headline').value.trim(),
-        body: r.querySelector('.ad-body').value.trim(),
         image: r.querySelector('.ad-image').value.trim(),
-      })).filter((s) => s.headline || s.body || s.image);
+      })).filter((s) => s.image);
     }
     async function saveOwnerDisplay() {
       if (!ownerPinCached) { showToast('Unlock the Owner Console first', 'warning'); return; }
@@ -515,12 +633,21 @@
       showToast(res.success ? 'Display settings saved' : (res.error || 'Failed'), res.success ? 'success' : 'error');
     }
 
+    async function saveRebateMode() {
+      const on = document.getElementById('rebateModeOn').checked;
+      const r = await window.api.updateReceiptConfig({ rebate_auto_apply: on ? 1 : 0 });
+      showToast(r.success ? 'Rebate setting saved' : (r.error || 'Failed'), r.success ? 'success' : 'error');
+    }
+
     async function saveReceiptConfig() {
       const data = {
         store_name: document.getElementById('storeName').value.trim(),
         phone: document.getElementById('storePhone').value.trim(),
         address: document.getElementById('storeAddress').value.trim(),
         footer_message: document.getElementById('storeFooter').value.trim(),
+        refund_policy: document.getElementById('refundPolicy').value.trim(),
+        tip_enabled: document.getElementById('tipEnabled').checked ? 1 : 0,
+        tip_presets: document.getElementById('tipPresets').value.trim() || '15,18,20',
         tax_rate: parseFloat(document.getElementById('taxRate').value) / 100,
         min_age: parseInt(document.getElementById('minAge').value, 10) || 0,
       };
@@ -609,6 +736,8 @@
     async function saveTerminalSettings(silent = false) {
       const config = {
         terminal_type: document.getElementById('terminalType').value,
+        terminal_transport: document.getElementById('terminalTransport').value,
+        terminal_ip: document.getElementById('terminalIp').value.trim(),
         terminal_port: document.getElementById('terminalPort').value.trim() || '5000',
       };
       const res = await window.api.saveTerminalConfig(config);

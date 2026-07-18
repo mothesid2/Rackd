@@ -15,6 +15,9 @@ import { PUBLIC_SUPABASE_URL } from './supabase/publicConfig';
  * staging build first; promote to production when you're happy.
  */
 const BUCKET = 'app-updates';
+// Per-app layout so the Owner Console Publish hub can promote each app
+// independently: app-updates/<app>/<channel>/. This app is the POS.
+const APP = 'pos';
 
 function channel(): 'production' | 'staging' {
   try {
@@ -26,7 +29,7 @@ function channel(): 'production' | 'staging' {
 }
 
 function feedUrl(): string {
-  return `${PUBLIC_SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/${BUCKET}/${channel()}`;
+  return `${PUBLIC_SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/${BUCKET}/${APP}/${channel()}`;
 }
 
 function broadcast(state: string, extra: Record<string, unknown> = {}): void {
@@ -39,6 +42,12 @@ function broadcast(state: string, extra: Record<string, unknown> = {}): void {
 
 let started = false;
 
+// After boot, if an update finishes downloading within this window we relaunch
+// into it immediately ("auto-update on boot"). Downloads that land later — or the
+// 6-hourly periodic checks — defer the install to the next quit instead, so a
+// register is never force-restarted in the middle of a shift.
+const BOOT_APPLY_WINDOW_MS = 3 * 60 * 1000; // 3 minutes
+
 export function startUpdater(): void {
   if (started) return;
   started = true;
@@ -48,16 +57,28 @@ export function startUpdater(): void {
   autoUpdater.autoInstallOnAppQuit = true;
   try { autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl() }); } catch { /* ignore */ }
 
+  // Open the boot-apply window; it closes shortly after launch.
+  let bootApplyOpen = true;
+  setTimeout(() => { bootApplyOpen = false; }, BOOT_APPLY_WINDOW_MS);
+
   autoUpdater.on('checking-for-update', () => broadcast('checking'));
   autoUpdater.on('update-available', (info) => broadcast('available', { version: info.version }));
   autoUpdater.on('update-not-available', () => broadcast('none'));
   autoUpdater.on('download-progress', (p) => broadcast('downloading', { percent: Math.round(p.percent) }));
-  autoUpdater.on('update-downloaded', (info) => broadcast('ready', { version: info.version }));
+  autoUpdater.on('update-downloaded', (info) => {
+    broadcast('ready', { version: info.version });
+    // Boot-time update: relaunch straight into the new version. Outside the boot
+    // window we leave autoInstallOnAppQuit to apply it on the next quit.
+    if (bootApplyOpen) {
+      // isSilent = true, isForceRunAfter = true -> install quietly and relaunch.
+      setImmediate(() => { try { autoUpdater.quitAndInstall(true, true); } catch { /* ignore */ } });
+    }
+  });
   autoUpdater.on('error', (err) => broadcast('error', { error: String(err) }));
 
   const check = () => autoUpdater.checkForUpdates().catch(() => {});
-  setTimeout(check, 8000); // shortly after launch
-  setInterval(check, 6 * 60 * 60 * 1000); // and every 6 hours
+  setTimeout(check, 3000); // check right after launch (inside the boot-apply window)
+  setInterval(check, 6 * 60 * 60 * 1000); // and every 6 hours (download only; installs on quit)
 }
 
 export function registerUpdaterHandlers(): void {

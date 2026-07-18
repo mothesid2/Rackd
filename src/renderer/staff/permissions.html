@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Staff & Permissions</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <style>
+    .page-layout { padding: 24px; padding-bottom: 72px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    .split { display: grid; grid-template-columns: 300px 1fr; gap: 16px; flex: 1; overflow: hidden; }
+    .panel { background: #fff; border: 1px solid #eee; border-radius: 12px; overflow: auto; }
+    .emp-row { padding: 11px 14px; border-bottom: 1px solid #f2f2f2; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    .emp-row:hover { background: #f7f9ff; } .emp-row.sel { background: #eef2ff; }
+    .emp-row .role { font-size: 11px; color: #888; }
+    .pill { display: inline-block; border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 700; }
+    .pill.mgr { background: #ede9fe; color: #5b21b6; } .pill.off { background: #fee2e2; color: #991b1b; } .pill.on { background: #dcfce7; color: #166534; }
+    .perm-row { display: flex; align-items: center; gap: 12px; padding: 11px 4px; border-bottom: 1px solid #f4f4f4; }
+    .perm-row .lbl { flex: 1; }
+    .rowbtn { background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 7px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+    .tabbar { display: flex; gap: 8px; margin: 12px 0; }
+    .tab { padding: 7px 14px; border-radius: 8px; border: 1px solid #e5e7eb; background: #fafafa; cursor: pointer; font-size: 13px; font-weight: 600; }
+    .tab.active { background: #1c2a4a; color: #fff; border-color: #1c2a4a; }
+    .log-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .log-table th { text-align: left; padding: 8px; font-size: 11px; text-transform: uppercase; color: #888; border-bottom: 2px solid #eee; }
+    .log-table td { padding: 8px; border-bottom: 1px solid #f2f2f2; }
+    .mgr-block { background: #fee2e2; color: #991b1b; border-radius: 8px; padding: 14px; }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('settings')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Staff &amp; Permissions</h1>
+    </div>
+
+    <div id="mgrBlock" class="mgr-block" style="display:none">This screen is restricted to management.</div>
+
+    <div id="body" style="display:flex;flex-direction:column;flex:1;overflow:hidden">
+      <div class="tabbar">
+        <button class="tab active" data-tab="staff" onclick="switchTab('staff')">Staff</button>
+        <button class="tab" data-tab="log" onclick="switchTab('log')">Override Log</button>
+        <div style="flex:1"></div>
+        <button class="btn btn-navy" id="addBtn" onclick="openEmp(null)">+ Add Employee</button>
+      </div>
+
+      <div id="staffTab" class="split">
+        <div class="panel" id="empList"></div>
+        <div class="panel" id="permPanel" style="padding:16px"><div style="color:#aaa">Select an employee to edit permissions.</div></div>
+      </div>
+
+      <div id="logTab" class="panel" style="display:none;flex:1;padding:0">
+        <table class="log-table">
+          <thead><tr><th>When</th><th>Employee</th><th>Action</th><th>Needed</th><th>Manager</th><th>Result</th></tr></thead>
+          <tbody id="logBody"><tr><td colspan="6" style="text-align:center;color:#aaa;padding:24px">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add / Edit employee -->
+  <div class="modal-overlay" id="empModal" style="display:none">
+    <div class="modal" style="max-width:420px">
+      <button class="modal-close" onclick="closeModal('empModal')">×</button>
+      <div class="modal-title" id="empTitle">Add Employee</div>
+      <input type="hidden" id="eId" />
+      <div class="form-group"><label>Name</label><input type="text" id="eName" placeholder="Jane Doe" /></div>
+      <div class="form-group"><label>Username (login/reports)</label><input type="text" id="eUser" placeholder="jane" /></div>
+      <div class="form-group"><label>Role</label><select id="eRole"><option value="cashier">Cashier</option><option value="manager">Manager</option></select></div>
+      <div class="form-group"><label>PIN (blank = keep existing)</label><input type="password" id="ePin" inputmode="numeric" placeholder="4–8 digits" /></div>
+      <div class="form-group"><label style="display:flex;align-items:center;gap:8px;text-transform:none"><input type="checkbox" id="eActive" checked style="width:auto" /> Active</label></div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('empModal')">Cancel</button>
+        <button class="btn btn-navy" id="empSave" onclick="saveEmp()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar"><div class="status-left">Staff &amp; Permissions</div><div class="status-right"></div></div>
+
+  <script src="../shared.js"></script>
+  <script>
+    const LABELS = {
+      apply_discount: 'Apply manual discounts', process_refund: 'Process refunds / voids',
+      override_price: 'Override item price', inventory_adjust: 'Adjust inventory',
+      view_reports: 'View reports / analytics', manage_rebates: 'Apply / toggle rebates',
+      open_drawer_no_sale: 'Open drawer (no sale)', clock_others: 'Clock others in / out',
+    };
+    let PERM_KEYS = Object.keys(LABELS);
+    let employees = [];
+    let selected = null;
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const s = (await window.api.getSession()).session;
+      if (s?.role !== 'manager') { document.getElementById('mgrBlock').style.display = 'block'; document.getElementById('body').style.display = 'none'; return; }
+      await loadStaff();
+    });
+
+    function switchTab(t) {
+      document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+      document.getElementById('staffTab').style.display = t === 'staff' ? 'grid' : 'none';
+      document.getElementById('logTab').style.display = t === 'log' ? 'block' : 'none';
+      document.getElementById('addBtn').style.display = t === 'staff' ? 'inline-flex' : 'none';
+      if (t === 'log') loadLog();
+    }
+
+    async function loadStaff() {
+      const r = await window.api.permsListEmployees();
+      if (!r.success) { document.getElementById('empList').innerHTML = `<div style="color:#b01d2e;padding:16px">${esc(r.error||'Failed')}</div>`; return; }
+      employees = r.employees; if (r.keys) PERM_KEYS = r.keys;
+      document.getElementById('empList').innerHTML = employees.map(e => `
+        <div class="emp-row ${selected===e.uid?'sel':''}" onclick="selectEmp('${esc(e.uid)}')">
+          <div><div style="font-weight:600">${esc(e.name||e.username)}</div><div class="role">${esc(e.username)}</div></div>
+          <div style="text-align:right">
+            ${e.role==='manager'?'<span class="pill mgr">Manager</span>':''}
+            ${e.is_active?'':'<span class="pill off">inactive</span>'}
+            ${e.has_pin?'':'<span class="pill off">no PIN</span>'}
+          </div>
+        </div>`).join('') || '<div style="color:#aaa;padding:16px">No employees.</div>';
+      if (selected) renderPerms();
+    }
+
+    function selectEmp(uid) { selected = uid; loadStaff(); renderPerms(); }
+
+    function renderPerms() {
+      const e = employees.find(x => x.uid === selected);
+      const panel = document.getElementById('permPanel');
+      if (!e) { panel.innerHTML = '<div style="color:#aaa">Select an employee.</div>'; return; }
+      if (e.role === 'manager') {
+        panel.innerHTML = `<div style="font-weight:800;margin-bottom:6px">${esc(e.name||e.username)}</div>
+          <div class="pill mgr" style="margin-bottom:10px">Manager — holds all permissions</div>
+          <div style="display:flex;gap:8px"><button class="rowbtn" onclick='openEmp(${JSON.stringify(e).replace(/'/g,"&#39;")})'>Edit / reset PIN</button></div>`;
+        return;
+      }
+      panel.innerHTML =
+        `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+           <div style="font-weight:800">${esc(e.name||e.username)}</div>
+           <button class="rowbtn" onclick='openEmp(${JSON.stringify(e).replace(/'/g,"&#39;")})'>Edit / reset PIN</button>
+         </div>` +
+        PERM_KEYS.map(k => {
+          const p = e.permissions[k] || { is_granted:false, value:null };
+          const capInput = k === 'apply_discount'
+            ? `<input type="number" min="0" max="100" placeholder="cap %" value="${p.value ?? ''}" style="width:80px" onchange="setCap('${esc(e.uid)}', this.value)" ${p.is_granted?'':'disabled'} />`
+            : '';
+          return `<div class="perm-row">
+            <label class="switch" style="display:inline-flex"><input type="checkbox" ${p.is_granted?'checked':''} onchange="toggle('${esc(e.uid)}','${k}',this.checked)" /></label>
+            <span class="lbl">${esc(LABELS[k]||k)}</span>${capInput}</div>`;
+        }).join('');
+    }
+
+    async function toggle(uid, key, on) {
+      const e = employees.find(x => x.uid === uid);
+      const cap = key === 'apply_discount' ? (e.permissions[key]?.value ?? null) : null;
+      const r = await window.api.permsSetPermission(uid, key, on, cap);
+      if (!r.success) { showToast(r.error||'Failed','error'); return; }
+      (e.permissions[key] ||= {}).is_granted = on;
+      renderPerms();
+    }
+    async function setCap(uid, val) {
+      const v = val === '' ? null : Math.max(0, Math.min(100, parseFloat(val)||0));
+      const r = await window.api.permsSetPermission(uid, 'apply_discount', true, v);
+      if (!r.success) { showToast(r.error||'Failed','error'); return; }
+      const e = employees.find(x => x.uid === uid); (e.permissions.apply_discount ||= {}).value = v;
+      showToast('Discount cap saved', 'success');
+    }
+
+    function openEmp(e) {
+      document.getElementById('empTitle').textContent = e ? 'Edit Employee' : 'Add Employee';
+      document.getElementById('eId').value = e ? e.id : '';
+      document.getElementById('eName').value = e ? (e.name||'') : '';
+      document.getElementById('eUser').value = e ? (e.username||'') : '';
+      document.getElementById('eUser').disabled = !!e;
+      document.getElementById('eRole').value = e ? e.role : 'cashier';
+      document.getElementById('ePin').value = '';
+      document.getElementById('eActive').checked = e ? !!e.is_active : true;
+      openModal('empModal');
+    }
+    async function saveEmp() {
+      const emp = {
+        id: document.getElementById('eId').value || undefined,
+        name: document.getElementById('eName').value.trim(),
+        username: document.getElementById('eUser').value.trim(),
+        role: document.getElementById('eRole').value,
+        pin: document.getElementById('ePin').value.trim() || undefined,
+        is_active: document.getElementById('eActive').checked,
+      };
+      const btn = document.getElementById('empSave'); btn.disabled = true; btn.textContent = 'Saving…';
+      const r = await window.api.permsSaveEmployee(emp);
+      btn.disabled = false; btn.textContent = 'Save';
+      if (!r.success) { showToast(r.error||'Failed','error'); return; }
+      selected = r.uid; closeModal('empModal'); showToast('Saved', 'success'); loadStaff();
+    }
+
+    async function loadLog() {
+      const r = await window.api.permsOverrideLog(200);
+      const tb = document.getElementById('logBody');
+      if (!r.success) { tb.innerHTML = `<tr><td colspan="6" style="color:#b01d2e;padding:16px">${esc(r.error||'Failed')}</td></tr>`; return; }
+      tb.innerHTML = (r.log||[]).map(l => `<tr>
+        <td style="white-space:nowrap">${esc(String(l.at||'').replace('T',' ').slice(0,16))}</td>
+        <td>${esc(l.acting_employee_name||'—')}</td>
+        <td>${esc(l.action_attempted||'')}${l.event_type==='pin_lockout'?' <span class="pill off">lockout</span>':''}</td>
+        <td>${esc(l.required_permission||'—')}</td>
+        <td>${esc(l.authorizing_manager_name||'—')}</td>
+        <td>${l.was_approved?'<span class="pill on">approved</span>':'<span class="pill off">denied</span>'}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:24px">No override events yet.</td></tr>';
+    }
+  </script>
+</body>
+</html>

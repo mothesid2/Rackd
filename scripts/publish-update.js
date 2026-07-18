@@ -20,6 +20,8 @@ for (const line of (fs.existsSync('.env') ? fs.readFileSync('.env', 'utf8') : ''
 
 const BUCKET = 'app-updates';
 const channel = process.argv[2] === 'staging' ? 'staging' : 'production';
+// Per-app channel layout: app-updates/<app>/<channel>/. Defaults to the POS.
+const APP = process.argv[3] || 'pos';
 const URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -28,9 +30,10 @@ if (!URL || !KEY) {
   process.exit(1);
 }
 
-const releaseDir = 'release';
+// Release dir (argv[4]) — POS builds to release/, the portal/owner apps to dist/.
+const releaseDir = process.argv[4] || 'release';
 if (!fs.existsSync(path.join(releaseDir, 'latest.yml'))) {
-  console.error('No release/latest.yml — run "npm run build" first.');
+  console.error(`No ${releaseDir}/latest.yml — build first.`);
   process.exit(1);
 }
 
@@ -50,7 +53,7 @@ const sb = createClient(URL, KEY, { auth: { persistSession: false } });
   console.log(`Publishing ${files.length} file(s) to '${channel}' channel…`);
   for (const f of files) {
     const body = fs.readFileSync(path.join(releaseDir, f));
-    const dest = `${channel}/${f}`;
+    const dest = `${APP}/${channel}/${f}`;
     const contentType = f.endsWith('.yml') ? 'text/yaml' : f.endsWith('.exe') ? 'application/octet-stream' : 'application/octet-stream';
     const { error } = await sb.storage.from(BUCKET).upload(dest, body, { upsert: true, contentType });
     if (error) {

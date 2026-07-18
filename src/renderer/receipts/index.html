@@ -81,6 +81,7 @@
         <button class="date-preset-btn" data-preset="month">This Month</button>
         <button class="date-preset-btn" data-preset="custom">Custom</button>
       </div>
+      <button class="date-preset-btn" id="onlineToggle" title="Show only prepaid online orders" style="border-color:#e5b3ba">Online orders</button>
       <div id="customDateRow" style="display:none;align-items:center;gap:6px;font-size:13px;color:#666">
         <label>From</label>
         <input type="date" id="filterStart" style="width:140px" />
@@ -192,6 +193,7 @@
     let allTransactions = [];
     let isManager = false;
     let activePreset = 'today';
+    let onlineOnly = false;
 
     function todayCT() {
       return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
@@ -249,6 +251,16 @@
           currentPage = 1;
           loadTransactions();
         }
+      });
+
+      // Online-orders filter: show only prepaid online sales (the "Online Orders" view).
+      document.getElementById('onlineToggle').addEventListener('click', () => {
+        onlineOnly = !onlineOnly;
+        const b = document.getElementById('onlineToggle');
+        b.style.background = onlineOnly ? '#b01d2e' : '';
+        b.style.color = onlineOnly ? '#fff' : '';
+        currentPage = 1;
+        loadTransactions();
       });
 
       document.getElementById('filterBtn').addEventListener('click', () => {
@@ -310,6 +322,7 @@
         customer_name: document.getElementById('filterName').value.trim() || undefined,
         start_date: start,
         end_date: end,
+        source: onlineOnly ? 'online' : undefined,
         page: currentPage,
         per_page: 50,
       };
@@ -345,7 +358,9 @@
           <td><strong>#${t.id}</strong></td>
           <td>${esc(t.cashier_name || '—')}</td>
           <td>${esc(t.customer_name || '—')}</td>
-          <td>${esc(t.payment_method || '—')}</td>
+          <td>${t.order_source === 'online'
+            ? '<span style="background:#fde7ea;color:#b01d2e;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap">Online — Prepaid</span>'
+            : esc(t.payment_method || '—')}</td>
           <td><strong>${fmt(t.total)}</strong></td>
           <td>${fmtDate(t.created_at)}</td>
           <td>${fmtTime(t.created_at)}</td>

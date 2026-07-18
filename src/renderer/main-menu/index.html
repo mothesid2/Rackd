@@ -290,6 +290,34 @@
           <div class="nav-btn-chevron"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
         </button>
 
+        <!-- Time Clock (everyone: clock self; managers/permitted can clock others) -->
+        <button class="nav-btn timeclock-btn" onclick="navigate('timeclock')">
+          <div class="nav-icon-area">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>
+            </svg>
+          </div>
+          <div class="nav-text">
+            <div class="nav-title">Time Clock</div>
+            <div class="nav-subtitle">Clock In / Out</div>
+          </div>
+          <div class="nav-btn-chevron"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </button>
+
+        <!-- Online Pickups (BOPIS order queue + compliance ID check) -->
+        <button class="nav-btn pickups-btn" onclick="navigate('pickups')">
+          <div class="nav-icon-area">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>
+            </svg>
+          </div>
+          <div class="nav-text">
+            <div class="nav-title">Online Pickups</div>
+            <div class="nav-subtitle">BOPIS Order Queue</div>
+          </div>
+          <div class="nav-btn-chevron"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </button>
+
         <!-- X/Z Out -->
         <button class="nav-btn xzout-btn" onclick="navigate('xz-out')">
           <div class="nav-icon-area">
@@ -425,10 +453,12 @@
       if (session?.role === 'manager') {
         document.getElementById('settingsBtn').style.display = '';
       } else {
-        // Cashier: hide profit metric and X/Z Out button
+        // Cashier: hide profit metric; show X/Z Out only if granted view_reports.
         const profitBox = document.querySelector('.overview-grid .metric-box:nth-child(2)');
         if (profitBox) profitBox.style.display = 'none';
-        document.querySelector('.xzout-btn')?.setAttribute('style', 'display:none!important');
+        let canView = false;
+        try { const me = await window.api.permsMe(); canView = !!(me.success && me.permissions?.view_reports?.granted); } catch { /* deny */ }
+        if (!canView) document.querySelector('.xzout-btn')?.setAttribute('style', 'display:none!important');
       }
 
       await loadOverview(session?.role);

@@ -17,7 +17,8 @@ import { getSupabase, isSupabaseConfigured } from './client';
 
 const KEY_LICENSE = 'license_cache'; // JSON LicenseRecord
 const KEY_LAST_CHECK = 'license_last_check'; // ISO timestamp of last SUCCESSFUL cloud check
-const KEY_LICENSE_ID = 'license_key'; // optional per-install license id to filter on
+const KEY_LICENSE_KEY = 'license_key'; // the actual business/register license key (scopes the cloud fetch)
+const KEY_KIOSK_LOCATION = 'kiosk_locked_location_id'; // business-key POS: the location this kiosk is locked to
 
 const GRACE_WARN_HOURS = 48;
 const GRACE_LIMIT_HOURS = 72;
@@ -29,6 +30,7 @@ export interface LicenseRecord {
   features: string[];
   expires_at: string | null; // ISO; null = no hard expiry
   tenant_id: string | null; // needed to scope cloud writes (sync worker injects this)
+  location_id: string | null; // store this register belongs to (scopes shared sync)
   license_key: string | null;
   // Owner-managed customer-display / ads config, set centrally in the admin console.
   display_config?: { promo_enabled?: boolean; ads?: unknown[]; ads_interval?: number } | null;
@@ -195,9 +197,15 @@ function normalize(row: Record<string, unknown>): LicenseRecord {
     features: Array.isArray(features) ? (features as string[]) : [],
     expires_at: (row.expires_at as string) ?? null,
     tenant_id: (row.tenant_id as string) ?? null,
+    location_id: (row.location_id as string) ?? null,
     license_key: (row.license_key as string) ?? null,
     display_config: (row.display_config as LicenseRecord['display_config']) ?? null,
   };
+}
+
+/** The location this kiosk locked to at setup (business-key POS), or null. */
+export function getKioskLock(db: Database.Database = getDb()): string | null {
+  return readSetting(KEY_KIOSK_LOCATION, db) ?? null;
 }
 
 /** Fetch this install's license from Supabase. Returns null if unreachable/absent. */
@@ -205,9 +213,12 @@ export async function fetchLicenseFromCloud(): Promise<LicenseRecord | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
   try {
-    const licenseId = readSetting(KEY_LICENSE_ID);
+    // Scope to THIS install's key. A business tenant can have several license rows
+    // (the business key + manager codes), so an unfiltered limit(1) could grab the
+    // wrong one; filter by the stored key when we have it.
+    const licenseKey = readSetting(KEY_LICENSE_KEY);
     let query = supabase.from('licenses').select('*').limit(1);
-    if (licenseId) query = supabase.from('licenses').select('*').eq('id', licenseId).limit(1);
+    if (licenseKey) query = supabase.from('licenses').select('*').eq('license_key', licenseKey).limit(1);
     const { data, error } = await query.maybeSingle();
     if (error) {
       console.warn('[license] cloud fetch error:', error.message);
@@ -224,6 +235,11 @@ export async function fetchLicenseFromCloud(): Promise<LicenseRecord | null> {
 export async function refreshLicense(): Promise<LicenseStatus> {
   const rec = await fetchLicenseFromCloud();
   if (rec) {
+    // Business-key POS: the license row carries no location (one key for the whole
+    // business), so the kiosk's effective location comes from its local lock.
+    // Injecting it here keeps location_id populated for sync scoping + token refresh.
+    const lock = getKioskLock();
+    if (lock && !rec.location_id) rec.location_id = lock;
     writeSetting(KEY_LICENSE, JSON.stringify(rec));
     writeSetting(KEY_LAST_CHECK, new Date().toISOString());
     console.log('[license] verified with Supabase — grace clock reset.');
@@ -231,6 +247,28 @@ export async function refreshLicense(): Promise<LicenseStatus> {
     console.warn('[license] could not verify with Supabase — using cached license within grace window.');
   }
   return computeStatus();
+}
+
+// Owner-managed customer-display config (ads/rebates) is edited in the tenant
+// portal and delivered via the license row's `display_config`. The daily license
+// re-check is too slow for ads — this throttled refresher lets the customer
+// display pick up portal changes within its poll interval instead of on restart.
+let lastDisplayRefresh = 0;
+export async function refreshDisplayConfig(minIntervalMs = 15000): Promise<void> {
+  if (!isSupabaseConfigured()) return;
+  const now = Date.now();
+  if (now - lastDisplayRefresh < minIntervalMs) return;
+  lastDisplayRefresh = now;
+  const rec = await fetchLicenseFromCloud();
+  if (!rec) return; // unreachable — keep whatever is cached
+  const cached = loadCachedLicense();
+  if (cached) {
+    // Update only the display config; leave the grace clock / license fields alone.
+    cached.display_config = rec.display_config ?? null;
+    writeSetting(KEY_LICENSE, JSON.stringify(cached));
+  } else {
+    writeSetting(KEY_LICENSE, JSON.stringify(rec));
+  }
 }
 
 let dailyTimer: NodeJS.Timeout | null = null;

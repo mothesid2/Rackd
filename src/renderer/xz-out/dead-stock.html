@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Slow-Moving Inventory</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <style>
+    .page-layout { padding: 24px; padding-bottom: 80px; max-width: 1100px; margin: 0 auto;
+      height: calc(100vh - 32px); overflow-y: auto; }
+    .top-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+    .log-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .log-table th { text-align: left; padding: 8px 10px; font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.04em; color: #888; border-bottom: 2px solid #eee; position: sticky; top: 0; background: #fff; }
+    .log-table td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
+    .log-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .act { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; white-space: nowrap; text-transform: capitalize; }
+    .act.write_off { background: #fee2e2; color: #991b1b; }
+    .act.return_to_vendor { background: #fef3c7; color: #92400e; }
+    .act.clearance_price { background: #ffedd5; color: #9a3412; }
+    .act.bundle { background: #e0e7ff; color: #3730a3; }
+    .act.run_promo { background: #dcfce7; color: #166534; }
+    .stat-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .stat { background: #f8f8f8; border: 1px solid #eee; border-radius: 10px; padding: 10px 16px; min-width: 150px; }
+    .stat .v { font-size: 20px; font-weight: 800; color: #1a1a1a; }
+    .stat .l { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: .04em; }
+    .empty { text-align: center; color: #888; padding: 30px; }
+    @media print { .page-header, .top-bar, .status-bar { display: none !important; } body { background: #fff; } }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('merchandise/inventory')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Slow-Moving Inventory</h1>
+    </div>
+
+    <div id="mgrBlock" style="display:none;background:#fee2e2;border-radius:8px;padding:14px;color:#991b1b">
+      This report is restricted to management.
+    </div>
+
+    <div id="reportBlock">
+      <p style="font-size:13px;color:#666;margin-bottom:12px">
+        Products with stock on hand and <strong>no sale in 60+ days</strong>, ranked by cash tied up.
+      </p>
+      <div class="stat-row" id="statRow"></div>
+      <div class="top-bar">
+        <div class="spacer"></div>
+        <button class="btn btn-navy" onclick="window.api.printPage()">Print</button>
+      </div>
+      <div class="card">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>SKU</th><th>Product</th><th>Category</th><th>Vendor</th>
+              <th class="num">Stock</th><th class="num">Cost Value</th>
+              <th class="num">Days Idle</th><th>Suggested Action</th>
+            </tr>
+          </thead>
+          <tbody id="body"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar"><div class="status-left" id="status-left">Loading…</div><div class="status-right" id="status-right"></div></div>
+
+  <script src="../shared.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      const session = (await window.api.getSession()).session;
+      if (session?.role !== 'manager') {
+        document.getElementById('mgrBlock').style.display = 'block';
+        document.getElementById('reportBlock').style.display = 'none';
+        document.getElementById('status-left').textContent = 'Restricted';
+        return;
+      }
+      const res = await window.api.getDeadStock();
+      const body = document.getElementById('body');
+      if (!res.success) { body.innerHTML = `<tr><td colspan="8" class="empty">${esc(res.error || 'failed')}</td></tr>`; return; }
+
+      const s = res.summary;
+      document.getElementById('statRow').innerHTML =
+        `<div class="stat"><div class="v">${s.total_dead_stock_skus}</div><div class="l">Dead SKUs</div></div>` +
+        `<div class="stat"><div class="v">${s.total_dead_stock_units}</div><div class="l">Units</div></div>` +
+        `<div class="stat"><div class="v">${fmt(s.total_dead_stock_cost_value)}</div><div class="l">Cash Tied Up</div></div>` +
+        (s.oldest_dead_stock_sku ? `<div class="stat"><div class="v">${s.oldest_days_since_last_sale}d</div><div class="l">Oldest (${esc(s.oldest_dead_stock_sku)})</div></div>` : '');
+
+      body.innerHTML = res.report.length === 0
+        ? '<tr><td colspan="8" class="empty">No slow-moving stock — everything sold within the last 60 days 🎉</td></tr>'
+        : res.report.map(r => `
+            <tr>
+              <td>${esc(r.sku)}</td>
+              <td><strong>${esc(r.product_name)}</strong></td>
+              <td>${esc(r.category || '—')}</td>
+              <td>${esc(r.vendor || '—')}</td>
+              <td class="num">${r.current_stock}</td>
+              <td class="num">${fmt(r.cost_value)}</td>
+              <td class="num">${r.never_sold ? 'never' : r.days_since_last_sale}</td>
+              <td><span class="act ${esc(r.suggested_action)}">${esc(r.suggested_action.replace(/_/g,' '))}</span><div style="font-size:11px;color:#888;margin-top:2px">${esc(r.suggested_action_reason)}</div></td>
+            </tr>`).join('');
+      document.getElementById('status-left').textContent = 'Slow-moving inventory';
+    });
+  </script>
+</body>
+</html>

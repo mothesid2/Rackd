@@ -21,7 +21,8 @@ function loadTerminal() {
   const type = get('terminal_type') || 'mock';
   const ip   = get('terminal_ip');
   const port = parseInt(get('terminal_port') || '5000', 10);
-  const key  = `${type}|${ip}|${port}`;
+  const transport = get('terminal_transport') || 'tcp';
+  const key  = `${type}|${ip}|${port}|${transport}`;
 
   // Reuse the live instance (and its already-listening server) if unchanged.
   if (activeTerminal && key === activeKey) {
@@ -75,16 +76,18 @@ export function registerTerminalHandlers(): void {
       if (type === 'mock') {
         return { success: true, message: 'Mock terminal always responds OK.' };
       }
-      const serverRunning = await terminal.testConnection();
-      const tt = terminal as unknown as { isTerminalConnected?: () => boolean };
-      const termConnected = typeof tt.isTerminalConnected === 'function' && tt.isTerminalConnected();
+      // Client mode: can we open a connection to the terminal right now?
+      const reachable = await terminal.testConnection();
+      const db = getDb();
+      const g2 = (k: string) => (db.prepare('SELECT value FROM settings WHERE key = ?').get(k) as { value: string } | undefined)?.value || '';
+      const ipVal = g2('terminal_ip');
+      const portVal = g2('terminal_port') || '5000';
+      const transVal = g2('terminal_transport') || 'tcp';
       return {
-        success: serverRunning,
-        message: !serverRunning
-          ? 'Server not running — restart the app.'
-          : termConnected
-            ? '✓ Server running — terminal is connected.'
-            : 'Server running — waiting for the VP100 to connect. The terminal must be pointed at this PC\'s IP (see below).',
+        success: reachable,
+        message: reachable
+          ? `✓ Reached the terminal at ${ipVal}:${portVal} (${transVal}).`
+          : `Could not reach the terminal at ${ipVal || '(no IP set)'}:${portVal} (${transVal}). Check the terminal's IP, that the connection type matches, and that it shows "Server is Waiting for Transaction".`,
       };
     } catch (err) {
       return { success: false, message: String(err) };
@@ -108,7 +111,7 @@ export function registerTerminalHandlers(): void {
     try {
       const db = getDb();
       const keys = [
-        'terminal_type', 'terminal_ip', 'terminal_port',
+        'terminal_type', 'terminal_ip', 'terminal_port', 'terminal_transport',
         'terminal_mid', 'terminal_tid',
         'terminal_epi', 'terminal_channel', 'terminal_environment',
       ];
@@ -129,7 +132,7 @@ export function registerTerminalHandlers(): void {
       const w = assertWritable('settings_change'); if (!w.ok) return { success: false, error: w.error };
       const db = getDb();
       const allowed = [
-        'terminal_type', 'terminal_ip', 'terminal_port',
+        'terminal_type', 'terminal_ip', 'terminal_port', 'terminal_transport',
         'terminal_mid', 'terminal_tid',
         'terminal_epi', 'terminal_channel', 'terminal_environment',
       ];

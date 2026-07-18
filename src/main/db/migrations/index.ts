@@ -1,6 +1,16 @@
 import type Database from 'better-sqlite3';
 import { migration001 } from './001_local_tables';
 import { migration002 } from './002_drop_unused_inventory';
+import { migration003 } from './003_sku_catalog';
+import { migration004 } from './004_location_sync';
+import { migration005 } from './005_stock_movements';
+import { migration006 } from './006_refunds';
+import { migration007 } from './007_tip_settings';
+import { migration008 } from './008_rebates';
+import { migration009 } from './009_rebate_settings';
+import { migration010 } from './010_permissions';
+import { migration011 } from './011_time_clock';
+import { migration012 } from './012_online_order_source';
 
 /**
  * A single schema change. Migrations are applied in `id` order exactly once and
@@ -16,7 +26,7 @@ export interface Migration {
 }
 
 // Ordered registry. Append new migrations here.
-const MIGRATIONS: Migration[] = [migration001, migration002];
+const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012];
 
 /**
  * Run any migrations that haven't been applied yet. Idempotent: safe to call

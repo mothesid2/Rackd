@@ -3,8 +3,28 @@ import { DateTime } from 'luxon';
 import { getDb } from '../db/schema';
 import { getCurrentSession } from './auth';
 import { nowCT, todayCT, TZ } from '../utils/time';
-import { enqueueLocalRow, enqueueInventorySnapshot } from '../supabase/sync';
+import { enqueueLocalRow, enqueueInventorySnapshot, enqueueStockMovement, enqueueCustomer } from '../supabase/sync';
 import { assertWritable } from '../supabase/licenseCheck';
+import { requirePermission } from '../permissions';
+
+// Refund policy (spec v3, Phase 7). Gift-shop (non-age-restricted) items are
+// returnable within this window; tobacco/vapor (age_restricted) and
+// discounted/promotional sales are never refundable. Manager-approval for refunds
+// is now enforced via the permission engine (process_refund).
+const REFUND_WINDOW_DAYS = 7;
+
+/** True if a cart line's unit price differs from the catalog price (a price override). */
+function isPriceOverride(db: ReturnType<typeof getDb>, item: TransactionItem): boolean {
+  let catalog: number | null = null;
+  if (item.variant_id) {
+    const v = db.prepare('SELECT price FROM product_variants WHERE id = ?').get(item.variant_id) as { price: number } | undefined;
+    catalog = v ? v.price : null;
+  } else if (item.product_id) {
+    const p = db.prepare('SELECT price FROM products WHERE id = ?').get(item.product_id) as { price: number } | undefined;
+    catalog = p ? p.price : null;
+  }
+  return catalog != null && Math.abs((item.unit_price || 0) - catalog) > 0.005;
+}
 
 interface TransactionItem {
   product_id: number | null;
@@ -23,6 +43,9 @@ interface CreateTransactionData {
   tax_rate: number;
   tax_amount: number;
   discount_amount: number;
+  manual_discount?: number;    // cashier-entered discount (permission-gated)
+  discount_override?: string;  // legacy alias for `override`
+  override?: string;           // manager PIN authorizing any gated action this sale
   total: number;
   payment_method: 'cash' | 'card' | 'split';
   cash_tendered?: number;
@@ -50,7 +73,7 @@ function loyaltyTier(lifetime: number, gold: boolean): string {
 export function registerTransactionHandlers(): void {
   ipcMain.handle('transactions:getAll', async (_event, filters?: {
     customer_name?: string; start_date?: string; end_date?: string;
-    page?: number; per_page?: number;
+    page?: number; per_page?: number; source?: 'online' | 'in_store';
   }) => {
     try {
       const db = getDb();
@@ -81,6 +104,9 @@ export function registerTransactionHandlers(): void {
         sql += ' AND substr(t.created_at, 1, 10) <= ?';
         params.push(filters.end_date);
       }
+      // Online — Prepaid filter (the "Online Orders" view in Receipts).
+      if (filters?.source === 'online') sql += " AND t.order_source = 'online'";
+      else if (filters?.source === 'in_store') sql += " AND COALESCE(t.order_source, 'in_store') <> 'online'";
 
       const countSql = sql.replace(/SELECT t\.\*.*?FROM/s, 'SELECT COUNT(*) as cnt FROM');
       const countResult = db.prepare(countSql).get(...params) as { cnt: number };
@@ -130,6 +156,22 @@ export function registerTransactionHandlers(): void {
       const db = getDb();
       const session = getCurrentSession();
 
+      // Data-layer gates (not bypassable from the UI). A single manager PIN this
+      // sale authorizes whichever gate trips.
+      const overridePin = data.override ?? data.discount_override;
+      // Manual cashier discount beyond the employee's grant/cap (loyalty/promo/rebate excluded).
+      const manualDisc = Number(data.manual_discount) || 0;
+      if (manualDisc > 0) {
+        const pct = data.subtotal > 0 ? (manualDisc / data.subtotal) * 100 : 0;
+        const perm = requirePermission('apply_discount', { override: overridePin, action: 'apply_discount', requestedValue: pct }, db);
+        if (!perm.ok) return { success: false, error: perm.error, needsOverride: perm.needsOverride };
+      }
+      // Any product line priced off catalog = a price override.
+      if (data.items.some((it) => it.product_id && isPriceOverride(db, it))) {
+        const perm = requirePermission('override_price', { override: overridePin, action: 'override_price' }, db);
+        if (!perm.ok) return { success: false, error: perm.error, needsOverride: perm.needsOverride };
+      }
+
       const txn = db.transaction(() => {
         const result = db.prepare(`
           INSERT INTO transactions
@@ -177,6 +219,8 @@ export function registerTransactionHandlers(): void {
             db.prepare(`UPDATE products SET stock_qty = MAX(0, stock_qty - ?), updated_at = ? WHERE id = ?`)
               .run(item.qty, nowCT(), item.product_id);
             affectedProductIds.add(item.product_id);
+            // Phase 2: record the -qty as a shared stock movement so location peers converge.
+            enqueueStockMovement(item.product_id, -item.qty, 'sale', db);
           }
         }
 
@@ -262,6 +306,8 @@ export function registerTransactionHandlers(): void {
             const gold = cust.gold_member ? 1 : (lifetime >= 1500 ? 1 : 0);
             db.prepare(`UPDATE customers SET loyalty_points = ?, lifetime_points = ?, gold_member = ?, updated_at = ? WHERE id = ?`)
               .run(balance, lifetime, gold, nowCT(), data.customer_id);
+            // Phase 3: propagate the loyalty change to the shared per-location book.
+            enqueueCustomer('update', data.customer_id, db);
 
             loyalty = { earned, redeemed, balance, tier: loyaltyTier(lifetime, !!gold), bonus_2x: isTuesday && earned > 0 };
           }
@@ -320,6 +366,8 @@ export function registerTransactionHandlers(): void {
           if (item.product_id != null) {
             db.prepare('UPDATE products SET stock_qty = stock_qty + ?, updated_at = ? WHERE id = ?')
               .run(item.qty, nowCT(), item.product_id);
+            // Phase 2: record the +qty restock as a shared stock movement.
+            enqueueStockMovement(item.product_id, item.qty, 'return', db);
           }
         }
 
@@ -348,6 +396,166 @@ export function registerTransactionHandlers(): void {
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
+    }
+  });
+
+  // ── Refund lookup (Phase 7): manager code + receipt number -> the original
+  // sale, its customer/discount, and each line's refund eligibility. ──────────
+  ipcMain.handle('transactions:lookupReceipt', async (_event, receiptNo: string, managerPin: string) => {
+    try {
+      const db = getDb();
+      const perm = requirePermission('process_refund', { override: managerPin, action: 'refund_lookup' }, db);
+      if (!perm.ok) return { success: false, error: perm.error, needsOverride: perm.needsOverride };
+
+      const id = parseInt(String(receiptNo ?? '').replace(/[^0-9]/g, ''), 10);
+      if (!id) return { success: false, error: 'Enter a valid receipt number' };
+
+      const txn = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+      if (!txn) return { success: false, error: `Receipt #${id} not found` };
+      if ((txn.total as number) < 0 || txn.original_txn_id) return { success: false, error: 'That receipt is itself a refund, not a sale' };
+
+      const customer = txn.customer_id
+        ? db.prepare('SELECT id, first_name, last_name, phone FROM customers WHERE id = ?').get(txn.customer_id)
+        : null;
+
+      const discounted = ((txn.discount_amount as number) || 0) > 0;
+      const withinWindow = (Date.now() - new Date(txn.created_at as string).getTime()) <= REFUND_WINDOW_DAYS * 86400000;
+
+      const lines = db.prepare(`
+        SELECT ti.id, ti.product_id, ti.qty, ti.unit_price,
+               COALESCE(p.name || CASE WHEN v.label IS NOT NULL THEN ' - ' || v.label ELSE '' END, ti.description, 'Item') AS name,
+               COALESCE(p.age_restricted, 0) AS age_restricted, p.category
+        FROM transaction_items ti
+        LEFT JOIN products p ON ti.product_id = p.id
+        LEFT JOIN product_variants v ON ti.variant_id = v.id
+        WHERE ti.transaction_id = ? AND ti.qty > 0
+      `).all(id) as { id: number; product_id: number | null; qty: number; unit_price: number; name: string; age_restricted: number; category: string | null }[];
+
+      // How much of each product was already refunded against this receipt.
+      const refunded = db.prepare(`
+        SELECT ri.product_id, COALESCE(SUM(ABS(ri.qty)), 0) AS qty
+        FROM transaction_items ri JOIN transactions rt ON ri.transaction_id = rt.id
+        WHERE rt.original_txn_id = ? GROUP BY ri.product_id
+      `).all(id) as { product_id: number; qty: number }[];
+      const refundedOf: Record<number, number> = {};
+      for (const r of refunded) refundedOf[r.product_id] = r.qty;
+
+      const items = lines.map((l) => {
+        const already = l.product_id != null ? (refundedOf[l.product_id] || 0) : 0;
+        const remaining = Math.max(0, l.qty - already);
+        let refundable = true, reason = 'Returnable within 7 days';
+        if (discounted) { refundable = false; reason = 'Discounted/promotional — final sale'; }
+        else if (l.age_restricted) { refundable = false; reason = 'Tobacco/vapor — non-refundable'; }
+        else if (!withinWindow) { refundable = false; reason = 'Past 7-day return window'; }
+        else if (remaining <= 0) { refundable = false; reason = 'Already refunded'; }
+        return {
+          transaction_item_id: l.id, product_id: l.product_id, name: l.name, qty: l.qty,
+          unit_price: l.unit_price, already_refunded: already, refundable_qty: refundable ? remaining : 0,
+          refundable, reason,
+        };
+      });
+
+      return {
+        success: true,
+        receipt: {
+          id, created_at: txn.created_at, discount_amount: (txn.discount_amount as number) || 0,
+          tax_rate: (txn.tax_rate as number) || 0,
+          payment_method: txn.payment_method, customer, within_window: withinWindow,
+          window_days: REFUND_WINDOW_DAYS, items,
+        },
+      };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // ── Process a line-level refund (Phase 7). Re-validates policy server-side,
+  // writes a negative transaction linked to the original, restocks, reverses the
+  // shift, and syncs. ─────────────────────────────────────────────────────────
+  ipcMain.handle('transactions:refundItems', async (_event, payload: {
+    original_txn_id: number; manager_pin: string; items: { product_id: number; qty: number }[];
+  }) => {
+    try {
+      const w = assertWritable('return'); if (!w.ok) return { success: false, error: w.error };
+      const db = getDb();
+      const session = getCurrentSession();
+      const origId = parseInt(String(payload?.original_txn_id), 10);
+      const perm = requirePermission('process_refund', { override: payload?.manager_pin, action: 'refund', transactionId: origId }, db);
+      if (!perm.ok) return { success: false, error: perm.error, needsOverride: perm.needsOverride };
+
+      const orig = db.prepare('SELECT * FROM transactions WHERE id = ?').get(origId) as Record<string, unknown> | undefined;
+      if (!orig) return { success: false, error: 'Original sale not found' };
+      if (((orig.discount_amount as number) || 0) > 0) return { success: false, error: 'Discounted/promotional sale — items are final sale' };
+      const withinWindow = (Date.now() - new Date(orig.created_at as string).getTime()) <= REFUND_WINDOW_DAYS * 86400000;
+      if (!withinWindow) return { success: false, error: 'Past the 7-day return window' };
+
+      const out = db.transaction(() => {
+        const refunded = db.prepare(`
+          SELECT ri.product_id, COALESCE(SUM(ABS(ri.qty)), 0) AS qty
+          FROM transaction_items ri JOIN transactions rt ON ri.transaction_id = rt.id
+          WHERE rt.original_txn_id = ? GROUP BY ri.product_id
+        `).all(origId) as { product_id: number; qty: number }[];
+        const refundedOf: Record<number, number> = {};
+        for (const r of refunded) refundedOf[r.product_id] = r.qty;
+
+        const validated: { product_id: number; variant_id: number | null; qty: number; unit_price: number; description: string; category: string | null }[] = [];
+        let subtotal = 0;
+        for (const req of payload?.items || []) {
+          const line = db.prepare(`
+            SELECT ti.*, COALESCE(p.age_restricted, 0) AS age_restricted,
+                   COALESCE(p.name, ti.description, 'Item') AS name
+            FROM transaction_items ti LEFT JOIN products p ON ti.product_id = p.id
+            WHERE ti.transaction_id = ? AND ti.product_id = ? AND ti.qty > 0 LIMIT 1
+          `).get(origId, req.product_id) as { variant_id: number | null; qty: number; unit_price: number; age_restricted: number; name: string; category: string | null } | undefined;
+          if (!line) throw new Error('An item is not on the original receipt');
+          if (line.age_restricted) throw new Error(`${line.name} is tobacco/vapor — non-refundable`);
+          const remaining = Math.max(0, line.qty - (refundedOf[req.product_id] || 0));
+          const qty = Math.min(Math.max(1, parseInt(String(req.qty), 10) || 0), remaining);
+          if (qty <= 0) throw new Error(`${line.name} is already fully refunded`);
+          subtotal += line.unit_price * qty;
+          validated.push({ product_id: req.product_id, variant_id: line.variant_id, qty, unit_price: line.unit_price, description: line.name, category: line.category });
+        }
+        if (!validated.length) throw new Error('No refundable items selected');
+
+        const taxRate = (orig.tax_rate as number) || 0;
+        const tax = +(subtotal * taxRate).toFixed(2);
+        const total = -+(subtotal + tax).toFixed(2);
+
+        const res = db.prepare(`
+          INSERT INTO transactions (cashier_id, customer_id, subtotal, tax_rate, tax_amount, discount_amount, total, payment_method, payment_status, original_txn_id, created_at)
+          VALUES (?, ?, ?, ?, ?, 0, ?, ?, 'completed', ?, ?)
+        `).run(session?.userId || orig.cashier_id, orig.customer_id ?? null, -subtotal, taxRate, -tax, total, orig.payment_method, origId, nowCT());
+        const refundId = res.lastInsertRowid as number;
+
+        const itemIds: number[] = [];
+        for (const v of validated) {
+          const ir = db.prepare(`
+            INSERT INTO transaction_items (transaction_id, product_id, variant_id, qty, unit_price, line_total, description, category)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(refundId, v.product_id, v.variant_id, -v.qty, v.unit_price, -(v.unit_price * v.qty), v.description, v.category);
+          itemIds.push(ir.lastInsertRowid as number);
+          db.prepare('UPDATE products SET stock_qty = stock_qty + ?, updated_at = ? WHERE id = ?').run(v.qty, nowCT(), v.product_id);
+          enqueueStockMovement(v.product_id, v.qty, 'return', db);
+        }
+
+        const shift = db.prepare(`SELECT id FROM shift_totals WHERE cashier_id = ? AND closed_at IS NULL ORDER BY opened_at DESC LIMIT 1`)
+          .get(session?.userId || orig.cashier_id) as { id: number } | undefined;
+        if (shift) {
+          const cashDelta = orig.payment_method === 'cash' ? subtotal + tax : 0;
+          const cardDelta = orig.payment_method === 'card' ? subtotal + tax : 0;
+          db.prepare(`UPDATE shift_totals SET cash_total = MAX(0, cash_total - ?), card_total = MAX(0, card_total - ?), tax_total = MAX(0, tax_total - ?) WHERE id = ?`)
+            .run(cashDelta, cardDelta, tax, shift.id);
+        }
+
+        enqueueLocalRow('transactions', 'insert', refundId, db);
+        for (const iid of itemIds) enqueueLocalRow('transaction_items', 'insert', iid, db);
+
+        return { refundId, subtotal, tax, total };
+      })();
+
+      return { success: true, ...out };
+    } catch (err) {
+      return { success: false, error: String((err as Error)?.message || err) };
     }
   });
 

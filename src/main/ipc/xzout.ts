@@ -4,6 +4,19 @@ import { getCurrentSession } from './auth';
 import bcrypt from 'bcryptjs';
 import { nowCT } from '../utils/time';
 import { DateTime } from 'luxon';
+import { getSupabase } from '../supabase/client';
+import { getLocationId } from '../supabase/sync';
+import { userHasPermission } from '../permissions';
+import { closeDay } from '../daySession';
+
+/** Managers always may view reports; cashiers need the view_reports grant. */
+function canViewReports(): boolean {
+  const s = getCurrentSession();
+  if (!s) return false;
+  if (s.role === 'manager') return true;
+  return userHasPermission(getDb(), s.userId, 'view_reports').granted;
+}
+const REPORTS_DENIED = { success: false as const, error: 'You do not have permission to view reports' };
 
 const TZ = 'America/Chicago';
 
@@ -20,6 +33,7 @@ interface FullReport {
   cash_total: number;
   card_total: number;
   split_total: number;
+  online_total: number; // Online — Prepaid (NOT part of the cash drawer)
   sale_count: number;
   avg_ticket: number;
   // Category summary
@@ -45,12 +59,13 @@ function buildFullReport(db: ReturnType<typeof import('../db/schema').getDb>, sh
       COALESCE(SUM(CASE WHEN payment_method='cash' THEN total ELSE 0 END), 0) AS cash_total,
       COALESCE(SUM(CASE WHEN payment_method='card' THEN total ELSE 0 END), 0) AS card_total,
       COALESCE(SUM(CASE WHEN payment_method='split' THEN total ELSE 0 END), 0) AS split_total,
+      COALESCE(SUM(CASE WHEN order_source='online' THEN total ELSE 0 END), 0) AS online_total,
       COUNT(*) AS sale_count
     FROM transactions
     WHERE substr(created_at, 1, 10) >= ? AND payment_status = 'completed'
   `).get(openDate) as {
     gross_sales: number; discount_total: number; tax_total: number; net_sales: number;
-    cash_total: number; card_total: number; split_total: number; sale_count: number;
+    cash_total: number; card_total: number; split_total: number; online_total: number; sale_count: number;
   };
 
   const byCategory = db.prepare(`
@@ -110,6 +125,7 @@ function buildFullReport(db: ReturnType<typeof import('../db/schema').getDb>, sh
     cash_total: summary.cash_total,
     card_total: summary.card_total,
     split_total: summary.split_total,
+    online_total: summary.online_total,
     sale_count: summary.sale_count,
     avg_ticket: summary.sale_count > 0 ? summary.net_sales / summary.sale_count : 0,
     by_category: byCategory,
@@ -150,8 +166,16 @@ function buildPeriodReport(db: ReturnType<typeof import('../db/schema').getDb>, 
     SELECT payment_method, card_type, SUM(total) AS amount, COUNT(*) AS cnt
     FROM transactions
     WHERE substr(created_at, 1, 10) BETWEEN ? AND ? AND payment_status = 'completed'
+      AND COALESCE(order_source, 'in_store') <> 'online'
     GROUP BY payment_method, card_type
   `).all(startDate, endDate) as { payment_method: string; card_type: string | null; amount: number; cnt: number }[];
+
+  // Online — Prepaid: reported distinctly, never mixed into the cash/card drawer.
+  const onlineRow = db.prepare(`
+    SELECT COALESCE(SUM(total), 0) AS amount, COUNT(*) AS cnt
+    FROM transactions
+    WHERE substr(created_at, 1, 10) BETWEEN ? AND ? AND payment_status = 'completed' AND order_source = 'online'
+  `).get(startDate, endDate) as { amount: number; cnt: number };
 
   const brandMap: Record<string, { amount: number; count: number }> = {
     Visa: { amount: 0, count: 0 }, Mastercard: { amount: 0, count: 0 },
@@ -211,7 +235,7 @@ function buildPeriodReport(db: ReturnType<typeof import('../db/schema').getDb>, 
       units: unitsRow.units,
       units_per_txn: summary.count > 0 ? unitsRow.units / summary.count : 0,
     },
-    payments: { cash, cash_count: cashCount, brands, other_card: otherCard, card_total: cardTotal },
+    payments: { cash, cash_count: cashCount, brands, other_card: otherCard, card_total: cardTotal, online: onlineRow.amount, online_count: onlineRow.cnt },
     by_category: byCategory,
     top_products: topProducts,
     refunds: { count: refundRow.count, total: refundRow.total },
@@ -222,6 +246,7 @@ export function registerXZOutHandlers(): void {
   // Sales report for a chosen date range (used by both X report and Audit).
   ipcMain.handle('xzout:periodReport', async (_event, opts?: { start?: string; end?: string }) => {
     try {
+      if (!canViewReports()) return REPORTS_DENIED;
       const db = getDb();
       const now = DateTime.now().setZone(TZ);
       const start = opts?.start || (now.toISODate() as string);
@@ -245,6 +270,40 @@ export function registerXZOutHandlers(): void {
   });
 
 
+  // Location roll-up of the period report (Phase 4): the SAME shape as
+  // xzout:periodReport but aggregated across every register in this location via
+  // the cloud RPC. Requires internet + a location-scoped license; the caller
+  // falls back to the local ("This register") report when this returns an error.
+  ipcMain.handle('xzout:locationPeriodReport', async (_event, opts?: { start?: string; end?: string }) => {
+    try {
+      if (!canViewReports()) return REPORTS_DENIED;
+      const now = DateTime.now().setZone(TZ);
+      const start = opts?.start || (now.toISODate() as string);
+      const end = opts?.end || start;
+      const label = start === end
+        ? DateTime.fromISO(start, { zone: TZ }).toFormat('MMM d, yyyy')
+        : `${DateTime.fromISO(start, { zone: TZ }).toFormat('MMM d, yyyy')} — ${DateTime.fromISO(end, { zone: TZ }).toFormat('MMM d, yyyy')}`;
+
+      if (!getLocationId()) return { success: false, error: 'This register is not assigned to a location yet.' };
+      const supabase = getSupabase();
+      if (!supabase) return { success: false, error: 'Cloud not configured — location totals need internet.' };
+
+      const { data, error } = await supabase.rpc('location_period_report', { p_start: start, p_end: end });
+      if (error) return { success: false, error: error.message };
+
+      return {
+        success: true,
+        scope: 'location',
+        period: { label, start, end },
+        ...(data as Record<string, unknown>),
+        generated_at: nowCT(),
+        generated_by: getCurrentSession()?.username || 'Staff',
+      };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
   // Age-verification audit log — manager only.
   ipcMain.handle('compliance:ageLog', async (_event, opts?: { limit?: number }) => {
     try {
@@ -267,6 +326,7 @@ export function registerXZOutHandlers(): void {
 
   ipcMain.handle('xzout:xReport', async () => {
     try {
+      if (!canViewReports()) return REPORTS_DENIED;
       const db = getDb();
       const session = getCurrentSession();
 
@@ -321,6 +381,10 @@ export function registerXZOutHandlers(): void {
         db.prepare(`UPDATE shift_totals SET closed_at = ? WHERE id = ?`).run(closedAt, shift.id);
         db.prepare(`INSERT INTO shift_totals (cashier_id, opened_at) VALUES (?, ?)`).run(session.userId, closedAt);
       }
+
+      // The Z-report is the explicit end-of-day close-out: end the business-day
+      // session so the next sign-in again requires a manager username + password.
+      closeDay(db);
 
       // Save Z report to database
       db.prepare(`

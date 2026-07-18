@@ -2,7 +2,7 @@ import { ipcMain } from 'electron';
 import { DateTime } from 'luxon';
 import { getDb } from '../db/schema';
 import { nowCT, TZ } from '../utils/time';
-import { enqueueLocalRow } from '../supabase/sync';
+import { enqueueCustomer } from '../supabase/sync';
 import { assertWritable } from '../supabase/licenseCheck';
 
 export function registerCustomerHandlers(): void {
@@ -185,8 +185,8 @@ export function registerCustomerHandlers(): void {
           data.opt_in_sms ? (data.sms_consent_signature || null) : null
         );
         const newId = result.lastInsertRowid as number;
-        // Cloud sync (D.1): enqueue the new customer, atomic with the insert.
-        enqueueLocalRow('customers', 'insert', newId, db);
+        // Cloud sync (Phase 3): enqueue for the shared book (ensures a uid), atomic with the insert.
+        enqueueCustomer('insert', newId, db);
         return newId;
       })();
       return { success: true, id };
@@ -207,8 +207,8 @@ export function registerCustomerHandlers(): void {
       const vals = fields.map((f) => data[f]);
       db.transaction(() => {
         db.prepare(`UPDATE customers SET ${sets}, updated_at = ? WHERE id = ?`).run(...vals, nowCT(), id);
-        // Cloud sync (D.1): enqueue the update, atomic with the write.
-        enqueueLocalRow('customers', 'update', id, db);
+        // Cloud sync (Phase 3): enqueue the update for the shared book.
+        enqueueCustomer('update', id, db);
       })();
       return { success: true };
     } catch (err) {

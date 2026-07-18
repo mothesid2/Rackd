@@ -1,7 +1,19 @@
 import { ipcMain } from 'electron';
 import bcrypt from 'bcryptjs';
 import { getDb } from '../db/schema';
-import { loadCachedLicense } from '../supabase/licenseCheck';
+import { loadCachedLicense, refreshDisplayConfig } from '../supabase/licenseCheck';
+import { loadEnv } from '../supabase/env';
+
+/**
+ * Demo build flag. The Owner Console (customer-display/ads config, PIN reset) is
+ * only exposed in the owner's own demo build, never on client installs. A build
+ * is a demo when DEMO_MODE=1 is present in the environment (set via .env, which is
+ * gitignored and NOT packaged into client builds).
+ */
+function isDemoBuild(): boolean {
+  loadEnv();
+  return process.env.DEMO_MODE === '1' || process.env.RACKD_DEMO === '1';
+}
 
 /**
  * Owner gate — a PIN only the business owner knows, separate from the client's
@@ -19,6 +31,9 @@ function writeSetting(key: string, value: string): void {
   getDb()
     .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
     .run(key, value);
+}
+function deleteSetting(key: string): void {
+  getDb().prepare('DELETE FROM settings WHERE key = ?').run(key);
 }
 
 function pinValid(pin: unknown): boolean {
@@ -59,7 +74,18 @@ function readAds(): AdSlide[] {
 }
 
 export function registerOwnerHandlers(): void {
+  // Is this the owner's demo build? Controls whether the Owner Console is shown.
+  ipcMain.handle('app:isDemo', () => ({ success: true, demo: isDemoBuild() }));
+
   ipcMain.handle('owner:hasPin', () => ({ success: true, hasPin: !!readSetting(KEY_PIN) }));
+
+  // Forgot-PIN reset — demo builds only. Clears the stored PIN so the Owner
+  // Console prompts to create a fresh one. Guarded server-side (not just hidden).
+  ipcMain.handle('owner:resetPin', () => {
+    if (!isDemoBuild()) return { success: false, error: 'PIN reset is only available in the demo build' };
+    deleteSetting(KEY_PIN);
+    return { success: true };
+  });
 
   ipcMain.handle('owner:verifyPin', (_e, pin: string) => {
     if (!readSetting(KEY_PIN)) return { success: false, error: 'No owner PIN set' };
@@ -85,7 +111,10 @@ export function registerOwnerHandlers(): void {
 
   // Owner-only customer-display config: rotating ad/rebate slides (image +
   // headline + body) shown on the idle display.
-  ipcMain.handle('owner:getDisplayConfig', () => {
+  ipcMain.handle('owner:getDisplayConfig', async () => {
+    // Pull the latest tenant-portal display config from the cloud (throttled) so
+    // ad changes appear on the customer display without an app restart.
+    try { await refreshDisplayConfig(); } catch { /* offline — use cache */ }
     // Prefer owner-managed cloud config (set per-tenant in the admin console);
     // fall back to this register's local ads when the cloud config is empty.
     const dc = loadCachedLicense()?.display_config;

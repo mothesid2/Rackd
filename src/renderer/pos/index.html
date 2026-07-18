@@ -319,6 +319,7 @@
         </button>
         <h2>New Sale</h2>
         <span class="customer-tag" id="customerTag" style="display:none"></span>
+        <button class="btn btn-gray" style="margin-left:auto;font-size:13px" onclick="openRefund()">↩ Refund Item</button>
       </div>
 
       <!-- Customer info card (shown when customer is attached) -->
@@ -400,11 +401,22 @@
             <div class="total-line" id="promoLine" style="display:none;color:#0e7490">
               <span>Promo</span><span id="promoDisplay">-$0.00</span>
             </div>
+            <div id="rebateLines"></div>
             <div class="total-line grand"><span>TOTAL</span><span id="totalDisplay">$0.00</span></div>
           </div>
 
+          <!-- Manufacturer rebate available (Off mode: cashier taps to apply) -->
+          <div id="rebateBanner" style="display:none;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;padding:9px 12px;margin-bottom:8px;cursor:pointer" onclick="openRebateBanner()">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:18px">🏷️</span>
+              <div style="flex:1"><div id="rebateBannerTitle" style="font-weight:700;color:#065f46;font-size:13px">Rebate available</div>
+              <div id="rebateBannerSub" style="font-size:12px;color:#047857"></div></div>
+              <span style="font-size:12px;color:#065f46;font-weight:700">View →</span>
+            </div>
+          </div>
+
           <div id="customerRequiredHint" style="display:none;font-size:12px;color:#b45309;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:6px 10px;margin-bottom:8px;text-align:center;font-weight:600">
-            Attach a customer (scan ID) to check out
+            Scan the customer’s ID to verify age
           </div>
 
           <div id="ageBlockBanner" style="display:none;font-size:13px;color:#991b1b;background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:8px 10px;margin-bottom:8px">
@@ -496,24 +508,24 @@
   <div class="modal-overlay" id="attachCustomerModal" style="display:none">
     <div class="modal" style="max-width:460px">
       <div class="modal-header">
-        <div class="modal-title">Attach Customer</div>
-        <button class="modal-close" onclick="closeModal('attachCustomerModal')">&times;</button>
+        <div class="modal-title">Verify Age / Attach Customer</div>
+        <button class="modal-close" onclick="closeAttachCustomer()">&times;</button>
       </div>
       <div class="modal-body">
         <!-- ID SCAN BOX -->
         <div id="idScanBox" style="border:1.5px dashed #23272d;background:#f4f4ec;border-radius:10px;padding:12px;margin-bottom:14px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#23272d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="9" x2="7" y2="15"/><line x1="11" y1="9" x2="11" y2="15"/><line x1="15" y1="9" x2="15" y2="15"/><line x1="18" y1="9" x2="18" y2="15"/></svg>
-            <strong style="font-size:14px;color:#23272d">Scan Driver's License / ID</strong>
+            <strong style="font-size:14px;color:#23272d">Verify Age — Scan ID</strong>
           </div>
-          <div style="font-size:12px;color:#555;margin-bottom:8px">Click the box below, then scan the <strong>barcode on the back</strong> of the ID. Name &amp; address fill in automatically — just add the phone number.</div>
+          <div style="font-size:12px;color:#555;margin-bottom:8px">Click the box below, then scan the <strong>barcode on the back</strong> of the ID. This <strong>only verifies age</strong> — no ID information is saved. Add customer details manually below if needed.</div>
           <textarea id="idScanInput" rows="2" placeholder="Waiting for scan…" autocomplete="off"
             style="width:100%;border:1px solid #cdd9ec;border-radius:8px;padding:8px;font-size:12px;font-family:monospace;resize:none;color:#888;background:#fff"></textarea>
           <div id="idScanStatus" style="font-size:12px;margin-top:6px;min-height:16px"></div>
           <button onclick="noIdVerified()" style="width:100%;margin-top:8px;background:#1e3a5f;color:#fff;border:none;border-radius:8px;padding:8px;font-size:13px;font-weight:600;cursor:pointer">
             No ID to scan — Customer verified 21+ →
           </button>
-          <div style="font-size:11px;color:#777;margin-top:4px;text-align:center">Enter their info manually and skip the scan. Logged as a manual age verification.</div>
+          <div style="font-size:11px;color:#777;margin-top:4px;text-align:center">Skip the scan. Logged as a manual age verification.</div>
         </div>
 
         <!-- Tab switcher -->
@@ -551,14 +563,16 @@
           </div>
           <input type="hidden" id="nc-dob" />
           <input type="hidden" id="nc-license" />
-          <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;margin-bottom:14px">
-            <input type="checkbox" id="nc-sms" /> Opt-in to SMS
+          <label style="display:flex;align-items:flex-start;gap:8px;font-size:14px;cursor:pointer;margin-bottom:6px">
+            <input type="checkbox" id="nc-sms" onchange="onLoyaltyOptToggle()" style="margin-top:3px" />
+            <span>Opt into loyalty program <span style="color:#888;font-weight:400">(shows the terms on the customer screen)</span></span>
           </label>
+          <div id="nc-consent-status" style="font-size:12px;margin-bottom:12px;min-height:16px"></div>
           <button class="btn btn-navy" onclick="createAndAttachCustomer()">Create &amp; Attach</button>
         </div>
 
         <div style="display:flex;justify-content:flex-end;margin-top:8px">
-          <button class="btn btn-gray" onclick="closeModal('attachCustomerModal')">Skip</button>
+          <button class="btn btn-gray" onclick="closeAttachCustomer()">Skip</button>
         </div>
       </div>
     </div>
@@ -646,6 +660,18 @@
     </div>
   </div>
 
+  <!-- TIP WAIT MODAL — shown while the customer chooses a tip on their screen -->
+  <div class="modal-overlay" id="tipWaitModal" style="display:none">
+    <div class="modal" style="max-width:380px;text-align:center">
+      <div class="modal-title" style="margin-bottom:8px">Customer is choosing a tip…</div>
+      <p style="font-size:14px;color:#666;margin-bottom:20px">Ask the customer to select a tip on their screen.</p>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button class="btn btn-gray" onclick="skipTip()">Skip / No tip</button>
+        <button class="btn" style="background:#fee2e2;color:#b91c1c" onclick="cancelTip()">Cancel sale</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MOCK TERMINAL WARNING BANNER -->
   <div id="mockWarningBanner" style="
     display:none;position:fixed;bottom:36px;left:0;right:0;z-index:900;
@@ -674,6 +700,75 @@
       <div class="modal-actions">
         <button class="btn btn-gray" onclick="closeModal('miscModal')">Cancel</button>
         <button class="btn btn-navy" id="addMiscBtn" onclick="addMiscItem()">Add to Cart</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- REFUND / RETURN MODAL (Phase 7) -->
+  <div class="modal-overlay" id="refundModal" style="display:none">
+    <div class="modal" style="max-width:560px">
+      <button class="modal-close" onclick="closeModal('refundModal')">×</button>
+      <div class="modal-title">Refund / Return</div>
+      <div id="refundStep1">
+        <p style="font-size:13px;color:#666;margin-bottom:12px">A manager authentication code and the original receipt number are required for every return.</p>
+        <div class="form-group"><label>Receipt number *</label><input type="text" id="refundReceipt" placeholder="e.g. 1042" /></div>
+        <div class="form-group"><label>Manager authentication code *</label><input type="password" id="refundPin" placeholder="Manager code" /></div>
+        <div id="refundErr" style="display:none;background:#fee2e2;color:#991b1b;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:10px"></div>
+        <div class="modal-actions">
+          <button class="btn btn-gray" onclick="closeModal('refundModal')">Cancel</button>
+          <button class="btn btn-navy" onclick="refundLookup()">Look up receipt</button>
+        </div>
+      </div>
+      <div id="refundStep2" style="display:none">
+        <div id="refundMeta" style="font-size:13px;margin-bottom:8px;color:#444"></div>
+        <div id="refundItems" style="max-height:44vh;overflow-y:auto"></div>
+        <div style="display:flex;justify-content:space-between;font-weight:800;font-size:16px;margin-top:12px;border-top:2px solid #eee;padding-top:8px"><span>Refund total</span><span id="refundTotal" style="color:#991b1b">$0.00</span></div>
+        <div class="modal-actions">
+          <button class="btn btn-gray" onclick="closeModal('refundModal')">Cancel</button>
+          <button class="btn btn-red" id="refundProcessBtn" onclick="refundProcess()">Process Refund</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REBATE DETAILS MODAL (Off mode: cashier reviews + applies) -->
+  <div class="modal-overlay" id="rebateDetailsModal" style="display:none">
+    <div class="modal" style="max-width:460px">
+      <button class="modal-close" onclick="closeModal('rebateDetailsModal')">×</button>
+      <div class="modal-title">Manufacturer Rebates</div>
+      <div id="rebateModalBody" style="max-height:50vh;overflow-y:auto"></div>
+      <div class="modal-actions"><button class="btn btn-gray" onclick="closeModal('rebateDetailsModal')">Close</button></div>
+    </div>
+  </div>
+
+  <!-- PRICE OVERRIDE MODAL -->
+  <div class="modal-overlay" id="priceEditModal" style="display:none">
+    <div class="modal" style="max-width:340px">
+      <button class="modal-close" onclick="closeModal('priceEditModal')">×</button>
+      <div class="modal-title">Override Price</div>
+      <p style="font-size:13px;color:#666;margin:6px 0 12px" id="priceEditName"></p>
+      <div class="form-group">
+        <label>New price ($)</label>
+        <input type="number" id="priceEditInput" step="0.01" min="0" style="font-size:20px;text-align:right" />
+      </div>
+      <p style="font-size:12px;color:#888;margin-bottom:12px">Requires manager authorization at checkout if you don't have price-override permission.</p>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('priceEditModal')">Cancel</button>
+        <button class="btn btn-navy" onclick="confirmPriceEdit()">Set Price</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MANAGER OVERRIDE MODAL (permission authorization) -->
+  <div class="modal-overlay" id="overrideModal" style="display:none">
+    <div class="modal" style="max-width:340px;text-align:center">
+      <div class="modal-title">Manager Authorization</div>
+      <p style="font-size:13px;color:#666;margin:8px 0 14px" id="overrideMsg">A manager PIN is required for this action.</p>
+      <input type="password" id="overridePin" inputmode="numeric" placeholder="Manager PIN" style="text-align:center;font-size:18px;letter-spacing:4px" />
+      <div id="overrideErr" style="display:none;color:#991b1b;font-size:13px;margin-top:8px"></div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button class="btn btn-gray" style="flex:1" onclick="cancelOverride()">Cancel</button>
+        <button class="btn btn-navy" style="flex:1" onclick="submitOverride()">Authorize</button>
       </div>
     </div>
   </div>
@@ -737,6 +832,8 @@
     let pendingDiscountAmt = 0;  // held while waiting for manager override
     let ageOverride = false;     // set true when a Military ID overrides the age check
     let minAge = 21;             // store policy: minimum purchase age (0 = no restriction)
+    let tipEnabled = false;      // show the customer-display tip prompt on card sales
+    let tipPresets = [15, 18, 20]; // tip % presets shown to the customer
     let pointsRedeemed = 0;      // points cost of the redeemed reward
     let rewardBenefit = null;    // { kind, value, category } of the redeemed reward
     let rewardLabel = '';        // reward name for display
@@ -744,7 +841,23 @@
     let promoCode = '';          // applied promo/birthday code
     let promoBenefit = null;     // { kind, value, category } of the promo
     let promoDiscount = 0;       // computed $ value of the promo
+    // ── Manufacturer rebates (Part 3) ──
+    let activeRebateRules = [];        // active rules loaded from local DB
+    let rebateAutoApply = false;       // On = auto-apply, Off = banner + manual
+    let appliedRebateList = [];        // [{rule_uid, manufacturer_uid, name, barcode, discount, is_manufacturer_funded, was_auto_applied}]
+    let rebateDiscount = 0;            // sum of applied rebate discounts
+    let dismissedRebates = new Set();  // rule_uids the cashier removed this sale
+    let _rebateCandidates = [];        // rules with a partial/full match, for the banner modal
     let manualAgeVerified = false; // cashier confirmed 21+ visually without an ID scan
+    // Age verification is scan-only and sale-scoped. The ID scanner NEVER fills a
+    // profile or looks anyone up — team members add customer info manually. These
+    // hold the last scan's age/DOB/name for the age-verification audit only; they
+    // are never written to a customer profile.
+    let scanAge = null;  // age from the last ID scan (null = no scan this sale)
+    let scanDob = null;  // DOB string from the scan (audit only)
+    let scanName = '';   // name from the scan (audit log only)
+    // Loyalty text-consent captured on the customer-facing display.
+    let loyaltyConsent = null; // null | 'pending' | 'agreed' | 'declined'
 
     // ---- Init ----
     document.addEventListener('DOMContentLoaded', async () => {
@@ -754,7 +867,13 @@
         taxRate = cfgRes.config.tax_rate || 0.0825;
         document.getElementById('taxLabel').textContent = `Tax (${(taxRate * 100).toFixed(2)}%)`;
         minAge = cfgRes.config.min_age ?? 21;
+        tipEnabled = cfgRes.config.tip_enabled == 1 || cfgRes.config.tip_enabled === true;
+        tipPresets = String(cfgRes.config.tip_presets || '15,18,20')
+          .split(',').map(s => parseInt(s.trim(), 10)).filter(n => n > 0);
+        rebateAutoApply = cfgRes.config.rebate_auto_apply == 1;
       }
+      // Load active manufacturer rebate rules for checkout detection.
+      loadRebateEngine();
 
       // Cache session role so discount logic doesn't need async calls
       const sessRes = await window.api.getSession();
@@ -836,6 +955,20 @@
 
       // Attach customer
       document.getElementById('attachCustomerBtn').addEventListener('click', openAttachCustomer);
+
+      // Customer accepted / declined the loyalty terms on the customer display.
+      window.api.on('customer-consent', (payload) => {
+        const agreed = !!(payload && payload.agreed);
+        loyaltyConsent = agreed ? 'agreed' : 'declined';
+        const chk = document.getElementById('nc-sms');
+        const statusEl = document.getElementById('nc-consent-status');
+        if (chk) chk.checked = agreed;
+        if (statusEl) {
+          statusEl.style.color = agreed ? '#166534' : '#b45309';
+          statusEl.textContent = agreed ? '✓ Customer agreed on their screen' : 'Customer declined — not enrolled';
+        }
+        restoreCustomerDisplay();
+      });
 
       let custSearchTimer;
       document.getElementById('customerSearchInput').addEventListener('input', e => {
@@ -966,6 +1099,8 @@
           line_total: product.price,
           stock_qty: product.stock_qty,
           age_restricted: product.age_restricted ? 1 : 0,
+          barcode: product.barcode || null,
+          variant_sku: product.variant_sku || null,
         });
       }
       renderCart();
@@ -1035,7 +1170,7 @@
               <input class="qty-input" type="number" value="${item.qty}"
                      onchange="updateQty(${idx}, this.value)" />
             </td>
-            <td>${fmt(item.unit_price)}</td>
+            <td>${isReturn ? fmt(item.unit_price) : `<a href="#" onclick="editPrice(${idx});return false" title="Override price" style="color:inherit;text-decoration:${item.priceOverridden ? 'underline dotted #b45309' : 'none'}">${fmt(item.unit_price)}</a>`}</td>
             <td><strong style="color:${isReturn ? '#991b1b' : 'inherit'}">${fmt(item.line_total)}</strong></td>
             <td>
               <button class="remove-item-btn" onclick="removeItem(${idx})" title="Remove">×</button>
@@ -1046,6 +1181,30 @@
 
       updateTotals();
       updateTenderButtons();
+    }
+
+    // ---- Price override (permission-gated at checkout via override_price) ----
+    let priceEditIdx = null;
+    function editPrice(idx) {
+      const item = cart[idx];
+      if (!item || item.qty < 0) return;
+      priceEditIdx = idx;
+      document.getElementById('priceEditName').textContent = item.name;
+      document.getElementById('priceEditInput').value = Number(item.unit_price).toFixed(2);
+      openModal('priceEditModal');
+      setTimeout(() => document.getElementById('priceEditInput').select(), 60);
+    }
+    function confirmPriceEdit() {
+      const v = parseFloat(document.getElementById('priceEditInput').value);
+      if (isNaN(v) || v < 0) { showToast('Enter a valid price', 'warning'); return; }
+      const item = cart[priceEditIdx];
+      if (item) {
+        item.unit_price = v;
+        item.line_total = +(v * item.qty).toFixed(2);
+        item.priceOverridden = true;
+      }
+      closeModal('priceEditModal');
+      renderCart();
     }
 
     function updateQty(idx, val) {
@@ -1063,9 +1222,14 @@
 
     function clearCart() {
       cart = [];
+      resetRebates();
       attachedCustomer = null;
       ageOverride = false;
       manualAgeVerified = false;
+      scanAge = null;
+      scanDob = null;
+      scanName = '';
+      loyaltyConsent = null;
       discountAmt = 0;
       pointsRedeemed = 0;
       loyaltyDiscount = 0;
@@ -1096,12 +1260,25 @@
       return 0;
     }
 
-    function updateTotals() {
+    // Canonical money math — the single source of truth for every tender path.
+    // Store discounts (manual + loyalty reward + promo) reduce the TAXABLE base,
+    // so tax is charged on the discounted price, not the full subtotal.
+    // e.g. $5.99 item with $5.00 off → tax is charged on $0.99.
+    // Reads the current loyaltyDiscount/promoDiscount globals, which updateTotals
+    // refreshes on every cart change before any tender action runs.
+    function computeTotals() {
       const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
+      const discountTotal = discountAmt + loyaltyDiscount + promoDiscount + rebateDiscount;
+      const taxableBase = subtotal - discountTotal;
+      const taxAmount = taxableBase * taxRate;
+      return { subtotal, discountTotal, taxableBase, taxAmount, total: taxableBase + taxAmount };
+    }
+
+    function updateTotals() {
       loyaltyDiscount = benefitValue(rewardBenefit);
       promoDiscount = benefitValue(promoBenefit);
-      const taxAmount = subtotal * taxRate;
-      const total = subtotal + taxAmount - discountAmt - loyaltyDiscount - promoDiscount;
+      evaluateRebates(); // auto-apply / recompute / banner — mutates rebate globals
+      const { subtotal, discountTotal, taxAmount, total } = computeTotals();
       const isRefund = total < 0;
 
       document.getElementById('subtotalDisplay').textContent = fmt(subtotal);
@@ -1138,16 +1315,139 @@
         }
       }
 
+      // Distinct line per applied manufacturer rebate (attributable in reporting).
+      document.getElementById('rebateLines').innerHTML = appliedRebateList.map((a, i) =>
+        `<div class="total-line" style="color:#065f46"><span>🏷️ ${esc(a.name)}${a.was_auto_applied ? '' : ' (manual)'}</span>` +
+        `<span>-${fmt(a.discount)} <button onclick="removeRebate(${i})" title="Remove" style="border:none;background:none;color:#991b1b;cursor:pointer;font-weight:800">✕</button></span></div>`
+      ).join('');
+
       // Mirror the live cart to the customer-facing display as items are scanned,
       // and greet an attached customer with "Welcome back".
       const custName = attachedCustomer ? `${attachedCustomer.first_name} ${attachedCustomer.last_name}` : null;
-      const totalDiscount = discountAmt + loyaltyDiscount + promoDiscount;
       window.api.updateCustomerDisplay(cart.length ? {
         state: 'cart',
         cart: cart.map(i => ({ name: i.name, qty: i.qty, total: i.line_total })),
-        subtotal, tax: taxAmount, discount: totalDiscount, total,
+        subtotal, tax: taxAmount, discount: discountTotal, total,
         customer: custName,
       } : { state: 'idle', customer: custName });
+    }
+
+    // ── Manufacturer rebate engine (Part 3) ──────────────────────────────────
+    async function loadRebateEngine() {
+      try {
+        const cfg = await window.api.getReceiptConfig();
+        rebateAutoApply = cfg?.config?.rebate_auto_apply == 1;
+        const r = await window.api.activeRebateRules();
+        activeRebateRules = (r.success && r.rules) || [];
+      } catch { activeRebateRules = []; }
+    }
+
+    function rebateMatchUnits(rule) {
+      const skus = rule._skuSet || (rule._skuSet = new Set(rule.qualifying_skus || []));
+      let units = 0, subtotal = 0;
+      for (const it of cart) {
+        if (skus.has(it.barcode) || (it.variant_sku && skus.has(it.variant_sku))) { units += it.qty; subtotal += it.line_total; }
+      }
+      return { units, subtotal };
+    }
+    function computeRebate(rule) {
+      const { units, subtotal } = rebateMatchUnits(rule);
+      const need = Math.max(1, rule.qualifying_quantity || 1);
+      const sets = Math.floor(units / need);
+      let discount = 0;
+      if (sets > 0) discount = rule.discount_type === 'percent' ? (rule.discount_amount / 100) * subtotal : sets * rule.discount_amount;
+      discount = Math.round(discount * 100) / 100;
+      return { units, need, sets, qualifies: sets > 0 && discount > 0, remaining: units >= need ? 0 : (need - units), discount };
+    }
+    function toApplied(rule, c, auto) {
+      return { rule_uid: rule.uid, manufacturer_uid: rule.manufacturer_uid || null, name: rule.name,
+        barcode: (rule.qualifying_skus || [])[0] || null, discount: c.discount,
+        is_manufacturer_funded: !!rule.is_manufacturer_funded, was_auto_applied: !!auto };
+    }
+
+    // Called inside updateTotals — mutates rebate globals, never calls updateTotals.
+    function evaluateRebates() {
+      if (rebateAutoApply) {
+        for (const rule of activeRebateRules) {
+          if (dismissedRebates.has(rule.uid) || appliedRebateList.some(a => a.rule_uid === rule.uid)) continue;
+          const c = computeRebate(rule);
+          if (c.qualifies) { appliedRebateList.push(toApplied(rule, c, true)); showToast(`Rebate applied: ${rule.name} −${fmt(c.discount)}`, 'success'); }
+        }
+      }
+      // Recompute applied discounts; drop any that no longer qualify (item removed).
+      appliedRebateList = appliedRebateList.filter(a => {
+        const rule = activeRebateRules.find(x => x.uid === a.rule_uid);
+        if (!rule) return false;
+        const c = computeRebate(rule);
+        if (!c.qualifies) return false;
+        a.discount = c.discount; return true;
+      });
+      rebateDiscount = appliedRebateList.reduce((s, a) => s + a.discount, 0);
+      updateRebateBanner();
+    }
+
+    function updateRebateBanner() {
+      const banner = document.getElementById('rebateBanner');
+      _rebateCandidates = activeRebateRules
+        .filter(rule => !dismissedRebates.has(rule.uid) && !appliedRebateList.some(a => a.rule_uid === rule.uid))
+        .map(rule => ({ rule, ...computeRebate(rule) }))
+        .filter(c => c.units > 0);
+      if (!_rebateCandidates.length) { banner.style.display = 'none'; return; }
+      const full = _rebateCandidates.filter(c => c.qualifies);
+      banner.style.display = 'block';
+      if (full.length) {
+        document.getElementById('rebateBannerTitle').textContent = `${full.length} rebate${full.length > 1 ? 's' : ''} available — tap to apply`;
+        document.getElementById('rebateBannerSub').textContent = full.map(c => `${c.rule.name} (−${fmt(c.discount)})`).join(' · ');
+      } else {
+        const c = _rebateCandidates[0];
+        document.getElementById('rebateBannerTitle').textContent = 'Rebate available';
+        document.getElementById('rebateBannerSub').textContent = `${c.rule.name} — add ${c.remaining} more to qualify`;
+      }
+    }
+    function openRebateBanner() {
+      document.getElementById('rebateModalBody').innerHTML = _rebateCandidates.map(c =>
+        `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f0f0f0">
+          <div><div style="font-weight:700">${esc(c.rule.name)}</div>
+          <div style="font-size:12px;color:#666">${c.qualifies ? `Qualifies — −${fmt(c.discount)} off` : `Add ${c.remaining} more qualifying item(s)`}</div></div>
+          ${c.qualifies ? `<button class="btn btn-navy" onclick="applyRebateFromModal('${esc(c.rule.uid)}')">Apply</button>` : '<span style="font-size:12px;color:#aaa">Not yet</span>'}
+        </div>`).join('') || '<div style="color:#aaa;padding:16px;text-align:center">No rebates available</div>';
+      openModal('rebateDetailsModal');
+    }
+    async function applyRebateFromModal(uid) {
+      const rule = activeRebateRules.find(x => x.uid === uid);
+      if (!rule) return;
+      const c = computeRebate(rule);
+      if (!c.qualifies) { showToast('Not enough qualifying items yet', 'warning'); return; }
+      // Manually applying a rebate is permission-gated (manage_rebates).
+      const auth = await callWithOverride((pin) => window.api.permsCheck('manage_rebates', pin), 'Manager PIN required to apply a rebate');
+      if (auth.cancelled) return;
+      if (!auth.success) { showToast(auth.error || 'Not authorized', 'error'); return; }
+      dismissedRebates.delete(uid);
+      if (!appliedRebateList.some(a => a.rule_uid === uid)) appliedRebateList.push(toApplied(rule, c, false));
+      closeModal('rebateDetailsModal');
+      updateTotals();
+      showToast(`Rebate applied: ${rule.name}`, 'success');
+    }
+    function removeRebate(i) {
+      const a = appliedRebateList[i]; if (!a) return;
+      dismissedRebates.add(a.rule_uid);
+      appliedRebateList.splice(i, 1);
+      rebateDiscount = appliedRebateList.reduce((s, x) => s + x.discount, 0);
+      updateTotals();
+    }
+    // Fully-qualifying rules the cashier did NOT apply (Off mode) → logged as missed.
+    function computeMissedRebates() {
+      if (rebateAutoApply) return [];
+      return activeRebateRules
+        .filter(rule => !appliedRebateList.some(a => a.rule_uid === rule.uid))
+        .map(rule => ({ rule, ...computeRebate(rule) }))
+        .filter(c => c.qualifies)
+        .map(c => ({ rule_uid: c.rule.uid, manufacturer_uid: c.rule.manufacturer_uid || null, barcode: (c.rule.qualifying_skus || [])[0] || null, potential_discount: c.discount }));
+    }
+    function resetRebates() {
+      appliedRebateList = []; rebateDiscount = 0; dismissedRebates = new Set(); _rebateCandidates = [];
+      const b = document.getElementById('rebateBanner'); if (b) b.style.display = 'none';
+      const rl = document.getElementById('rebateLines'); if (rl) rl.innerHTML = '';
     }
 
     // Does the cart contain anything that legally requires an ID / age check?
@@ -1159,24 +1459,38 @@
       return minAge > 0 && cartHasAgeRestricted();
     }
 
-    // Age of the attached customer (from scanned DOB), or null if unknown
-    function attachedCustomerAge() {
-      const dob = attachedCustomer && attachedCustomer.dob;
-      return dob ? ageFromDob(dob) : null;
+    // Has the sale's age requirement been satisfied? Age verification is fully
+    // decoupled from attaching a loyalty customer: it is satisfied only by a
+    // passing ID scan, a manual visual 21+ confirmation, or a Military override.
+    function saleAgeVerified() {
+      if (ageOverride || manualAgeVerified) return true;
+      return scanAge != null && scanAge >= minAge;
     }
 
     // Build the age-verification audit record for an age-restricted sale.
+    // Records the scanned age/DOB/name for compliance only — this data is never
+    // persisted to a customer profile.
     function buildAgeCheck() {
-      if (!cartRequiresAge() || !attachedCustomer) return undefined;
-      const age = attachedCustomerAge();
+      if (!cartRequiresAge()) return undefined;
+      let method, result, dob = null, age = null, name = null;
+      if (ageOverride) {
+        method = 'military_override'; result = 'OVERRIDE';
+      } else if (scanAge != null) {
+        method = 'id_scan';
+        result = scanAge < minAge ? 'FAIL' : 'PASS';
+        dob = scanDob; age = scanAge; name = scanName || null;
+      } else if (manualAgeVerified) {
+        method = 'manual_visual_21plus'; result = 'PASS';
+      } else {
+        method = 'manual'; result = 'PASS';
+      }
       return {
-        customer_name: `${attachedCustomer.first_name} ${attachedCustomer.last_name}`,
-        dob: attachedCustomer.dob || null,
+        customer_name: name || (attachedCustomer ? `${attachedCustomer.first_name} ${attachedCustomer.last_name}` : null),
+        dob,
         age_at_sale: age,
         min_age: minAge,
-        result: ageOverride ? 'OVERRIDE' : 'PASS',
-        method: ageOverride ? 'military_override'
-          : (attachedCustomer.dob ? 'id_on_file' : (manualAgeVerified ? 'manual_visual_21plus' : 'manual')),
+        result,
+        method,
       };
     }
 
@@ -1184,9 +1498,8 @@
     // Only enforced when the cart contains an age-restricted item.
     function isAgeBlocked() {
       if (!cartRequiresAge()) return false;
-      const age = attachedCustomerAge();
-      if (age != null && age < minAge && !ageOverride) {
-        showToast(`Customer is under ${minAge} (age ${age}) — age-restricted item blocked. Use the Military ID override if applicable.`, 'error');
+      if (scanAge != null && scanAge < minAge && !ageOverride) {
+        showToast(`Scanned ID shows under ${minAge} (age ${scanAge}) — age-restricted item blocked. Use the Military ID override if applicable.`, 'error');
         return true;
       }
       return false;
@@ -1194,31 +1507,29 @@
 
     function updateTenderButtons() {
       const hasItems = cart.length > 0;
-      const hasCustomer = !!attachedCustomer;
       const restricted = cartRequiresAge();
-      const age = attachedCustomerAge();
+      const verified = saleAgeVerified();
+      const underage = scanAge != null && scanAge < minAge && !ageOverride;
 
-      // A customer/ID is only required when an age-restricted item is in the cart
-      const needCustomer = restricted && !hasCustomer;
-      const underageBlocked = restricted && age != null && age < minAge && !ageOverride;
-      const ready = hasItems && !needCustomer && !underageBlocked;
+      // For age-restricted carts the age must be verified before tender is enabled.
+      const needVerify = restricted && !verified;
+      const ready = hasItems && (!restricted || verified);
 
       document.getElementById('cashBtn').disabled = !ready;
       document.getElementById('cardBtn').disabled = !ready;
       document.getElementById('splitBtn').disabled = !ready;
       document.getElementById('customerRequiredHint').style.display =
-        (hasItems && needCustomer) ? 'block' : 'none';
+        (hasItems && needVerify && !underage) ? 'block' : 'none';
 
       // Underage block / override messaging — only when an age-restricted item is present
       const banner = document.getElementById('ageBlockBanner');
       const note = document.getElementById('ageOverrideNote');
-      const isUnderage = restricted && hasCustomer && age != null && age < minAge;
-      if (isUnderage && !ageOverride) {
+      if (underage) {
         document.getElementById('ageBlockText').textContent =
-          `Customer is under ${minAge} (age ${age}) — age-restricted item blocked`;
+          `Scanned ID is under ${minAge} (age ${scanAge}) — age-restricted item blocked`;
         banner.style.display = 'block';
         note.style.display = 'none';
-      } else if (isUnderage && ageOverride) {
+      } else if (restricted && ageOverride) {
         banner.style.display = 'none';
         note.style.display = 'block';
       } else {
@@ -1295,13 +1606,12 @@
     // ---- Cash Sale ----
     function openCashModal() {
       if (cart.length === 0) return;
-      if (cartRequiresAge() && !attachedCustomer) { showToast('Scan a customer ID — this sale has an age-restricted item', 'warning'); openAttachCustomer(); return; }
+      if (cartRequiresAge() && !saleAgeVerified()) { showToast('Verify the customer’s age — scan their ID', 'warning'); openAttachCustomer(); return; }
       if (isAgeBlocked()) return;
       // Pop the cash drawer the moment Cash is pressed (fire-and-forget — a
       // misconfigured drawer shouldn't block the sale or nag the cashier).
       window.api.popDrawer('Opened on Cash').catch(() => {});
-      const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
-      const total = Math.max(0, subtotal + subtotal * taxRate - discountAmt - loyaltyDiscount - promoDiscount);
+      const total = Math.max(0, computeTotals().total);
       document.getElementById('cashTotalDisplay').textContent = `Total: ${fmt(total)}`;
       document.getElementById('cashTendered').value = '';
       document.getElementById('changeDisplay').style.display = 'none';
@@ -1311,8 +1621,7 @@
     }
 
     function updateChange() {
-      const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
-      const total = Math.max(0, subtotal + subtotal * taxRate - discountAmt - loyaltyDiscount - promoDiscount);
+      const total = Math.max(0, computeTotals().total);
       const tendered = parseFloat(document.getElementById('cashTendered').value) || 0;
       const change = tendered - total;
 
@@ -1327,9 +1636,7 @@
     }
 
     async function completeCashSale() {
-      const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
-      const taxAmount = subtotal * taxRate;
-      const total = Math.max(0, subtotal + taxAmount - discountAmt - loyaltyDiscount - promoDiscount);
+      const total = Math.max(0, computeTotals().total);
       const tendered = parseFloat(document.getElementById('cashTendered').value);
       const change = tendered - total;
 
@@ -1338,15 +1645,87 @@
     }
 
     // ---- Card Sale ----
+    // ── Customer-display tip prompt (Option B) ────────────────────────────────
+    let _tipResolve = null;
+    function promptTipOnDisplay(info) {
+      return new Promise((resolve) => {
+        _tipResolve = resolve;
+        window.api.updateCustomerDisplay({ state: 'tip', subtotal: info.subtotal, presets: tipPresets });
+        document.getElementById('tipWaitModal').style.display = 'flex';
+      });
+    }
+    function resolveTip(val) {
+      document.getElementById('tipWaitModal').style.display = 'none';
+      if (_tipResolve) { const r = _tipResolve; _tipResolve = null; r(val); }
+    }
+    function skipTip() { resolveTip(0); }
+    function cancelTip() { resolveTip(null); }
+    // The customer's tip choice comes back from their screen through the main process.
+    window.api.on('customer-tip', (d) => resolveTip(Math.max(0, Number(d && d.tip) || 0)));
+
+    // ── Manager override for permission-gated actions ────────────────────────
+    let _overrideResolve = null;
+    function promptOverridePin(label, errMsg) {
+      return new Promise((resolve) => {
+        _overrideResolve = resolve;
+        document.getElementById('overrideMsg').textContent = label || 'A manager PIN is required for this action.';
+        const err = document.getElementById('overrideErr');
+        if (errMsg) { err.textContent = errMsg; err.style.display = 'block'; } else { err.style.display = 'none'; }
+        document.getElementById('overridePin').value = '';
+        openModal('overrideModal');
+        setTimeout(() => document.getElementById('overridePin').focus(), 60);
+      });
+    }
+    function submitOverride() {
+      const pin = document.getElementById('overridePin').value.trim();
+      if (!pin) return;
+      closeModal('overrideModal');
+      const r = _overrideResolve; _overrideResolve = null; if (r) r(pin);
+    }
+    function cancelOverride() {
+      closeModal('overrideModal');
+      const r = _overrideResolve; _overrideResolve = null; if (r) r(null);
+    }
+    document.getElementById('overridePin').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitOverride(); });
+
+    // Call a gated IPC; if it returns needsOverride (or an invalid-PIN retry),
+    // prompt for a manager PIN and retry. fn(pin) invokes the IPC with the PIN.
+    async function callWithOverride(fn, label) {
+      let res = await fn(undefined);
+      let attempts = 0;
+      while (res && !res.success && (res.needsOverride || /invalid manager pin/i.test(res.error || '')) && attempts < 3) {
+        const pin = await promptOverridePin(label, attempts > 0 ? 'Incorrect PIN — try again' : null);
+        if (pin == null) return { success: false, cancelled: true };
+        res = await fn(pin);
+        attempts++;
+      }
+      return res;
+    }
+
     async function processCard() {
       closeModal('cardDeclinedModal');
       if (cart.length === 0) return;
-      if (cartRequiresAge() && !attachedCustomer) { showToast('Scan a customer ID — this sale has an age-restricted item', 'warning'); openAttachCustomer(); return; }
+      if (cartRequiresAge() && !saleAgeVerified()) { showToast('Verify the customer’s age — scan their ID', 'warning'); openAttachCustomer(); return; }
       if (isAgeBlocked()) return;
 
-      const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
-      const taxAmount = subtotal * taxRate;
-      const baseTotal = Math.max(0, subtotal + taxAmount - discountAmt - loyaltyDiscount - promoDiscount);
+      const { subtotal, discountTotal, taxAmount, total: computedTotal } = computeTotals();
+      // Signed: a negative total is a refund/return — the terminal driver sends it
+      // as a Refund (TRAN_CODE 5) with a positive amount. Clamping to 0 here is what
+      // caused the terminal's "invalid amount" on returns.
+      const baseTotal = computedTotal;
+
+      // Option B: collect the tip on the customer display BEFORE charging, so the
+      // terminal captures base + tip in one Sale. Skipped for refunds (baseTotal<=0)
+      // and when in-app tipping is disabled (then the terminal's own tip prompt,
+      // if any, is used instead — see the approval block below).
+      let tipAmt = 0;
+      if (tipEnabled && baseTotal > 0 && await window.api.customerDisplayAvailable()) {
+        const { subtotal: tipSubtotal } = computeTotals();
+        const chosen = await promptTipOnDisplay({ subtotal: tipSubtotal });
+        if (chosen === null) { await window.api.updateCustomerDisplay({ state: 'idle' }); return; } // cancelled
+        tipAmt = chosen;
+      }
+      const chargeTotal = baseTotal + tipAmt;
 
       // Build full Valor payload
       const txnRef = 'TXN-' + Date.now();
@@ -1357,7 +1736,7 @@
       } catch { /* use defaults — mock terminal ignores these */ }
 
       const payload = {
-        amount: baseTotal,
+        amount: chargeTotal,
         transactionId: txnRef,
         merchantId: termConfig.terminal_mid || '',
         terminalId: termConfig.terminal_tid || '',
@@ -1369,7 +1748,7 @@
         })),
         taxAmount,
         taxRate,
-        discountAmount: discountAmt,
+        discountAmount: discountTotal,
       };
 
       // Show processing modal
@@ -1381,7 +1760,7 @@
       await window.api.updateCustomerDisplay({
         state: 'card_processing',
         cart: cart.map(i => ({ name: i.name, qty: i.qty, total: i.line_total })),
-        subtotal, tax: taxAmount, discount: discountAmt, total: baseTotal,
+        subtotal, tax: taxAmount, discount: discountTotal, total: chargeTotal,
       });
 
       const res = await window.api.sendPayment(payload);
@@ -1400,15 +1779,18 @@
         // Brief "approved" banner before clearing the modal
         showToast('Payment Approved', 'success');
 
-        const tipAmt = termResult.tipAmount || 0;
-        const finalTotal = baseTotal + tipAmt;
+        // The tip we collected on the display is authoritative (the terminal's own
+        // tip prompt should be OFF). If in-app tipping is disabled, fall back to any
+        // tip the terminal captured — preserving the original terminal-tip behavior.
+        const finalTip = tipEnabled ? tipAmt : (termResult.tipAmount || 0);
+        const finalTotal = baseTotal + finalTip;
 
         await completeSale('card', {
           auth_code:      termResult.authCode,
           last4:          termResult.last4,
           card_type:      termResult.cardType,
           terminal_ref:   termResult.authCode,
-          tip_amount:     tipAmt,
+          tip_amount:     finalTip,
           signature_data: termResult.signatureData,
           total_override: finalTotal,   // passed through to completeSale
         });
@@ -1439,9 +1821,7 @@
 
     // ---- Complete Sale ----
     async function completeSale(method, extraData = {}) {
-      const subtotal = cart.reduce((s, i) => s + i.line_total, 0);
-      const taxAmount = subtotal * taxRate;
-      const baseTotal = subtotal + taxAmount - discountAmt - loyaltyDiscount - promoDiscount;
+      const { subtotal, discountTotal, taxAmount, total: baseTotal } = computeTotals();
       // Card sales with tip pass total_override = baseTotal + tipAmount
       const total = extraData.total_override != null ? extraData.total_override : baseTotal;
 
@@ -1460,7 +1840,7 @@
         subtotal,
         tax_rate: taxRate,
         tax_amount: taxAmount,
-        discount_amount: discountAmt + loyaltyDiscount + promoDiscount,
+        discount_amount: discountTotal,
         total,
         payment_method: method,
         points_redeemed: pointsRedeemed,
@@ -1469,7 +1849,11 @@
         ...cleanExtra,
       };
 
-      const res = await window.api.createTransaction(data);
+      const res = await callWithOverride(
+        (pin) => window.api.createTransaction({ ...data, manual_discount: discountAmt, override: pin }),
+        'Manager PIN required to approve this sale'
+      );
+      if (res.cancelled) { showToast('Sale cancelled', 'warning'); return; }
       if (!res.success) {
         showToast(res.error || 'Failed to complete sale', 'error');
         return;
@@ -1477,6 +1861,17 @@
 
       lastCompletedTxnId = res.id;
       const isRefund = total < 0;
+
+      // Record manufacturer rebates for the weekly report: applied (audit trail)
+      // + missed (Off-mode fully-qualifying rebates the cashier didn't apply).
+      // Non-fatal — the sale itself already succeeded.
+      if (!isRefund) {
+        try {
+          if (appliedRebateList.length) await window.api.recordAppliedRebates(res.id, appliedRebateList);
+          const missed = computeMissedRebates();
+          if (missed.length) await window.api.recordMissedRebates(res.id, missed);
+        } catch (e) { console.warn('rebate recording failed', e); }
+      }
 
       // Reset customer display
       await window.api.updateCustomerDisplay({ state: 'idle' });
@@ -1555,7 +1950,8 @@
     }
 
     async function attachCustomer(id, firstName, lastName, phone) {
-      ageOverride = false;
+      // Attaching a loyalty customer does NOT touch age verification — the two
+      // are independent (age is verified by scan/manual/override, per sale).
       pointsRedeemed = 0;
       loyaltyDiscount = 0;
       rewardBenefit = null;
@@ -1623,9 +2019,8 @@
     }
 
     function detachCustomer() {
+      // Removing a loyalty customer does NOT clear age verification (independent).
       attachedCustomer = null;
-      ageOverride = false;
-      manualAgeVerified = false;
       pointsRedeemed = 0;
       loyaltyDiscount = 0;
       rewardBenefit = null;
@@ -1742,12 +2137,72 @@
       else showToast(res.error || 'SMS failed — check Twilio settings', 'error');
     }
 
+    // Loyalty program text-consent terms (Twilio A2P). Shown to the customer on
+    // their own screen; the customer accepts it there.
+    function loyaltyTermsText() {
+      return 'Loyalty Program — Text Message Terms\n\n' +
+        'By enrolling, the customer agrees to receive recurring automated marketing & promotional text ' +
+        'messages (deals, loyalty rewards, offers) and transactional messages including digital receipts, ' +
+        'at the mobile number provided. Consent is not a condition of purchase. Message frequency varies. ' +
+        'Message & data rates may apply. Reply STOP to opt out, HELP for help.\n\n' +
+        'Does the customer agree?';
+    }
+
+    // Return the customer display to the live cart / idle view.
+    function restoreCustomerDisplay() { updateTotals(); }
+
+    // Cashier toggled "Opt into loyalty program" — push the terms to the
+    // customer-facing display for the customer to accept themselves.
+    async function onLoyaltyOptToggle() {
+      const on = document.getElementById('nc-sms').checked;
+      const statusEl = document.getElementById('nc-consent-status');
+      if (!on) {
+        if (loyaltyConsent === 'pending') restoreCustomerDisplay();
+        loyaltyConsent = null;
+        if (statusEl) statusEl.textContent = '';
+        return;
+      }
+
+      // Falls back to an on-screen prompt when there is no second display.
+      let hasDisplay = false;
+      try { hasDisplay = await window.api.customerDisplayAvailable(); } catch { /* assume none */ }
+      if (!hasDisplay) {
+        const ok = confirm(loyaltyTermsText());
+        loyaltyConsent = ok ? 'agreed' : 'declined';
+        document.getElementById('nc-sms').checked = ok;
+        if (statusEl) {
+          statusEl.style.color = ok ? '#166534' : '#b45309';
+          statusEl.textContent = ok ? '✓ Consent captured' : 'Customer declined — not enrolled';
+        }
+        return;
+      }
+
+      loyaltyConsent = 'pending';
+      if (statusEl) { statusEl.style.color = '#1d4ed8'; statusEl.textContent = '⧗ Waiting for the customer to accept the terms on their screen…'; }
+      let storeName = '';
+      try { const c = await window.api.getReceiptConfig(); storeName = c?.config?.store_name || ''; } catch { /* optional */ }
+      window.api.updateCustomerDisplay({ state: 'consent', store: storeName });
+    }
+
+    // Skip / close the attach modal — take down a pending consent prompt first.
+    function closeAttachCustomer() {
+      if (loyaltyConsent === 'pending') { loyaltyConsent = null; restoreCustomerDisplay(); }
+      closeModal('attachCustomerModal');
+    }
+
     async function createAndAttachCustomer() {
       const first = document.getElementById('nc-first').value.trim();
       const last = document.getElementById('nc-last').value.trim();
       const phone = document.getElementById('nc-phone').value.trim();
       if (!first || !last) { showToast('First and last name required', 'warning'); return; }
       if (!phone) { showToast('Phone number required', 'warning'); document.getElementById('nc-phone').focus(); return; }
+
+      const optIn = document.getElementById('nc-sms').checked;
+      // Loyalty opt-in requires the customer to accept the terms on their screen.
+      if (optIn && loyaltyConsent !== 'agreed') {
+        showToast('Ask the customer to accept the loyalty terms on their screen first', 'warning');
+        return;
+      }
 
       const dob = document.getElementById('nc-dob').value.trim() || undefined;
       const license = document.getElementById('nc-license').value.trim() || undefined;
@@ -1759,6 +2214,7 @@
           const c = dup.customer;
           ['nc-first','nc-last','nc-phone','nc-email','nc-address','nc-city','nc-state','nc-zip','nc-dob','nc-license'].forEach(id => document.getElementById(id).value = '');
           document.getElementById('nc-sms').checked = false;
+          resetLoyaltyConsent();
           document.getElementById('idScanStatus').textContent = '';
           await attachCustomer(c.id, c.first_name, c.last_name, c.phone || '');
           showToast(`Returning customer: ${c.first_name} ${c.last_name}`, 'success');
@@ -1777,7 +2233,7 @@
         zip: document.getElementById('nc-zip').value.trim() || undefined,
         dob,
         license_number: license,
-        opt_in_sms: document.getElementById('nc-sms').checked,
+        opt_in_sms: optIn && loyaltyConsent === 'agreed',
       };
 
       const res = await window.api.addCustomer(data);
@@ -1786,10 +2242,18 @@
       // Clear form
       ['nc-first','nc-last','nc-phone','nc-email','nc-address','nc-city','nc-state','nc-zip','nc-dob','nc-license'].forEach(id => document.getElementById(id).value = '');
       document.getElementById('nc-sms').checked = false;
+      resetLoyaltyConsent();
       document.getElementById('idScanStatus').textContent = '';
 
       attachCustomer(res.id, first, last, phone);
       showToast(`Customer ${first} ${last} created & attached`, 'success');
+    }
+
+    // Reset the loyalty-consent state + status line (does not restore the display).
+    function resetLoyaltyConsent() {
+      loyaltyConsent = null;
+      const s = document.getElementById('nc-consent-status');
+      if (s) s.textContent = '';
     }
 
     // ---- Open Attach Customer modal ----
@@ -1798,6 +2262,8 @@
       document.getElementById('customerResults').innerHTML = '';
       document.getElementById('idScanInput').value = '';
       document.getElementById('idScanStatus').textContent = '';
+      document.getElementById('nc-sms').checked = false;
+      resetLoyaltyConsent();
       switchCustTab('search');
       openModal('attachCustomerModal');
       // Focus the scan box immediately (and again on the next tick as a backup)
@@ -1904,6 +2370,10 @@
       return age;
     }
 
+    // ID scan = AGE VERIFICATION ONLY. The scanner reads the DOB to check age
+    // against the store minimum and nothing else — it never fills the customer
+    // form, never looks anyone up, and never creates or saves a profile. Team
+    // members add customer details manually (for loyalty) if they choose to.
     async function handleIdScan() {
       const raw = document.getElementById('idScanInput').value;
       const statusEl = document.getElementById('idScanStatus');
@@ -1921,59 +2391,39 @@
 
       const age = ageFromDob(parsed.dob);
       const threshold = minAge > 0 ? minAge : 21;
-      const ageNote = age == null ? '' : (age < threshold
-        ? ` <span style="color:#c0392b;font-weight:700">⚠ UNDER ${threshold} (age ${age})</span>`
-        : ` <span style="color:#2e7d32;font-weight:700">✓ Age ${age}</span>`);
 
-      // Returning customer? Look up by license number, then by name + DOB, to
-      // avoid creating a duplicate profile.
-      statusEl.innerHTML = '<span style="color:#555">Checking for existing customer…</span>';
-      let lookup = null;
-      try {
-        lookup = await window.api.findCustomerForId({
-          license_number: parsed.license || undefined,
-          first_name: parsed.first,
-          last_name: parsed.last,
-          dob: parsed.dob || undefined,
-        });
-      } catch { /* fall through to new-customer flow */ }
+      // Record for the age-verification audit only (never saved to a profile).
+      scanDob = parsed.dob || null;
+      scanName = `${parsed.first} ${parsed.last}`.trim();
+      manualAgeVerified = false; // a real scan supersedes a manual claim
 
-      if (lookup && lookup.success && lookup.customer) {
-        const c = lookup.customer;
-        // Backfill the license number if we now have one and the record didn't
-        if (parsed.license && !c.license_number) {
-          try { await window.api.updateCustomer(c.id, { license_number: parsed.license }); } catch { /* non-fatal */ }
-        }
-        await attachCustomer(c.id, c.first_name, c.last_name, c.phone || '');
-        showToast(`Returning customer: ${c.first_name} ${c.last_name}`, 'success');
+      if (age == null) {
+        scanAge = null;
+        statusEl.innerHTML = '<span style="color:#c0392b">Could not read the date of birth from this ID. Try re-scanning the barcode on the <strong>back</strong>.</span>';
+        updateTenderButtons();
         return;
       }
 
-      // New customer — pre-fill the form
-      switchCustTab('new');
-      document.getElementById('nc-first').value = parsed.first;
-      document.getElementById('nc-last').value = parsed.last;
-      document.getElementById('nc-address').value = parsed.address;
-      document.getElementById('nc-city').value = parsed.city;
-      document.getElementById('nc-state').value = parsed.state;
-      document.getElementById('nc-zip').value = parsed.zip;
-      document.getElementById('nc-dob').value = parsed.dob;
-      document.getElementById('nc-license').value = parsed.license || '';
-
-      statusEl.innerHTML =
-        `<span style="color:#2e7d32">New customer: <strong>${esc(parsed.first)} ${esc(parsed.last)}</strong></span>${ageNote}` +
-        ` — enter the phone number, then Create &amp; Attach.`;
-
-      setTimeout(() => document.getElementById('nc-phone').focus(), 50);
+      scanAge = age;
+      if (age < threshold) {
+        statusEl.innerHTML =
+          `<span style="color:#c0392b;font-weight:700">⚠ UNDER ${threshold} — age ${age}. Sale blocked.</span> ` +
+          `Use the Military ID override on the cart if applicable.`;
+      } else {
+        statusEl.innerHTML =
+          `<span style="color:#2e7d32;font-weight:700">✓ Age verified — ${age} (${threshold}+).</span> ` +
+          `Close this to take payment. Attaching a customer is optional (loyalty).`;
+      }
+      updateTenderButtons();
     }
 
     // ---- No ID on hand — cashier visually verifies 21+ ----
     function noIdVerified() {
       manualAgeVerified = true;
-      switchCustTab('new');
+      scanAge = null; scanDob = null; scanName = '';
       document.getElementById('idScanStatus').innerHTML =
-        '<span style="color:#166534;font-weight:600">✓ Manual 21+ verification — enter the customer\'s info, then Create &amp; Attach.</span>';
-      setTimeout(() => document.getElementById('nc-first').focus(), 60);
+        '<span style="color:#166534;font-weight:600">✓ Age verified visually (21+). Close this to take payment. Attaching a customer is optional (loyalty).</span>';
+      updateTenderButtons();
     }
 
     // ---- Cash Drawer ----
@@ -2015,7 +2465,12 @@
     }
 
     async function popDrawer() {
-      const res = await window.api.popDrawer('Manual pop from POS');
+      // No-sale drawer open is permission-gated (open_drawer_no_sale).
+      const res = await callWithOverride(
+        (pin) => window.api.popDrawer('Manual pop from POS', { noSale: true, override: pin }),
+        'Manager PIN required to open the drawer'
+      );
+      if (res.cancelled) return;
       showToast(res.success ? 'Drawer opened' : (res.error || 'Could not open drawer'), res.success ? 'success' : 'warning');
       await refreshDrawer();
     }
@@ -2037,6 +2492,86 @@
       const d = new Date(s.replace(' ', 'T'));
       if (isNaN(d)) return s;
       return d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    }
+  </script>
+
+  <!-- Refund / return flow (Phase 7) -->
+  <script>
+    let refundData = null;
+
+    function openRefund() {
+      refundData = null;
+      document.getElementById('refundStep1').style.display = 'block';
+      document.getElementById('refundStep2').style.display = 'none';
+      document.getElementById('refundReceipt').value = '';
+      document.getElementById('refundPin').value = '';
+      document.getElementById('refundErr').style.display = 'none';
+      openModal('refundModal');
+    }
+
+    async function refundLookup() {
+      const receipt = document.getElementById('refundReceipt').value.trim();
+      const pin = document.getElementById('refundPin').value;
+      const err = document.getElementById('refundErr'); err.style.display = 'none';
+      if (!receipt || !pin) { err.textContent = 'Enter the receipt number and manager code.'; err.style.display = 'block'; return; }
+      const r = await window.api.lookupReceipt(receipt, pin);
+      if (!r.success) { err.textContent = r.error || 'Lookup failed.'; err.style.display = 'block'; return; }
+      refundData = r.receipt;
+      renderRefund();
+    }
+
+    function renderRefund() {
+      const rc = refundData;
+      document.getElementById('refundStep1').style.display = 'none';
+      document.getElementById('refundStep2').style.display = 'block';
+      const cust = rc.customer ? `${rc.customer.first_name || ''} ${rc.customer.last_name || ''}`.trim() : 'No customer on file';
+      const disc = rc.discount_amount > 0 ? ' · <span style="color:#991b1b;font-weight:700">Discounted sale — items are final</span>' : '';
+      document.getElementById('refundMeta').innerHTML =
+        `Receipt #${rc.id} · ${new Date(rc.created_at).toLocaleDateString()} · ${esc(cust)}${disc}`;
+
+      document.getElementById('refundItems').innerHTML = rc.items.map((it, i) => {
+        if (!it.refundable) {
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f0f0f0;opacity:.55">
+            <div><div style="font-weight:600">${esc(it.name)}</div><div style="font-size:11px;color:#991b1b">${esc(it.reason)}</div></div>
+            <div style="font-size:12px;color:#999;white-space:nowrap">Not refundable</div></div>`;
+        }
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f0f0f0">
+          <div><div style="font-weight:600">${esc(it.name)}</div><div style="font-size:11px;color:#666">${fmt(it.unit_price)} each · up to ${it.refundable_qty}</div></div>
+          <input type="number" class="refund-qty" data-i="${i}" min="0" max="${it.refundable_qty}" value="0" style="width:66px;text-align:center" oninput="calcRefund()" /></div>`;
+      }).join('');
+      calcRefund();
+    }
+
+    function calcRefund() {
+      let sub = 0;
+      document.querySelectorAll('.refund-qty').forEach((inp) => {
+        const it = refundData.items[+inp.dataset.i];
+        let q = Math.max(0, Math.min(parseInt(inp.value, 10) || 0, it.refundable_qty));
+        inp.value = q;
+        sub += it.unit_price * q;
+      });
+      const total = sub * (1 + (refundData.tax_rate || 0));
+      document.getElementById('refundTotal').textContent = fmt(-total);
+    }
+
+    async function refundProcess() {
+      const items = [];
+      document.querySelectorAll('.refund-qty').forEach((inp) => {
+        const it = refundData.items[+inp.dataset.i];
+        const q = parseInt(inp.value, 10) || 0;
+        if (q > 0) items.push({ product_id: it.product_id, qty: q });
+      });
+      if (!items.length) { showToast('Select at least one item and quantity to refund', 'warning'); return; }
+      const btn = document.getElementById('refundProcessBtn'); btn.disabled = true; btn.textContent = 'Processing…';
+      const r = await window.api.refundItems({
+        original_txn_id: refundData.id,
+        manager_pin: document.getElementById('refundPin').value,
+        items,
+      });
+      btn.disabled = false; btn.textContent = 'Process Refund';
+      if (!r.success) { showToast(r.error || 'Refund failed', 'error'); return; }
+      closeModal('refundModal');
+      showToast(`Refund processed: ${fmt(r.total)} (receipt #${r.refundId})`, 'success');
     }
   </script>
 </body>

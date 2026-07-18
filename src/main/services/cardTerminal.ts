@@ -416,9 +416,10 @@ export function getTerminal(
 ): CardTerminal {
   switch (type) {
     case 'valor_vp100': {
-      // Import lazily to avoid loading net/fs/electron in mock-only contexts
+      // Import lazily to avoid loading net/fs/electron in mock-only contexts.
+      // POS is the CLIENT — connect to the TERMINAL's IP:port (it is the server).
       const { ValorTerminal } = require('./valorTerminal') as typeof import('./valorTerminal');
-      return new ValorTerminal(port || 5000);
+      return new ValorTerminal(ip || '', port || 5000);
     }
     case 'pax':
       return new PaxTerminal(ip || '192.168.1.100', port || 10009);

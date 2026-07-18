@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { getDb } from '../db/schema';
 import { nowCT } from '../utils/time';
 import { assertWritable } from '../supabase/licenseCheck';
+import { isDayOpen, openDay, touchActivity, clearActivity } from '../daySession';
 
 interface User {
   id: number;
@@ -24,6 +25,13 @@ export function getCurrentSession(): Session | null {
   return currentSession;
 }
 
+/** Set/replace the acting employee session (used by PIN re-auth). Touches activity. */
+export function setCurrentSession(session: Session | null): void {
+  currentSession = session;
+  if (session) touchActivity();
+  else clearActivity();
+}
+
 export function registerAuthHandlers(): void {
   ipcMain.handle('auth:login', async (_event, username: string, password: string) => {
     try {
@@ -41,11 +49,22 @@ export function registerAuthHandlers(): void {
         return { success: false, error: 'Invalid username or password' };
       }
 
+      // Business-day gate: the first login of the day must be a MANAGER (full
+      // username + password), which opens the day. After that, staff sign in with
+      // a PIN. A cashier cannot open the day.
+      if (!isDayOpen(db)) {
+        if (user.role !== 'manager') {
+          return { success: false, error: 'A manager must open the day first with a username and password.' };
+        }
+        openDay(user.id, user.username, db);
+      }
+
       currentSession = {
         userId: user.id,
         username: user.username,
         role: user.role,
       };
+      touchActivity();
 
       // Auto-create a shift record if none is open for this user
       const openShift = db.prepare(
@@ -69,8 +88,35 @@ export function registerAuthHandlers(): void {
     }
   });
 
+  // PIN sign-in (register): resolve the employee by numeric PIN and open a shift.
+  ipcMain.handle('auth:pinLogin', async (_event, pin: string) => {
+    try {
+      const db = getDb();
+      // The day must be opened by a manager (username + password) before PIN sign-in.
+      if (!isDayOpen(db)) {
+        return { success: false, error: 'The day hasn’t been opened yet. A manager must sign in with a username and password first.', dayClosed: true };
+      }
+      // Lazy require avoids the auth<->permissions import cycle at load time.
+      const { verifyPin } = require('../permissions') as typeof import('../permissions');
+      const r = verifyPin(db, String(pin || ''));
+      if (!r.ok || !r.employee) return { success: false, error: r.error, lockedUntil: r.lockedUntil };
+      currentSession = { userId: r.employee.id, username: r.employee.username, role: r.employee.role as 'manager' | 'cashier' };
+      touchActivity();
+      const openShift = db.prepare(
+        `SELECT id FROM shift_totals WHERE cashier_id = ? AND closed_at IS NULL ORDER BY opened_at DESC LIMIT 1`
+      ).get(r.employee.id);
+      if (!openShift) db.prepare(`INSERT INTO shift_totals (cashier_id, opened_at) VALUES (?, ?)`).run(r.employee.id, nowCT());
+      return { success: true, user: { id: r.employee.id, username: r.employee.username, name: r.employee.name, role: r.employee.role } };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // Sign the acting employee out. Does NOT close the business day — the next
+  // sign-in uses a PIN (day stays open until an explicit close-out).
   ipcMain.handle('auth:logout', async () => {
     currentSession = null;
+    clearActivity();
     return { success: true };
   });
 

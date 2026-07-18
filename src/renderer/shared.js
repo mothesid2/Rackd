@@ -147,3 +147,97 @@ const ICONS = {
 // Start status bar clock
 setInterval(updateStatusBar, 1000);
 document.addEventListener('DOMContentLoaded', updateStatusBar);
+
+/* ===== Session idle guard (item 2) =====
+ * After 15 minutes of inactivity the acting employee must re-enter their PIN
+ * before doing anything else. Enforced server-side on gated actions; this overlay
+ * makes it a hard, visible lock on every authenticated screen. No-ops on the
+ * login/activation screens (no employee session). */
+(function sessionIdleGuard() {
+  if (!window.api || !window.api.sessionState || !window.api.sessionReauth) return;
+
+  let overlay = null;
+  let pin = '';
+  let locked = false;
+  let lastTouch = 0;
+
+  function buildOverlay() {
+    const el = document.createElement('div');
+    el.id = 'idleLockOverlay';
+    el.style.cssText = 'position:fixed;inset:0;z-index:2147483000;display:none;align-items:center;justify-content:center;background:rgba(10,12,16,0.92);backdrop-filter:blur(3px)';
+    el.innerHTML = `
+      <div style="width:340px;background:#fff;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,0.4);padding:28px;text-align:center">
+        <div style="font-size:18px;font-weight:800;color:#1a1a1a;margin-bottom:4px">Session locked</div>
+        <div style="font-size:13px;color:#666;margin-bottom:18px">Inactive for a while. Enter your PIN to continue — <span id="idleEmp" style="font-weight:600"></span></div>
+        <div id="idleDots" style="font-size:26px;letter-spacing:6px;height:34px;color:#333;margin-bottom:10px">– – – –</div>
+        <div id="idleKeypad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:260px;margin:0 auto"></div>
+        <div id="idleErr" style="display:none;background:#fee2e2;color:#991b1b;border-radius:8px;padding:8px 12px;font-size:13px;margin-top:12px"></div>
+      </div>`;
+    document.body.appendChild(el);
+    const dots = el.querySelector('#idleDots');
+    const err = el.querySelector('#idleErr');
+    const keypad = el.querySelector('#idleKeypad');
+    const render = () => { dots.textContent = pin ? pin.split('').map(() => '●').join('  ') : '– – – –'; };
+    async function submit() {
+      if (pin.length < 4) return;
+      const res = await window.api.sessionReauth(pin);
+      if (res && res.success) { pin = ''; render(); err.style.display = 'none'; hide(); lastTouch = Date.now(); return; }
+      err.textContent = (res && res.error) || 'Incorrect PIN'; err.style.display = 'block';
+      pin = ''; render();
+    }
+    function key(k) {
+      err.style.display = 'none';
+      if (k === '⌫') pin = pin.slice(0, -1);
+      else if (k === '✓') return submit();
+      else if (pin.length < 8) pin += k;
+      render();
+    }
+    keypad.innerHTML = ['1','2','3','4','5','6','7','8','9','⌫','0','✓']
+      .map((k) => `<button class="idlekey" style="border:1px solid #e2e2e2;border-radius:12px;background:#fafafa;font-size:20px;font-weight:700;padding:14px 0;cursor:pointer">${k}</button>`).join('');
+    [...keypad.children].forEach((b) => b.addEventListener('click', () => key(b.textContent)));
+    el.addEventListener('keydown', (e) => {
+      if (/^[0-9]$/.test(e.key)) key(e.key);
+      else if (e.key === 'Backspace') key('⌫');
+      else if (e.key === 'Enter') key('✓');
+    });
+    return el;
+  }
+
+  function show(empName) {
+    if (!overlay) overlay = buildOverlay();
+    overlay.querySelector('#idleEmp').textContent = empName || '';
+    overlay.style.display = 'flex';
+    overlay.setAttribute('tabindex', '-1');
+    overlay.focus();
+    locked = true;
+  }
+  function hide() {
+    if (overlay) overlay.style.display = 'none';
+    locked = false;
+  }
+
+  async function check() {
+    let s;
+    try { s = await window.api.sessionState(); } catch { return; }
+    if (!s || !s.success || !s.employee) { hide(); return; } // login screen / logged out
+    if (s.idleLocked) { if (!locked) show(s.employee.username); }
+    else hide();
+  }
+
+  // Activity heartbeat: extend a live session (throttled). Ignored server-side once
+  // idle-locked, so it can't defeat the lock.
+  function onActivity() {
+    if (locked) return;
+    const now = Date.now();
+    if (now - lastTouch < 30000) return;
+    lastTouch = now;
+    window.api.sessionTouch().then((r) => { if (r && r.idleLocked) check(); }).catch(() => {});
+  }
+  ['click', 'keydown', 'mousemove', 'touchstart', 'wheel'].forEach((ev) =>
+    document.addEventListener(ev, onActivity, { passive: true })
+  );
+
+  setInterval(check, 20000);
+  document.addEventListener('DOMContentLoaded', check);
+  check();
+})();

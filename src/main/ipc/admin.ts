@@ -60,6 +60,15 @@ export function registerAdminHandlers(): void {
 
   ipcMain.handle('admin:list', () => callAdmin('list', {}));
   ipcMain.handle('admin:create', (_e, payload: Record<string, unknown>) => callAdmin('create', payload || {}));
+  // Business-key model: one key + N locations for the whole business.
+  ipcMain.handle('admin:createBusiness', (_e, payload: Record<string, unknown>) => callAdmin('createBusiness', payload || {}));
+  ipcMain.handle('admin:locations', (_e, tenantId: string) => callAdmin('locations', { tenant_id: tenantId }));
+  ipcMain.handle('admin:addLocation', (_e, tenantId: string, name: string) => callAdmin('addLocation', { tenant_id: tenantId, name }));
+  ipcMain.handle('admin:renameLocation', (_e, locationId: string, name: string) => callAdmin('renameLocation', { location_id: locationId, name }));
+  // Remote kiosk management (item 5): list kiosks + trigger/cancel a remote reset.
+  ipcMain.handle('admin:kiosks', (_e, tenantId: string) => callAdmin('kiosks', { tenant_id: tenantId }));
+  ipcMain.handle('admin:resetKiosk', (_e, tenantId: string, machineId: string) => callAdmin('resetKiosk', { tenant_id: tenantId, machine_id: machineId }));
+  ipcMain.handle('admin:cancelReset', (_e, tenantId: string, machineId: string) => callAdmin('cancelReset', { tenant_id: tenantId, machine_id: machineId }));
   ipcMain.handle('admin:update', (_e, payload: Record<string, unknown>) => callAdmin('update', payload || {}));
   ipcMain.handle('admin:delete', (_e, licenseKey: string) => callAdmin('delete', { license_key: licenseKey }));
   ipcMain.handle('admin:setAds', (_e, licenseKey: string, displayConfig: unknown) =>
@@ -68,4 +77,11 @@ export function registerAdminHandlers(): void {
   ipcMain.handle('admin:freeSeat', (_e, licenseKey: string, machineId: string) =>
     callAdmin('freeSeat', { license_key: licenseKey, machine_id: machineId })
   );
+  // spec §4 — cross-store aggregation (owner "All Stores" dashboard).
+  ipcMain.handle('admin:aggregate', (_e, range?: { start?: string; end?: string }) =>
+    callAdmin('aggregate', { start: range?.start, end: range?.end })
+  );
+  // Manufacturer SFTP credentials (rebate scan-data submission).
+  ipcMain.handle('admin:mfrList', (_e, tenantId: string) => callAdmin('mfrList', { tenant_id: tenantId }));
+  ipcMain.handle('admin:mfrCredsSet', (_e, payload: Record<string, unknown>) => callAdmin('mfrCredsSet', payload || {}));
 }

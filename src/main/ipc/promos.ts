@@ -5,6 +5,7 @@ import { getCurrentSession } from './auth';
 import { getTwilioClient } from '../services/twilio';
 import { nowCT, TZ } from '../utils/time';
 import { assertWritable } from '../supabase/licenseCheck';
+import { enqueueCustomer } from '../supabase/sync';
 
 interface Customer {
   id: number; first_name: string; last_name: string; phone: string | null;
@@ -94,6 +95,8 @@ export function registerPromoHandlers(): void {
             .run(c.id, newBal);
           db.prepare(`UPDATE customers SET loyalty_points = loyalty_points + 50, lifetime_points = lifetime_points + 50, updated_at = ? WHERE id = ?`)
             .run(nowCT(), c.id);
+          // Phase 3: propagate the birthday bonus to the shared per-location book.
+          enqueueCustomer('update', c.id, db);
           bonuses++;
         }
 

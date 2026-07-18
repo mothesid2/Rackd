@@ -33,6 +33,11 @@
     .date-bar input { border: 1px solid #ddd; border-radius: 8px; padding: 7px 10px; font-size: 14px; }
     .date-bar label { font-size: 13px; color: #555; }
 
+    .scope-toggle { display: inline-flex; border: 1px solid #d5d5d5; border-radius: 8px; overflow: hidden; }
+    .scope-btn { border: none; background: #fff; color: #555; font-size: 13px; font-weight: 600; padding: 7px 14px; cursor: pointer; }
+    .scope-btn + .scope-btn { border-left: 1px solid #d5d5d5; }
+    .scope-btn.active { background: #1c2a4a; color: #fff; }
+
     .z-warning { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 14px 16px; font-size: 14px; color: #9a3412; margin-bottom: 16px; display: flex; align-items: flex-start; gap: 10px; }
     .z-warning svg { width: 20px; height: 20px; flex-shrink: 0; margin-top: 1px; }
     .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
@@ -47,21 +52,24 @@
 </head>
 <body>
   <div class="page-layout">
-    <div class="page-header">
+    <div class="page-header" style="flex-wrap:wrap">
       <button class="btn btn-back" onclick="navigate('main-menu')">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
         Back
       </button>
       <h1 class="page-title">X / Z Out</h1>
-      <div class="spacer"></div>
-      <button class="btn btn-navy" id="ageLogBtn" style="display:none" onclick="navigate('xz-out/age-log')">Age Verification Log</button>
-      <button class="btn btn-navy" id="auditBtn" style="display:none" onclick="navigate('xz-out/monthly')">Audit</button>
+      <div id="reportActions" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn btn-navy" id="employeeBtn" style="display:none" onclick="navigate('xz-out/employee-report')">Employee Sales</button>
+        <button class="btn btn-navy" id="drawerLogBtn" style="display:none" onclick="navigate('xz-out/drawer-log')">Cash Drawer Log</button>
+        <button class="btn btn-navy" id="ageLogBtn" style="display:none" onclick="navigate('xz-out/age-log')">Age Verification Log</button>
+        <button class="btn btn-navy" id="auditBtn" style="display:none" onclick="navigate('xz-out/monthly')">Audit</button>
+      </div>
     </div>
 
     <!-- X REPORT CARD -->
     <div class="card" id="xReportCard">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <div class="card-title" style="margin:0">X Report</div>
+        <div class="card-title" style="margin:0" id="xCardTitle">X Report</div>
         <span class="since-badge" id="rangeBadge"></span>
       </div>
 
@@ -69,6 +77,10 @@
         <label>From</label><input type="date" id="startDate" />
         <label>To</label><input type="date" id="endDate" />
         <button class="btn btn-navy" onclick="loadX()">View</button>
+        <div class="scope-toggle" id="scopeToggle" role="group" aria-label="Report scope">
+          <button type="button" class="scope-btn active" data-scope="register" onclick="setScope('register')">This register</button>
+          <button type="button" class="scope-btn" data-scope="location" onclick="setScope('location')">This location</button>
+        </div>
         <div class="spacer"></div>
         <button class="btn btn-gray" onclick="setToday()">Today</button>
       </div>
@@ -169,6 +181,8 @@
       } else {
         document.getElementById('auditBtn').style.display = 'inline-flex';
         document.getElementById('ageLogBtn').style.display = 'inline-flex';
+        document.getElementById('drawerLogBtn').style.display = 'inline-flex';
+        document.getElementById('employeeBtn').style.display = 'inline-flex';
       }
 
       document.getElementById('runZBtn').addEventListener('click', () => {
@@ -186,10 +200,31 @@
       document.getElementById('endDate').value = iso;
     }
 
+    let currentScope = 'register';
+    function setScope(scope) {
+      currentScope = scope;
+      document.querySelectorAll('.scope-btn').forEach(b => b.classList.toggle('active', b.dataset.scope === scope));
+      loadX();
+    }
+
     async function loadX() {
       const start = document.getElementById('startDate').value;
       const end = document.getElementById('endDate').value;
-      const res = await window.api.getPeriodReport({ start, end });
+
+      let res;
+      if (currentScope === 'location') {
+        res = await window.api.getLocationPeriodReport({ start, end });
+        if (!res.success) {
+          // Cloud unreachable / not location-scoped -> fall back to this register.
+          showToast(res.error || 'Location totals unavailable — showing this register', 'warning');
+          currentScope = 'register';
+          document.querySelectorAll('.scope-btn').forEach(b => b.classList.toggle('active', b.dataset.scope === 'register'));
+          res = await window.api.getPeriodReport({ start, end });
+        }
+      } else {
+        res = await window.api.getPeriodReport({ start, end });
+      }
+
       if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
       renderX(res);
     }
@@ -224,7 +259,9 @@
         ? '<div style="font-size:13px;color:#999">No sales</div>'
         : r.top_products.map((t, i) => `<div class="report-line-row"><span class="lbl"><span class="rank-badge">#${i + 1}</span>${esc(t.name)}</span><span class="val">${fmt(t.revenue)}</span></div>`).join('');
 
-      document.getElementById('status-left').textContent = `X Report · ${r.period.label}`;
+      const scopeLabel = r.scope === 'location' ? 'Location (all registers)' : 'This register';
+      document.getElementById('xCardTitle').textContent = r.scope === 'location' ? 'X Report — Location' : 'X Report';
+      document.getElementById('status-left').textContent = `X Report · ${scopeLabel} · ${r.period.label}`;
     }
 
     function buildLineRow(label, val) {

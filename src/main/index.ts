@@ -1,8 +1,9 @@
 import { app, ipcMain, dialog, globalShortcut } from 'electron';
 import { createMainWindow, navigateTo, getMainWindow } from './windows/main';
-import { createCustomerDisplayWindow, updateCustomerDisplay } from './windows/customerDisplay';
+import { createCustomerDisplayWindow, updateCustomerDisplay, getCustomerDisplayWindow } from './windows/customerDisplay';
 import { getDb } from './db/schema';
 import { registerAuthHandlers } from './ipc/auth';
+import { registerSessionHandlers } from './ipc/session';
 import { registerProductHandlers } from './ipc/products';
 import { registerTransactionHandlers } from './ipc/transactions';
 import { registerCustomerHandlers } from './ipc/customers';
@@ -21,14 +22,29 @@ import { registerSyncHandlers } from './ipc/sync';
 import { registerLicenseHandlers } from './ipc/license';
 import { registerOwnerHandlers } from './ipc/owner';
 import { registerAdminHandlers } from './ipc/admin';
+import { registerAIHandlers } from './ipc/ai';
+import { registerAnalyticsHandlers } from './ipc/analytics';
+import { registerOnboardingHandlers } from './ipc/onboarding';
+import { registerCatalogHandlers } from './ipc/catalog';
+import { registerBillingHandlers } from './ipc/billing';
+import { registerRebateHandlers } from './ipc/rebates';
+import { registerPermissionHandlers } from './ipc/permissions';
+import { registerTimeClockHandlers } from './ipc/timeclock';
+import { registerStorefrontHandlers } from './ipc/storefront';
 import { registerActivationHandlers, isActivated } from './ipc/activation';
 import { isSupabaseConfigured } from './supabase/client';
 import { startSyncWorker } from './supabase/sync';
 import { startLicenseChecks } from './supabase/licenseCheck';
 import { startTokenAutoRefresh } from './supabase/tokenManager';
 import { startUpdater, registerUpdaterHandlers } from './updater';
+import { startPickupPrinter } from './services/pickupPrinter';
+import { applyDemoConfig, attachDemoBadge } from './demo';
 
 app.whenReady().then(() => {
+  // 0. Demo/sandbox build: isolate cloud to the sandbox project BEFORE any cloud
+  // use, so a demo session can never touch real business data.
+  applyDemoConfig();
+
   // 1. Initialize SQLite + run pending migrations
   getDb();
 
@@ -50,12 +66,14 @@ app.whenReady().then(() => {
 
   // Create main window
   const win = createMainWindow(bootPage);
+  attachDemoBadge(win); // "DEMO" watermark on sandbox builds
 
   // Try to create customer display on second monitor
   createCustomerDisplayWindow();
 
   // Register all IPC handlers
   registerAuthHandlers();
+  registerSessionHandlers();
   registerProductHandlers();
   registerTransactionHandlers();
   registerCustomerHandlers();
@@ -74,10 +92,22 @@ app.whenReady().then(() => {
   registerLicenseHandlers();
   registerOwnerHandlers();
   registerAdminHandlers();
+  registerAIHandlers();
+  registerAnalyticsHandlers();
+  registerOnboardingHandlers();
+  registerCatalogHandlers();
+  registerBillingHandlers();
+  registerRebateHandlers();
+  registerPermissionHandlers();
+  registerTimeClockHandlers();
+  registerStorefrontHandlers();
 
   // 6. Cloud layer: start the local-first -> Supabase sync worker (no-op if
   // Supabase isn't configured; the POS runs fully on local SQLite regardless).
   startSyncWorker();
+
+  // Auto-print prepaid pickup receipts for paid online orders at this location.
+  startPickupPrinter();
 
   // "Use it or lose it" — expire stale loyalty points once at startup
   try { runPointExpiry(getDb()); } catch { /* non-fatal */ }
@@ -107,6 +137,21 @@ app.whenReady().then(() => {
   ipcMain.handle('customerDisplay:update', (_event, data: object) => {
     updateCustomerDisplay(data);
   });
+
+  // Customer-facing loyalty consent: the customer taps Agree/Decline on the
+  // customer display; relay their choice back to the POS (main window).
+  ipcMain.handle('customerDisplay:consent', (_event, payload: object) => {
+    getMainWindow()?.webContents.send('customer-consent', payload);
+  });
+
+  // Customer-facing tip selection (Option B): the customer picks a tip on their
+  // screen before the card is charged; relay it back to the POS (main window).
+  ipcMain.handle('customerDisplay:tip', (_event, payload: object) => {
+    getMainWindow()?.webContents.send('customer-tip', payload);
+  });
+
+  // Is a customer-facing display actually present (second monitor)?
+  ipcMain.handle('customerDisplay:isAvailable', () => !!getCustomerDisplayWindow());
 
   // Fullscreen toggle
   ipcMain.handle('window:toggleFullscreen', () => {

@@ -175,9 +175,11 @@
     </div>
     <div class="brand-name" data-brand>rackd</div>
     <div class="welcome-msg"><span data-welcome>Welcome!</span></div>
-    <img data-promo-banner alt="" style="display:none;max-width:60%;max-height:200px;object-fit:contain;border-radius:12px;margin-top:20px" />
-    <div data-promo-headline style="display:none;margin-top:18px;max-width:74%;text-align:center;font-size:30px;font-weight:800;color:#b01d2e;text-shadow:0 0 20px rgba(176,29,46,0.5)"></div>
-    <div data-promo-body style="display:none;margin-top:8px;max-width:70%;text-align:center;font-size:20px;color:rgba(255,255,255,0.7)"></div>
+  </div>
+
+  <!-- FULL-SCREEN AD (image / GIF). Covers the whole idle screen when enabled. -->
+  <div id="adFullscreen" style="display:none;position:fixed;inset:0;z-index:50;background:#000">
+    <img id="adImg" alt="" style="width:100%;height:100%;object-fit:cover;display:block" />
   </div>
 
   <!-- CART -->
@@ -259,6 +261,77 @@
     </div>
   </div>
 
+  <!-- TIP — customer chooses a tip before the card is charged (Option B) -->
+  <style>
+    #tipScreen .tip-preset { border:none;border-radius:16px;background:rgba(255,255,255,0.12);color:#fff;padding:26px 10px;cursor:pointer;transition:transform .08s,background .12s; }
+    #tipScreen .tip-preset:active { transform:scale(.97); }
+    #tipScreen .tip-preset .pct { font-size:34px;font-weight:900; }
+    #tipScreen .tip-preset .amt { font-size:18px;color:rgba(255,255,255,0.7);margin-top:4px; }
+    #tipScreen .tip-alt { border:1px solid rgba(255,255,255,0.25);border-radius:14px;background:transparent;color:#fff;font-size:20px;font-weight:700;padding:16px 28px;cursor:pointer; }
+    #tipScreen .tip-key { border:none;border-radius:12px;background:rgba(255,255,255,0.12);color:#fff;font-size:26px;font-weight:800;padding:18px 0;cursor:pointer; }
+  </style>
+  <div id="tipScreen" style="display:none;flex-direction:column;height:100vh;padding:40px 6vw;justify-content:center">
+    <div style="font-size:36px;font-weight:900;text-align:center">Add a tip?</div>
+    <div style="font-size:18px;color:rgba(255,255,255,0.6);text-align:center;margin-top:6px">On subtotal <span id="tipSubtotal">$0.00</span></div>
+
+    <div id="tipPresetWrap" style="display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:26px 0 18px"></div>
+    <div style="display:flex;gap:18px;justify-content:center">
+      <button class="tip-alt" onclick="showCustomTip()">Custom</button>
+      <button class="tip-alt" onclick="sendTip(0)">No tip</button>
+    </div>
+
+    <div id="tipCustom" style="display:none;margin-top:26px;max-width:440px;align-self:center;width:100%">
+      <div style="font-size:46px;font-weight:900;text-align:center;margin-bottom:14px" id="tipCustomAmt">$0.00</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px" id="tipKeypad"></div>
+      <div style="display:flex;gap:12px;margin-top:14px">
+        <button class="tip-alt" style="flex:1" onclick="hideCustomTip()">Back</button>
+        <button class="tip-alt" style="flex:1;background:#57b96a;border-color:#57b96a" onclick="confirmCustomTip()">Add tip</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOYALTY CONSENT — full-screen terms & conditions the customer accepts -->
+  <div id="consentScreen" style="display:none;flex-direction:column;height:100vh;padding:48px 6vw;overflow:hidden">
+    <div style="font-size:34px;font-weight:900;margin-bottom:4px" id="consentTitle">Join our Loyalty Program</div>
+    <div style="font-size:17px;color:rgba(255,255,255,0.6);margin-bottom:20px">Please review and accept to enroll and receive texts.</div>
+
+    <div style="flex:1;overflow-y:auto;background:rgba(255,255,255,0.06);border-radius:16px;padding:26px 30px;font-size:17px;line-height:1.6;color:rgba(255,255,255,0.9)">
+      <p style="margin-bottom:14px">
+        By checking the box below, you agree to join the <strong id="consentStore">our store</strong> loyalty
+        program and to receive <strong>recurring automated marketing and promotional text messages</strong>
+        (deals, loyalty rewards, and special offers) as well as <strong>transactional messages, including
+        digital receipts</strong>, from <span data-consent-store>our store</span> at the mobile number you provided.
+      </p>
+      <p style="margin-bottom:14px">
+        Consent is <strong>not a condition of any purchase</strong>. Message frequency varies. Message and data
+        rates may apply.
+      </p>
+      <p style="margin-bottom:14px">
+        Reply <strong>STOP</strong> to unsubscribe at any time, or <strong>HELP</strong> for help.
+      </p>
+      <p style="margin-bottom:0;color:rgba(255,255,255,0.7);font-size:15px">
+        By accepting, you confirm you are the account holder for this mobile number and agree to the
+        Terms of Service and Privacy Policy. You may opt out at any time.
+      </p>
+    </div>
+
+    <label style="display:flex;align-items:center;gap:16px;margin:22px 2px;cursor:pointer;font-size:20px;font-weight:600">
+      <input type="checkbox" id="consentCheck" style="width:34px;height:34px;flex-shrink:0;cursor:pointer" onchange="onConsentCheck()" />
+      <span>I agree to receive marketing, promotional, and transactional (receipt) text messages.</span>
+    </label>
+
+    <div style="display:flex;gap:16px">
+      <button id="consentDeclineBtn" onclick="submitConsent(false)"
+        style="flex:1;padding:20px;font-size:20px;font-weight:700;border:2px solid rgba(255,255,255,0.3);background:transparent;color:#fff;border-radius:14px;cursor:pointer">
+        No thanks
+      </button>
+      <button id="consentAgreeBtn" onclick="submitConsent(true)" disabled
+        style="flex:2;padding:20px;font-size:22px;font-weight:800;border:none;background:#2e7d32;color:#fff;border-radius:14px;cursor:pointer;opacity:0.4">
+        Agree &amp; Join
+      </button>
+    </div>
+  </div>
+
   <script>
     function fmt(n) { return '$' + Number(n || 0).toFixed(2); }
 
@@ -268,17 +341,33 @@
         const cfg = await window.api.getReceiptConfig();
         const name = cfg?.config?.store_name;
         window.__storeWelcome = name ? `Welcome to ${name}!` : 'Welcome!';
+        window.__storeName = name || 'our store';
         if (name) {
           document.querySelectorAll('[data-brand]').forEach(el => { el.textContent = name; });
           document.querySelectorAll('[data-welcome]').forEach(el => { el.textContent = window.__storeWelcome; });
+          const cs = document.getElementById('consentStore'); if (cs) cs.textContent = name;
+          document.querySelectorAll('[data-consent-store]').forEach(el => { el.textContent = name; });
         }
       } catch { /* keep defaults */ }
     })();
 
-    // Owner-configured promotional / rebate message (ads foundation). Polled so
-    // owner changes appear without restarting the display.
-    // Owner-configured rotating ad / rebate slides (image + headline + body).
-    let adsTimer = null, adsSlides = [], adsIdx = 0, lastAdsCfg = null;
+    // Owner-configured full-screen ads (image / GIF). Companies supply an image
+    // URL per slide (set in the tenant portal); it fills the entire screen while
+    // idle. Polled so changes appear without restarting the display. GIFs animate
+    // automatically. The ad overlay is only shown in the idle state.
+    let adsTimer = null, adsImages = [], adsIdx = 0, adsIntervalMs = 8000, lastAdsCfg = null;
+    let currentState = 'idle';
+
+    function renderAd() {
+      const overlay = document.getElementById('adFullscreen');
+      const img = document.getElementById('adImg');
+      const show = currentState === 'idle' && adsImages.length > 0;
+      if (!show) { overlay.style.display = 'none'; return; }
+      const src = adsImages[adsIdx] || adsImages[0];
+      if (img.getAttribute('src') !== src) img.src = src;
+      overlay.style.display = 'block';
+    }
+
     async function loadAds() {
       try {
         const r = await window.api.ownerGetDisplayConfig();
@@ -287,28 +376,18 @@
         if (key === lastAdsCfg) return; // unchanged — keep the current rotation running
         lastAdsCfg = key;
 
-        const banner = document.querySelector('[data-promo-banner]');
-        const headline = document.querySelector('[data-promo-headline]');
-        const body = document.querySelector('[data-promo-body]');
-        const hideAll = () => { [banner, headline, body].forEach(e => { if (e) e.style.display = 'none'; }); };
         if (adsTimer) { clearInterval(adsTimer); adsTimer = null; }
 
-        adsSlides = (cfg.promo_enabled && Array.isArray(cfg.ads))
-          ? cfg.ads.filter(s => s && (s.headline || s.body || s.image))
+        // Only image/GIF slides matter for full-screen ads.
+        adsImages = (cfg.promo_enabled && Array.isArray(cfg.ads))
+          ? cfg.ads.map(s => (s && s.image ? String(s.image).trim() : '')).filter(Boolean)
           : [];
-        if (!adsSlides.length) { hideAll(); return; }
-
         adsIdx = 0;
-        const render = () => {
-          const s = adsSlides[adsIdx] || {};
-          if (banner) { if (s.image) { banner.src = s.image; banner.style.display = 'block'; } else banner.style.display = 'none'; }
-          if (headline) { headline.textContent = s.headline || ''; headline.style.display = s.headline ? 'block' : 'none'; }
-          if (body) { body.textContent = s.body || ''; body.style.display = s.body ? 'block' : 'none'; }
-        };
-        render();
-        if (adsSlides.length > 1) {
-          const ms = Math.max(3, Math.min(60, Number(cfg.ads_interval) || 8)) * 1000;
-          adsTimer = setInterval(() => { adsIdx = (adsIdx + 1) % adsSlides.length; render(); }, ms);
+        adsIntervalMs = Math.max(3, Math.min(60, Number(cfg.ads_interval) || 8)) * 1000;
+
+        renderAd();
+        if (adsImages.length > 1) {
+          adsTimer = setInterval(() => { adsIdx = (adsIdx + 1) % adsImages.length; renderAd(); }, adsIntervalMs);
         }
       } catch { /* ignore */ }
     }
@@ -316,9 +395,67 @@
     setInterval(loadAds, 20000);
 
     function showState(state) {
+      currentState = state;
       document.getElementById('idleScreen').style.display = state === 'idle' ? 'flex' : 'none';
       document.getElementById('cartScreen').style.display = state === 'cart' ? 'flex' : 'none';
       document.getElementById('cardScreen').style.display = state === 'card_processing' ? 'flex' : 'none';
+      document.getElementById('consentScreen').style.display = state === 'consent' ? 'flex' : 'none';
+      document.getElementById('tipScreen').style.display = state === 'tip' ? 'flex' : 'none';
+      renderAd();
+    }
+
+    // ── Tip prompt (Option B — customer taps a tip before the card is charged) ──
+    let tipLocked = false;
+    let tipCustomCents = 0;
+    function renderTipScreen(data) {
+      tipLocked = false;
+      hideCustomTip();
+      const sub = Number(data.subtotal) || 0;
+      document.getElementById('tipSubtotal').textContent = fmt(sub);
+      const presets = (Array.isArray(data.presets) && data.presets.length) ? data.presets : [15, 18, 20];
+      document.getElementById('tipPresetWrap').innerHTML = presets.map(pct => {
+        const amt = Math.round(sub * Number(pct)) / 100; // pct% of the subtotal, in dollars
+        return `<button class="tip-preset" onclick="sendTip(${amt})"><div class="pct">${pct}%</div><div class="amt">${fmt(amt)}</div></button>`;
+      }).join('');
+    }
+    function sendTip(dollars) {
+      if (tipLocked) return; tipLocked = true;
+      try { window.api.sendCustomerTip({ tip: Math.max(0, Number(dollars) || 0) }); } catch { /* ignore */ }
+    }
+    function showCustomTip() {
+      tipCustomCents = 0; renderCustomAmt();
+      const keys = ['1','2','3','4','5','6','7','8','9','⌫','0','C'];
+      document.getElementById('tipKeypad').innerHTML = keys.map(k => `<button class="tip-key" onclick="tipKey('${k}')">${k}</button>`).join('');
+      document.getElementById('tipCustom').style.display = 'block';
+    }
+    function hideCustomTip() { document.getElementById('tipCustom').style.display = 'none'; }
+    function tipKey(k) {
+      if (k === '⌫') tipCustomCents = Math.floor(tipCustomCents / 10);
+      else if (k === 'C') tipCustomCents = 0;
+      else tipCustomCents = Math.min(tipCustomCents * 10 + parseInt(k, 10), 99999999);
+      renderCustomAmt();
+    }
+    function renderCustomAmt() { document.getElementById('tipCustomAmt').textContent = fmt(tipCustomCents / 100); }
+    function confirmCustomTip() { sendTip(tipCustomCents / 100); }
+
+    // ── Loyalty consent (customer-facing terms & conditions) ──────────────────
+    function onConsentCheck() {
+      const agreed = document.getElementById('consentCheck').checked;
+      const btn = document.getElementById('consentAgreeBtn');
+      btn.disabled = !agreed;
+      btn.style.opacity = agreed ? '1' : '0.4';
+    }
+    function submitConsent(agreed) {
+      // Lock the buttons so a double-tap can't send twice.
+      document.getElementById('consentAgreeBtn').disabled = true;
+      document.getElementById('consentDeclineBtn').disabled = true;
+      try { window.api.sendCustomerConsent({ agreed: !!agreed }); } catch { /* ignore */ }
+    }
+    function resetConsentScreen() {
+      const chk = document.getElementById('consentCheck');
+      if (chk) chk.checked = false;
+      onConsentCheck();
+      document.getElementById('consentDeclineBtn').disabled = false;
     }
 
     function itemsHtml(items) {
@@ -350,6 +487,22 @@
 
       if (data.state === 'idle') {
         showState('idle');
+        return;
+      }
+
+      if (data.state === 'consent') {
+        if (data.store) {
+          const cs = document.getElementById('consentStore'); if (cs) cs.textContent = data.store;
+          document.querySelectorAll('[data-consent-store]').forEach(el => { el.textContent = data.store; });
+        }
+        resetConsentScreen();
+        showState('consent');
+        return;
+      }
+
+      if (data.state === 'tip') {
+        renderTipScreen(data);
+        showState('tip');
         return;
       }
 

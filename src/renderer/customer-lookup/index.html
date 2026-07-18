@@ -18,6 +18,11 @@
     }
 
     .left-pane { display: flex; flex-direction: column; overflow: hidden; gap: 10px; }
+    /* In this vertical column, keep the search box its natural height (the shared
+       .search-wrap uses flex:1 for horizontal toolbars, which would stretch it
+       here). No search icon on this page, so remove the icon padding too. */
+    .left-pane .search-wrap { flex: 0 0 auto; }
+    .left-pane .search-wrap input { padding-left: 12px; }
     .right-pane { display: flex; flex-direction: column; overflow: hidden; }
 
     .customer-list {
@@ -176,14 +181,11 @@
       </div>
 
       <div class="search-wrap">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="text" id="searchInput" placeholder="Name or phone…" />
       </div>
 
-      <div class="card" style="flex:1;overflow:hidden;padding:0">
-        <div class="customer-list" id="customerList">
-          <div style="padding:20px;text-align:center;color:#aaa">Loading…</div>
-        </div>
+      <div class="card" id="customerListCard" style="flex:1;overflow:hidden;padding:0;display:none">
+        <div class="customer-list" id="customerList"></div>
       </div>
 
       <button class="btn btn-green" style="width:100%" onclick="openAddCustomer()">
@@ -243,27 +245,52 @@
         <div class="form-group" style="max-width:110px"><label>ZIP</label><input type="text" id="ac-zip" maxlength="10" /></div>
       </div>
       <div class="form-group"><label>Notes</label><textarea id="ac-notes" rows="2" style="resize:vertical"></textarea></div>
-      <div class="form-group">
-        <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;cursor:pointer">
-          <input type="checkbox" id="ac-optin" style="width:auto" />
-          Opt in for SMS promotions
-        </label>
-      </div>
-      <div id="ac-consent-block" style="display:none;margin-top:4px;border:1px solid #eee;border-radius:8px;padding:12px;background:#fafafa">
-        <div style="font-size:12px;color:#555;line-height:1.5;margin-bottom:8px">
-          By signing, the customer agrees to receive recurring automated marketing &amp; transactional
-          text messages at the number provided. Consent is not a condition of purchase. Msg &amp; data
-          rates may apply; msg frequency varies. Reply STOP to opt out, HELP for help.
-        </div>
-        <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#888">Customer signature</label>
-        <canvas id="ac-sig" width="440" height="120" style="width:100%;height:120px;border:1px dashed #bbb;border-radius:6px;background:#fff;touch-action:none;cursor:crosshair"></canvas>
-        <div style="text-align:right;margin-top:4px">
-          <button type="button" class="btn btn-gray" style="padding:4px 10px;font-size:12px" onclick="clearSignature()">Clear</button>
-        </div>
-      </div>
       <div class="modal-actions">
         <button class="btn btn-gray" onclick="closeModal('addCustomerModal')">Cancel</button>
         <button class="btn btn-navy" id="addCustomerBtn" data-write-action="customer_edit">Save Customer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm New Customer: (1) verify info is correct, then (2) marketing/loyalty consent -->
+  <div class="modal-overlay" id="confirmCustomerModal" style="display:none">
+    <div class="modal" style="max-width:460px;width:95%">
+      <button class="modal-close" onclick="closeModal('confirmCustomerModal')">×</button>
+      <div class="modal-title">Confirm New Customer</div>
+
+      <!-- Step 1 — verify information -->
+      <div id="cc-step-info">
+        <p style="font-size:13px;color:#555;margin-bottom:10px">Please confirm this information is correct:</p>
+        <div id="cc-summary" style="border:1px solid #eee;border-radius:8px;padding:12px;background:#fafafa;font-size:14px;line-height:1.7"></div>
+        <div class="modal-actions">
+          <button class="btn btn-gray" onclick="closeModal('confirmCustomerModal')">Edit</button>
+          <button class="btn btn-navy" onclick="ccConfirmInfo()">Yes, information is correct →</button>
+        </div>
+      </div>
+
+      <!-- Step 2 — marketing / loyalty text consent -->
+      <div id="cc-step-consent" style="display:none">
+        <label style="display:flex;align-items:flex-start;gap:8px;text-transform:none;font-size:14px;cursor:pointer;margin-bottom:10px">
+          <input type="checkbox" id="cc-consent" style="width:auto;margin-top:3px" onchange="ccToggleConsent()" />
+          <span>Customer consents to receive <strong>marketing &amp; loyalty program</strong> text messages at the number provided.</span>
+        </label>
+        <div id="cc-consent-block" style="display:none;border:1px solid #eee;border-radius:8px;padding:12px;background:#fafafa">
+          <div style="font-size:12px;color:#555;line-height:1.5;margin-bottom:8px">
+            By signing, the customer agrees to receive recurring automated marketing &amp; loyalty
+            text messages at the number provided. Consent is not a condition of purchase. Msg &amp; data
+            rates may apply; msg frequency varies. Reply STOP to opt out, HELP for help.
+          </div>
+          <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#888">Customer signature</label>
+          <canvas id="ac-sig" width="440" height="120" style="width:100%;height:120px;border:1px dashed #bbb;border-radius:6px;background:#fff;touch-action:none;cursor:crosshair"></canvas>
+          <div style="text-align:right;margin-top:4px">
+            <button type="button" class="btn btn-gray" style="padding:4px 10px;font-size:12px" onclick="clearSignature()">Clear</button>
+          </div>
+        </div>
+        <p style="font-size:12px;color:#888;margin-top:8px">Leave unchecked if the customer does not want texts — the profile still saves.</p>
+        <div class="modal-actions">
+          <button class="btn btn-gray" onclick="ccBackToInfo()">Back</button>
+          <button class="btn btn-navy" id="ccSaveBtn" data-write-action="customer_edit">Save Customer</button>
+        </div>
       </div>
     </div>
   </div>
@@ -415,8 +442,8 @@
         filterList(q);
       });
 
-      document.getElementById('addCustomerBtn').addEventListener('click', addCustomer);
-      document.getElementById('ac-optin').addEventListener('change', toggleConsent);
+      document.getElementById('addCustomerBtn').addEventListener('click', reviewNewCustomer);
+      document.getElementById('ccSaveBtn').addEventListener('click', saveConfirmedCustomer);
       initSignaturePad();
       document.getElementById('editCustomerBtn').addEventListener('click', editCustomer);
 
@@ -431,14 +458,14 @@
     }
 
     function filterList(query) {
+      const card = document.getElementById('customerListCard');
       if (!query) {
-        // Search-first: don't show the whole list until the user types
-        document.getElementById('customerList').innerHTML =
-          '<div style="padding:28px 16px;text-align:center;color:#aaa;font-size:14px;line-height:1.6">' +
-          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:32px;height:32px;opacity:0.4;display:block;margin:0 auto 8px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' +
-          'Type a name or phone number<br>to find a customer</div>';
+        // Search-first: keep the list hidden entirely until the user types.
+        if (card) card.style.display = 'none';
+        document.getElementById('customerList').innerHTML = '';
         return;
       }
+      if (card) card.style.display = '';
       const q = query.toLowerCase();
       const filtered = customers.filter(c =>
         (c.first_name + ' ' + c.last_name).toLowerCase().includes(q) ||
@@ -715,21 +742,20 @@
       if (sigCtx && c) sigCtx.clearRect(0, 0, c.width, c.height);
       sigHas = false;
     }
-    function toggleConsent() {
-      const on = document.getElementById('ac-optin').checked;
-      document.getElementById('ac-consent-block').style.display = on ? 'block' : 'none';
+    function ccToggleConsent() {
+      const on = document.getElementById('cc-consent').checked;
+      document.getElementById('cc-consent-block').style.display = on ? 'block' : 'none';
       if (!on) clearSignature();
     }
     function openAddCustomer() {
       ['ac-first','ac-last','ac-phone','ac-email','ac-address','ac-city','ac-state','ac-zip','ac-notes']
         .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-      document.getElementById('ac-optin').checked = false;
-      toggleConsent();
-      clearSignature();
       openModal('addCustomerModal');
     }
 
-    async function addCustomer() {
+    // Step 1 → open the confirm modal showing the entered info for verification.
+    let pendingNewCustomer = null;
+    function reviewNewCustomer() {
       const data = {
         first_name: document.getElementById('ac-first').value.trim(),
         last_name: document.getElementById('ac-last').value.trim(),
@@ -740,21 +766,54 @@
         state: document.getElementById('ac-state').value.trim(),
         zip: document.getElementById('ac-zip').value.trim(),
         notes: document.getElementById('ac-notes').value.trim(),
-        opt_in_sms: document.getElementById('ac-optin').checked,
       };
-
       if (!data.first_name || !data.last_name) { showToast('Name required', 'warning'); return; }
+      pendingNewCustomer = data;
 
-      // SMS opt-in requires a signed consent (Twilio A2P).
-      if (data.opt_in_sms) {
-        if (!sigHas) { showToast('Customer signature required to opt in for SMS', 'warning'); return; }
+      const addr = [data.address, [data.city, data.state].filter(Boolean).join(', '), data.zip].filter(Boolean).join(' ');
+      document.getElementById('cc-summary').innerHTML =
+        `<div><strong>${esc(data.first_name)} ${esc(data.last_name)}</strong></div>` +
+        (data.phone ? `<div>📞 ${esc(data.phone)}</div>` : '<div style="color:#b45309">No phone number</div>') +
+        (data.email ? `<div>✉ ${esc(data.email)}</div>` : '') +
+        (addr ? `<div>🏠 ${esc(addr)}</div>` : '');
+
+      // reset to step 1, consent cleared
+      document.getElementById('cc-step-info').style.display = 'block';
+      document.getElementById('cc-step-consent').style.display = 'none';
+      document.getElementById('cc-consent').checked = false;
+      ccToggleConsent();
+      clearSignature();
+      openModal('confirmCustomerModal');
+    }
+
+    // Step 1 confirmed → reveal the marketing/loyalty consent checkbox.
+    function ccConfirmInfo() {
+      document.getElementById('cc-step-info').style.display = 'none';
+      document.getElementById('cc-step-consent').style.display = 'block';
+    }
+    function ccBackToInfo() {
+      document.getElementById('cc-step-consent').style.display = 'none';
+      document.getElementById('cc-step-info').style.display = 'block';
+    }
+
+    async function saveConfirmedCustomer() {
+      if (!pendingNewCustomer) return;
+      const data = { ...pendingNewCustomer };
+      const consent = document.getElementById('cc-consent').checked;
+      data.opt_in_sms = consent;
+
+      // Marketing/loyalty text consent requires a signed acknowledgement (Twilio A2P).
+      if (consent) {
+        if (!sigHas) { showToast('Customer signature required to consent to texts', 'warning'); return; }
         data.sms_consent_signature = document.getElementById('ac-sig').toDataURL('image/png');
       }
 
       const res = await window.api.addCustomer(data);
       if (res.success) {
         showToast('Customer added!', 'success');
+        closeModal('confirmCustomerModal');
         closeModal('addCustomerModal');
+        pendingNewCustomer = null;
         loadCustomers();
       } else {
         showToast(res.error || 'Failed', 'error');

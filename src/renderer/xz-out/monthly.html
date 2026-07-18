@@ -62,10 +62,20 @@
     <div id="mgrBlock" style="display:none;background:#fee2e2;border-radius:8px;padding:14px;color:#991b1b">This report is restricted to management.</div>
 
     <div id="reportBlock">
+      <style>
+        .scope-toggle { display: inline-flex; border: 1px solid #d5d5d5; border-radius: 8px; overflow: hidden; }
+        .scope-btn { border: none; background: #fff; color: #555; font-size: 13px; font-weight: 600; padding: 7px 14px; cursor: pointer; }
+        .scope-btn + .scope-btn { border-left: 1px solid #d5d5d5; }
+        .scope-btn.active { background: #1c2a4a; color: #fff; }
+      </style>
       <div class="controls">
         <label>From</label><input type="date" id="startDate" />
         <label>To</label><input type="date" id="endDate" />
         <button class="btn btn-navy" onclick="run()">View</button>
+        <div class="scope-toggle" id="scopeToggle" role="group" aria-label="Report scope">
+          <button type="button" class="scope-btn active" data-scope="register" onclick="setScope('register')">This register</button>
+          <button type="button" class="scope-btn" data-scope="location" onclick="setScope('location')">This location</button>
+        </div>
         <div class="spacer"></div>
         <button class="btn btn-navy" onclick="window.api.printPage()">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
@@ -129,10 +139,30 @@
       run();
     });
 
+    let currentScope = 'register';
+    function setScope(scope) {
+      currentScope = scope;
+      document.querySelectorAll('.scope-btn').forEach(b => b.classList.toggle('active', b.dataset.scope === scope));
+      run();
+    }
+
     async function run() {
       const start = document.getElementById('startDate').value;
       const end = document.getElementById('endDate').value;
-      const res = await window.api.getPeriodReport({ start, end });
+
+      let res;
+      if (currentScope === 'location') {
+        res = await window.api.getLocationPeriodReport({ start, end });
+        if (!res.success) {
+          showToast(res.error || 'Location totals unavailable — showing this register', 'warning');
+          currentScope = 'register';
+          document.querySelectorAll('.scope-btn').forEach(b => b.classList.toggle('active', b.dataset.scope === 'register'));
+          res = await window.api.getPeriodReport({ start, end });
+        }
+      } else {
+        res = await window.api.getPeriodReport({ start, end });
+      }
+
       if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
       render(res);
     }
@@ -143,7 +173,8 @@
 
     function render(r) {
       const s = r.summary, p = r.payments;
-      document.getElementById('periodTitle').textContent = r.period.label;
+      document.getElementById('periodTitle').textContent =
+        (r.scope === 'location' ? 'Location (all registers) · ' : '') + r.period.label;
       document.getElementById('rTotal').textContent = fmt(s.total_collected);
       document.getElementById('rCount').textContent = s.count;
       document.getElementById('rUPT').textContent = s.units_per_txn.toFixed(2);

@@ -42,20 +42,41 @@ function functionUrl(): { url: string; anonKey: string } | null {
   return { url: `${base.replace(/\/$/, '')}/functions/v1/jwt-issuer`, anonKey };
 }
 
+// Reserved register_id values a real register must never use. 'manager' tags
+// cloud rows written by the manager portal so every register pulls them down;
+// a register claiming it could masquerade its own writes as manager edits. (L-1)
+const RESERVED_REGISTER_IDS = new Set(['manager']);
+
 /** Stable per-install id used to count/limit machines (seats) per license key. */
 export function getMachineId(db: Database.Database = getDb()): string {
   let id = readSetting('machine_id', db);
-  if (!id) {
+  // Regenerate if missing or a tampered/reserved value.
+  if (!id || RESERVED_REGISTER_IDS.has(id)) {
     id = randomUUID();
     writeSetting('machine_id', id, db);
   }
   return id;
 }
 
-/** Call the jwt-issuer Edge Function and return the signed token + expiry. */
-export async function fetchToken(licenseKey: string): Promise<{ token: string; expires_at: string }> {
+/** The location this kiosk locked to at setup (business-key model). Null on a
+ * legacy per-location key, a manager/owner tenant-wide token, or before setup. */
+function kioskLockedLocation(db: Database.Database = getDb()): string | null {
+  return readSetting('kiosk_locked_location_id', db);
+}
+
+/**
+ * Call the jwt-issuer Edge Function and return the signed token + expiry.
+ * `locationId` (business-key POS) requests a location-scoped token; when omitted
+ * it falls back to this kiosk's stored lock so token REFRESHES stay scoped. Pass
+ * null explicitly (owner console) to force a tenant-wide token.
+ */
+export async function fetchToken(
+  licenseKey: string,
+  locationId?: string | null
+): Promise<{ token: string; expires_at: string }> {
   const cfg = functionUrl();
   if (!cfg) throw new Error('Supabase not configured — cannot fetch auth token.');
+  const location = locationId === undefined ? kioskLockedLocation() : locationId;
   const res = await fetch(cfg.url, {
     method: 'POST',
     headers: {
@@ -63,7 +84,7 @@ export async function fetchToken(licenseKey: string): Promise<{ token: string; e
       apikey: cfg.anonKey,
       Authorization: `Bearer ${cfg.anonKey}`,
     },
-    body: JSON.stringify({ license_key: licenseKey, machine_id: getMachineId() }),
+    body: JSON.stringify({ license_key: licenseKey, machine_id: getMachineId(), location_id: location ?? undefined }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -72,6 +93,29 @@ export async function fetchToken(licenseKey: string): Promise<{ token: string; e
   const data = (await res.json()) as { token: string; expires_at: string };
   if (!data?.token) throw new Error('jwt-issuer returned no token');
   return data;
+}
+
+/** List the business's locations for the POS one-time picker (no token/seat). */
+export async function listLocations(
+  licenseKey: string
+): Promise<{ locations: { id: string; name: string; is_storefront_enabled?: boolean }[]; kind: string; tenant_id: string }> {
+  const cfg = functionUrl();
+  if (!cfg) throw new Error('Supabase not configured — cannot list locations.');
+  const res = await fetch(cfg.url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: cfg.anonKey,
+      Authorization: `Bearer ${cfg.anonKey}`,
+    },
+    body: JSON.stringify({ license_key: licenseKey, list_locations: true }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`jwt-issuer ${res.status}: ${body || res.statusText}`);
+  }
+  const data = (await res.json()) as { locations?: { id: string; name: string; is_storefront_enabled?: boolean }[]; kind?: string; tenant_id?: string };
+  return { locations: data.locations ?? [], kind: data.kind ?? 'register', tenant_id: data.tenant_id ?? '' };
 }
 
 /** Persist a token + expiry to the local settings table. */
