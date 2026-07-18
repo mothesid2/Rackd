@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+
+body {
+  background:
+    radial-gradient(1100px 460px at 82% -8%, rgba(176, 29, 46, 0.06), rgba(176, 29, 46, 0) 60%),
+    #f5f2ed;
+  color: #17191d;
+  font-family: var(--font-body), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Display face carries the retail personality — heavy, tight, a little loud. */
+.font-display { font-family: var(--font-display), system-ui, sans-serif; }
+
+/* Uppercase eyebrow labels */
+.eyebrow {
+  font-family: var(--font-body), system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+/* Shelf-tag price: the number that does the selling */
+.price { font-family: var(--font-display), system-ui, sans-serif; font-weight: 800; letter-spacing: -0.01em; }
+
+/* subtle card lift on hover for tappable retail cards */
+.tap { transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease; }
+.tap:hover { transform: translateY(-2px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tap { transition: none; }
+  .tap:hover { transform: none; }
+}
