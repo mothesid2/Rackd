@@ -228,7 +228,7 @@
 
       if (res.success) {
         if (res.user?.must_change_password || res.user?.must_change_pin) {
-          openForcedChange(!!res.user.must_change_password, !!res.user.must_change_pin);
+          openForcedChange(!!res.user.must_change_password);
           return;
         }
         await window.api.navigate('main-menu');
@@ -285,7 +285,7 @@
       if (res.success) {
         pin = '';
         if (res.user?.must_change_pin || res.user?.must_change_password) {
-          openForcedChange(!!res.user.must_change_password, !!res.user.must_change_pin);
+          openForcedChange(!!res.user.must_change_password);
           renderPinDots();
           return;
         }
@@ -297,11 +297,13 @@
       pin = ''; renderPinDots();
     }
 
-    // Forced first-login change (cannot skip). Shows password fields only when the
-    // account has a password (admin/manager); cashiers set a PIN only.
-    function openForcedChange(needsPassword, needsPin) {
+    // Forced first-login change (cannot skip). Managers/admins set a password AND a
+    // PIN (all four boxes); cashiers set a PIN only (two boxes). A PIN is ALWAYS
+    // required here, so the PIN boxes always show — the password boxes show only for
+    // accounts that have a password.
+    function openForcedChange(needsPassword) {
       document.getElementById('cpPwFields').style.display = needsPassword ? 'block' : 'none';
-      document.getElementById('cpPinFields').style.display = needsPin ? 'block' : 'none';
+      document.getElementById('cpPinFields').style.display = 'block';
       document.getElementById('cpTitle').textContent = needsPassword ? 'Set your password & PIN' : 'Set your PIN';
       document.getElementById('cpSub').textContent = needsPassword
         ? 'For security, set your own password and PIN before continuing.'
