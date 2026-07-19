@@ -59,6 +59,8 @@
     <div class="modal">
       <h3>New business</h3>
       <div class="fg"><label>Business name</label><input id="bName" placeholder="e.g. Cloud Nine Vapes" /></div>
+      <div class="fg"><label>Admin username</label><input id="bAdminUser" placeholder="e.g. cloudnine" />
+        <div class="muted" style="font-size:11px;margin-top:4px">The client's admin login. A password is generated and shown once for you to deliver.</div></div>
       <div class="fg"><label>Locations (one per line)</label>
         <textarea id="bLocs" rows="3" style="width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:10px;color:var(--ink);font:inherit" placeholder="Downtown&#10;Westside"></textarea>
         <div class="muted" style="font-size:11px;margin-top:4px">One business key is issued for all of them. Each POS picks its location once.</div>
@@ -67,6 +69,22 @@
       <div class="row" style="justify-content:flex-end">
         <button class="btn" onclick="document.getElementById('bizModal').style.display='none'">Cancel</button>
         <button class="btn btn-accent" id="bCreate">Create business</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delivered credentials (shown once after creating a business) -->
+  <div class="overlay" id="credsModal">
+    <div class="modal" style="width:460px">
+      <h3>Business created — deliver these</h3>
+      <div class="muted" style="font-size:12.5px;margin-bottom:14px">Give the client their admin login and the business key. The password is shown <strong>once</strong>; the admin must change it on first login.</div>
+      <div class="stack" style="gap:10px">
+        <div><div class="muted" style="font-size:11px">Business key (activates POS + Manager Portal)</div><div class="keycode" id="cKey" style="font-size:14px;display:inline-block;margin-top:3px"></div></div>
+        <div><div class="muted" style="font-size:11px">Admin username</div><div class="keycode" id="cUser" style="font-size:14px;display:inline-block;margin-top:3px"></div></div>
+        <div><div class="muted" style="font-size:11px">Admin password (one-time)</div><div class="keycode" id="cPass" style="font-size:14px;display:inline-block;margin-top:3px"></div></div>
+      </div>
+      <div class="row" style="justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-accent" onclick="document.getElementById('credsModal').style.display='none'">Done</button>
       </div>
     </div>
   </div>

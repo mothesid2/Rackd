@@ -5,18 +5,20 @@ import { nowCT } from '../utils/time';
 import { assertWritable } from '../supabase/licenseCheck';
 import { isDayOpen, openDay, touchActivity, clearActivity } from '../daySession';
 
+type Role = 'admin' | 'manager' | 'cashier';
 interface User {
   id: number;
-  username: string;
-  password_hash: string;
-  role: 'manager' | 'cashier';
+  username: string | null;
+  password_hash: string | null;
+  role: Role;
   must_change_password: number;
+  must_change_pin: number;
 }
 
 interface Session {
   userId: number;
   username: string;
-  role: 'manager' | 'cashier';
+  role: Role;
 }
 
 let currentSession: Session | null = null;
@@ -40,7 +42,9 @@ export function registerAuthHandlers(): void {
         .prepare('SELECT * FROM users WHERE username = ?')
         .get(username) as User | undefined;
 
-      if (!user) {
+      // Cashiers have no username/password (PIN only), so a null password never
+      // authenticates here.
+      if (!user || !user.password_hash) {
         return { success: false, error: 'Invalid username or password' };
       }
 
@@ -49,19 +53,19 @@ export function registerAuthHandlers(): void {
         return { success: false, error: 'Invalid username or password' };
       }
 
-      // Business-day gate: the first login of the day must be a MANAGER (full
-      // username + password), which opens the day. After that, staff sign in with
-      // a PIN. A cashier cannot open the day.
+      // Business-day gate: the first login of the day must be an ADMIN or MANAGER
+      // (full username + password), which opens the day. After that, staff sign in
+      // with a PIN. A cashier cannot open the day.
       if (!isDayOpen(db)) {
-        if (user.role !== 'manager') {
+        if (user.role !== 'manager' && user.role !== 'admin') {
           return { success: false, error: 'A manager must open the day first with a username and password.' };
         }
-        openDay(user.id, user.username, db);
+        openDay(user.id, user.username as string, db);
       }
 
       currentSession = {
         userId: user.id,
-        username: user.username,
+        username: user.username as string,
         role: user.role,
       };
       touchActivity();
@@ -81,6 +85,7 @@ export function registerAuthHandlers(): void {
           username: user.username,
           role: user.role,
           must_change_password: user.must_change_password === 1,
+          must_change_pin: user.must_change_pin === 1,
         },
       };
     } catch (err) {
@@ -100,13 +105,58 @@ export function registerAuthHandlers(): void {
       const { verifyPin } = require('../permissions') as typeof import('../permissions');
       const r = verifyPin(db, String(pin || ''));
       if (!r.ok || !r.employee) return { success: false, error: r.error, lockedUntil: r.lockedUntil };
-      currentSession = { userId: r.employee.id, username: r.employee.username, role: r.employee.role as 'manager' | 'cashier' };
+      currentSession = { userId: r.employee.id, username: r.employee.username, role: r.employee.role as Role };
       touchActivity();
       const openShift = db.prepare(
         `SELECT id FROM shift_totals WHERE cashier_id = ? AND closed_at IS NULL ORDER BY opened_at DESC LIMIT 1`
       ).get(r.employee.id);
       if (!openShift) db.prepare(`INSERT INTO shift_totals (cashier_id, opened_at) VALUES (?, ?)`).run(r.employee.id, nowCT());
-      return { success: true, user: { id: r.employee.id, username: r.employee.username, name: r.employee.name, role: r.employee.role } };
+      // Forced PIN change on first login (managers + cashiers).
+      const mcp = db.prepare('SELECT must_change_pin, must_change_password FROM users WHERE id = ?').get(r.employee.id) as { must_change_pin: number; must_change_password: number } | undefined;
+      return {
+        success: true,
+        user: {
+          id: r.employee.id, username: r.employee.username, name: r.employee.name, role: r.employee.role,
+          must_change_pin: mcp?.must_change_pin === 1, must_change_password: mcp?.must_change_password === 1,
+        },
+      };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // First-login credential change (forced, cannot skip). Admin/managers set a new
+  // password AND PIN; cashiers set a new PIN. Clears the flags and syncs the new
+  // credentials so they apply on every kiosk + the portal.
+  ipcMain.handle('auth:completeFirstLogin', (_event, args: { newPassword?: string; newPin?: string }) => {
+    try {
+      if (!currentSession) return { success: false, error: 'Not signed in' };
+      const db = getDb();
+      const u = db.prepare('SELECT id, uid, role, must_change_password, must_change_pin FROM users WHERE id = ?').get(currentSession.userId) as
+        | { id: number; uid: string | null; role: Role; must_change_password: number; must_change_pin: number } | undefined;
+      if (!u) return { success: false, error: 'User not found' };
+
+      const needsPassword = u.role !== 'cashier';
+      const newPin = String(args?.newPin ?? '');
+      const newPassword = String(args?.newPassword ?? '');
+      if (newPin.length < 4 || !/^\d+$/.test(newPin)) return { success: false, error: 'PIN must be at least 4 digits.' };
+      if (needsPassword && newPassword.length < 6) return { success: false, error: 'Password must be at least 6 characters.' };
+
+      // A new PIN must be unique (PIN sign-in resolves by matching any employee).
+      const others = db.prepare("SELECT id, pin_hash FROM users WHERE is_active = 1 AND id <> ? AND pin_hash IS NOT NULL AND pin_hash <> ''").all(u.id) as { id: number; pin_hash: string }[];
+      if (others.some((o) => bcrypt.compareSync(newPin, o.pin_hash))) return { success: false, error: 'That PIN is already in use — choose another.' };
+
+      db.transaction(() => {
+        if (needsPassword) {
+          db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(bcrypt.hashSync(newPassword, 10), u.id);
+        }
+        db.prepare('UPDATE users SET pin_hash = ?, must_change_pin = 0, pin_fail_count = 0 WHERE id = ?').run(bcrypt.hashSync(newPin, 10), u.id);
+        try {
+          const { enqueueEmployee } = require('../supabase/sync') as typeof import('../supabase/sync');
+          if (u.uid) enqueueEmployee('update', u.uid, db);
+        } catch { /* offline — syncs later */ }
+      })();
+      return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
     }
@@ -196,9 +246,9 @@ export function registerAuthHandlers(): void {
     try {
       const db = getDb();
       const user = db.prepare(
-        `SELECT * FROM users WHERE username = ? AND role = 'manager'`
+        `SELECT * FROM users WHERE username = ? AND role IN ('manager','admin')`
       ).get(username) as User | undefined;
-      if (!user) return { success: false, error: 'No manager found with that username' };
+      if (!user || !user.password_hash) return { success: false, error: 'No manager found with that username' };
       const valid = bcrypt.compareSync(password, user.password_hash);
       if (!valid) return { success: false, error: 'Invalid password' };
       return { success: true };
@@ -215,6 +265,7 @@ export function registerAuthHandlers(): void {
         .prepare('SELECT * FROM users WHERE id = ?')
         .get(currentSession.userId) as User;
 
+      if (!user.password_hash) return { success: false, error: 'This account has no password.' };
       const valid = bcrypt.compareSync(oldPass, user.password_hash);
       if (!valid) return { success: false, error: 'Current password is incorrect' };
 

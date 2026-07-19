@@ -11,6 +11,7 @@ import { migration009 } from './009_rebate_settings';
 import { migration010 } from './010_permissions';
 import { migration011 } from './011_time_clock';
 import { migration012 } from './012_online_order_source';
+import { migration013 } from './013_admin_role';
 
 /**
  * A single schema change. Migrations are applied in `id` order exactly once and
@@ -26,7 +27,7 @@ export interface Migration {
 }
 
 // Ordered registry. Append new migrations here.
-const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012];
+const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013];
 
 /**
  * Run any migrations that haven't been applied yet. Idempotent: safe to call

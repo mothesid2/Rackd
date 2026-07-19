@@ -183,14 +183,35 @@
         name: document.getElementById('eName').value.trim(),
         username: document.getElementById('eUser').value.trim(),
         role: document.getElementById('eRole').value,
-        pin: document.getElementById('ePin').value.trim() || undefined,
         is_active: document.getElementById('eActive').checked,
       };
       const btn = document.getElementById('empSave'); btn.disabled = true; btn.textContent = 'Saving…';
       const r = await window.api.permsSaveEmployee(emp);
       btn.disabled = false; btn.textContent = 'Save';
       if (!r.success) { showToast(r.error||'Failed','error'); return; }
-      selected = r.uid; closeModal('empModal'); showToast('Saved', 'success'); loadStaff();
+      selected = r.uid; closeModal('empModal'); loadStaff();
+      // New staff get randomly generated credentials — show them ONCE to hand over.
+      if (r.credentials) showCreds(r.credentials);
+      else showToast('Saved', 'success');
+    }
+
+    // One-time display of a new employee's generated login. They must change these
+    // on first sign-in.
+    function showCreds(c) {
+      const rows = [];
+      if (c.username) rows.push(['Username', c.username]);
+      if (c.password) rows.push(['Password', c.password]);
+      rows.push(['PIN', c.pin]);
+      const el = document.createElement('div');
+      el.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(6,8,11,.6)';
+      el.innerHTML = `<div style="width:400px;max-width:92%;background:#fff;border-radius:16px;padding:24px;box-shadow:0 16px 44px rgba(0,0,0,.35)">
+        <div style="font-size:18px;font-weight:800;margin-bottom:4px">${esc(c.name)} — ${c.role === 'manager' ? 'Manager' : 'Cashier'} added</div>
+        <div style="font-size:13px;color:#666;margin-bottom:16px">Give these to the employee. Shown once — they'll change them on first sign-in.</div>
+        ${rows.map(([k,v]) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #eee"><span style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.05em">${k}</span><code style="font-size:16px;font-weight:700;letter-spacing:1px">${esc(v)}</code></div>`).join('')}
+        <button id="credsDone" style="width:100%;margin-top:18px;padding:12px;border:none;border-radius:10px;background:#1b1d21;color:#fff;font-weight:700;cursor:pointer">Done</button>
+      </div>`;
+      document.body.appendChild(el);
+      el.querySelector('#credsDone').addEventListener('click', () => el.remove());
     }
 
     async function loadLog() {

@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import bcrypt from 'bcryptjs';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes } from 'crypto';
 import { getDb } from '../db/schema';
 import { getCurrentSession } from './auth';
 import { nowCT } from '../utils/time';
@@ -9,8 +9,29 @@ import { PERMISSION_KEYS, permissionsForUser, pinLockState, requirePermission } 
 import type { PermissionKey } from '../permissions';
 import { enqueueEmployee, enqueueEmployeePermission } from '../supabase/sync';
 
+// Admin holds every manager capability, so "manager access" is satisfied by admin too.
 function isManager(): boolean {
-  return getCurrentSession()?.role === 'manager';
+  const r = getCurrentSession()?.role;
+  return r === 'manager' || r === 'admin';
+}
+function isAdmin(): boolean {
+  return getCurrentSession()?.role === 'admin';
+}
+
+// Credential generators for admin/manager-created staff.
+function genPassword(): string {
+  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ', a = 'abcdefghijkmnpqrstuvwxyz', d = '23456789';
+  const pick = (s: string, n: number) => Array.from(randomBytes(n), (b) => s[b % s.length]).join('');
+  return `${pick(A, 2)}${pick(a, 4)}-${pick(d, 4)}`;
+}
+/** A random numeric PIN not already in use by an active employee. */
+function genUniquePin(db: ReturnType<typeof getDb>, len = 4): string {
+  const rows = db.prepare("SELECT pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND pin_hash <> ''").all() as { pin_hash: string }[];
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const pin = Array.from(randomBytes(len), (b) => String(b % 10)).join('');
+    if (!rows.some((r) => bcrypt.compareSync(pin, r.pin_hash))) return pin;
+  }
+  return String(Date.now()).slice(-len); // extremely unlikely fallback
 }
 
 export function registerPermissionHandlers(): void {
@@ -54,33 +75,64 @@ export function registerPermissionHandlers(): void {
   });
 
   // Create/update an employee (+ optional PIN reset).
+  // Create or edit a staff member (new auth model):
+  //  • Manager: username + RANDOM password + RANDOM PIN. Must change both on first
+  //    login. Only an admin can create managers.
+  //  • Cashier: RANDOM PIN only — no username/password. Must change the PIN on first
+  //    login. Admin or manager can create cashiers.
+  // Generated credentials are returned ONCE so the creator can hand them over.
   ipcMain.handle('perms:saveEmployee', (_e, emp: Record<string, unknown>) => {
     if (!isManager()) return { success: false, error: 'Manager access required' };
     const w = assertWritable('employee_manage'); if (!w.ok) return { success: false, error: w.error };
     const db = getDb();
     try {
       const role = emp.role === 'manager' ? 'manager' : 'cashier';
-      let id = emp.id as number | undefined;
-      let uid = '';
-      db.transaction(() => {
-        if (id) {
+      const editing = !!emp.id;
+
+      // ── edit an existing employee: name / active / role only (no cred regen here) ──
+      if (editing) {
+        if (role === 'manager' && !isAdmin()) return { success: false, error: 'Only an admin can set a manager role.' };
+        const id = emp.id as number;
+        db.transaction(() => {
           db.prepare('UPDATE users SET name = ?, role = ?, is_active = ? WHERE id = ?')
             .run((emp.name as string) || null, role, emp.is_active === false ? 0 : 1, id);
-          uid = (db.prepare('SELECT uid FROM users WHERE id = ?').get(id) as { uid: string }).uid;
-        } else {
-          uid = randomUUID();
-          const username = String(emp.username || emp.name || ('user_' + uid.slice(0, 6))).trim();
-          const r = db.prepare("INSERT INTO users (uid, username, name, role, password_hash, is_active) VALUES (?, ?, ?, ?, '', ?)")
-            .run(uid, username, (emp.name as string) || username, role, emp.is_active === false ? 0 : 1);
-          id = r.lastInsertRowid as number;
-        }
-        if (emp.pin) {
-          if (String(emp.pin).length < 4) throw new Error('PIN must be at least 4 digits');
-          db.prepare('UPDATE users SET pin_hash = ?, pin_fail_count = 0 WHERE id = ?').run(bcrypt.hashSync(String(emp.pin), 10), id);
-        }
-        enqueueEmployee(emp.id ? 'update' : 'insert', uid, db);
+          const uid = (db.prepare('SELECT uid FROM users WHERE id = ?').get(id) as { uid: string }).uid;
+          enqueueEmployee('update', uid, db);
+        })();
+        return { success: true, id: emp.id };
+      }
+
+      // ── create a new employee with generated credentials ──
+      if (role === 'manager' && !isAdmin()) return { success: false, error: 'Only an admin can add managers.' };
+      const name = String(emp.name || '').trim();
+      if (!name) return { success: false, error: 'Enter a name.' };
+
+      const uid = randomUUID();
+      const pin = genUniquePin(db);
+      const pinHash = bcrypt.hashSync(pin, 10);
+      let username: string | null = null;
+      let password: string | null = null;
+      let passwordHash: string | null = null;
+
+      if (role === 'manager') {
+        username = String(emp.username || '').trim();
+        if (!username) return { success: false, error: 'Enter a username for the manager.' };
+        if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) return { success: false, error: 'That username is already taken.' };
+        password = genPassword();
+        passwordHash = bcrypt.hashSync(password, 10);
+      }
+
+      db.transaction(() => {
+        db.prepare(
+          `INSERT INTO users (uid, username, name, role, password_hash, pin_hash, is_active, must_change_password, must_change_pin)
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1)`
+        ).run(uid, username, name, role, passwordHash, pinHash, role === 'manager' ? 1 : 0);
+        enqueueEmployee('insert', uid, db);
       })();
-      return { success: true, id, uid };
+
+      const id = (db.prepare('SELECT id FROM users WHERE uid = ?').get(uid) as { id: number }).id;
+      // Return the generated credentials ONCE for the creator to deliver.
+      return { success: true, id, uid, credentials: { role, name, username, password, pin } };
     } catch (err) {
       return { success: false, error: String((err as Error)?.message || err) };
     }

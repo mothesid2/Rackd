@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   login: (username: string, password: string) =>
     ipcRenderer.invoke('auth:login', username, password),
   pinLogin: (pin: string) => ipcRenderer.invoke('auth:pinLogin', pin),
+  completeFirstLogin: (args: { newPassword?: string; newPin?: string }) => ipcRenderer.invoke('auth:completeFirstLogin', args),
   logout: () => ipcRenderer.invoke('auth:logout'),
   getSession: () => ipcRenderer.invoke('auth:getSession'),
 

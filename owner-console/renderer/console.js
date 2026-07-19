@@ -192,13 +192,19 @@ function switchTab(tab) {
 // ── modal actions ──────────────────────────────────────────────────────────────
 $('bCreate').addEventListener('click', async () => {
   const name = $('bName').value.trim();
+  const admin_username = $('bAdminUser').value.trim();
   const locations = $('bLocs').value.split('\n').map((s) => s.trim()).filter(Boolean);
   const max_registers = Math.max(1, Number($('bSeats').value) || 1);
   if (!name) { toast('Enter a business name', true); return; }
-  const r = await window.owner.createBusiness({ name, locations, max_registers });
+  if (!admin_username) { toast('Enter an admin username', true); return; }
+  const r = await window.owner.createBusiness({ name, admin_username, locations, max_registers });
   if (!r.success) { toast(r.error, true); return; }
   $('bizModal').style.display = 'none';
-  toast('Business created');
+  // Show the delivered credentials once (business key + admin login).
+  $('cKey').textContent = (r.license && r.license.license_key) || '—';
+  $('cUser').textContent = (r.admin && r.admin.username) || admin_username;
+  $('cPass').textContent = (r.admin && r.admin.password) || '—';
+  $('credsModal').style.display = 'flex';
   await loadBusinesses(); switchTab('businesses');
 });
 $('lCreate').addEventListener('click', async () => {

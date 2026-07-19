@@ -93,6 +93,12 @@ async function bindLicense(key: string, locationId: string | null): Promise<{ su
 
   // Pull the full license row (expires_at, display_config, etc.) now that we hold a JWT.
   await refreshLicense().catch(() => {});
+  // Pull the business's staff immediately so the provisioned admin credential works
+  // right after setup (the login screen expects an existing account, not "create").
+  try {
+    const { triggerSyncNow } = require('../supabase/sync') as typeof import('../supabase/sync');
+    await triggerSyncNow();
+  } catch { /* non-fatal — the 60s worker will pull shortly */ }
   const status = computeStatus();
   return { success: true, tier: status.tier, features: status.features, tenant_id: claims.tenant_id as string };
 }

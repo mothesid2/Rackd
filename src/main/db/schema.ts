@@ -25,6 +25,7 @@ export function getDb(): Database.Database {
     db.pragma('foreign_keys = ON');
     initSchema(db);
     runMigrations(db);
+    bootstrapFirstRun(db);
   }
   return db;
 }
@@ -325,14 +326,27 @@ export function initSchema(db: Database.Database): void {
   try { db.exec(`ALTER TABLE customers ADD COLUMN sms_consent_at TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE customers ADD COLUMN sms_consent_signature TEXT`); } catch { /* already exists */ }
 
-  // First-run bootstrap: if there are no users yet (fresh install on a new
-  // computer), create a default manager account that MUST change its password
-  // on first login. This makes a brand-new install both usable and secure.
-  const userCount = (db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n;
-  if (userCount === 0) {
-    const hash = bcrypt.hashSync('admin123', 10);
-    db.prepare(
-      "INSERT INTO users (username, password_hash, role, must_change_password) VALUES ('admin', ?, 'manager', 1)"
-    ).run(hash);
-  }
+  // No default admin is seeded anymore. The business admin is provisioned centrally
+  // (Owner Console → New business) and delivered to the client; it syncs to the POS
+  // on activation. First launch prompts to LOG IN with that credential, never to
+  // "create your login". See bootstrapFirstRun() for the dev-only fallback.
+}
+
+/**
+ * Dev-only convenience: on a brand-new local DB with no users, seed a default
+ * admin ONLY when RACKD_DEV_SEED=1 is set — so a developer can run the POS without
+ * activating against the cloud. Real client installs never set this, so they have
+ * no local admin until the provisioned one syncs down. Runs AFTER migrations so
+ * the 'admin' role + must_change_pin exist. The seeded admin must change its
+ * password + PIN on first login.
+ */
+export function bootstrapFirstRun(db: Database.Database): void {
+  if (process.env.RACKD_DEV_SEED !== '1') return;
+  const n = (db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n;
+  if (n > 0) return;
+  const hash = bcrypt.hashSync('admin123', 10);
+  db.prepare(
+    "INSERT INTO users (username, name, password_hash, role, is_active, must_change_password, must_change_pin) VALUES ('admin', 'Admin', ?, 'admin', 1, 1, 1)"
+  ).run(hash);
+  console.log('[dev] seeded default admin (admin/admin123) — RACKD_DEV_SEED=1');
 }

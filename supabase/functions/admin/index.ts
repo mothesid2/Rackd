@@ -10,9 +10,20 @@
 //               ADMIN_SECRET (set via `supabase secrets set ADMIN_SECRET=...`)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import bcrypt from 'https://esm.sh/bcryptjs@2.4.3';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+// Readable random password for the delivered admin credential (bcrypt-hashed to
+// employees_cloud; the admin must change it on first login).
+function genPassword(): string {
+  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const a = 'abcdefghijkmnpqrstuvwxyz';
+  const d = '23456789';
+  const pick = (s: string, n: number) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => s[b % s.length]).join('');
+  return `${pick(A, 2)}${pick(a, 4)}-${pick(d, 4)}`;
 }
 
 const KEY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
@@ -168,7 +179,23 @@ Deno.serve(async (req: Request) => {
         };
         const { data, error } = await admin.from('licenses').insert(row).select().single();
         if (error) throw error;
-        return json({ license: data, tenant_id: tenantId, locations: locs ?? [] });
+
+        // Provision the business ADMIN credential (delivered to the client at
+        // onboarding). Business-wide (location_id null) so every kiosk can use it;
+        // must change the password on first login. Synced to the POS on activation.
+        const adminUsername = (body.admin_username as string)?.trim() || 'admin';
+        const adminPassword = genPassword();
+        const adminHash = bcrypt.hashSync(adminPassword, 10);
+        await admin.from('employees_cloud').insert({
+          uid: crypto.randomUUID(), tenant_id: tenantId, location_id: null,
+          username: adminUsername, name: (body.name as string)?.trim() || 'Admin', role: 'admin',
+          password_hash: adminHash, is_active: true, must_change_password: true, must_change_pin: false,
+        });
+
+        return json({
+          license: data, tenant_id: tenantId, locations: locs ?? [],
+          admin: { username: adminUsername, password: adminPassword },
+        });
       }
 
       // List a business's locations with seat usage (owner console location manager).

@@ -62,8 +62,11 @@ const SYNC_POLICY: Record<string, Policy> = {
 // 'employees' is now a valid policy key (staff records sync via the users table
 // through the enqueueEmployee producer). 'users'/'settings' stay local-only.
 const NEVER_SYNC = new Set(['settings', 'sync_queue', 'conflicts', 'users']);
-// Stripped from any payload before it can reach the cloud.
-const SENSITIVE_FIELDS = ['pin', 'password', 'password_hash', 'token', 'auth_token'];
+// Stripped from any payload before it can reach the cloud. Note: password_hash is
+// NOT stripped — bcrypt hashes for admin/manager sync (tenant-scoped) so one
+// username+password works at every kiosk's start-of-day and the Manager Portal.
+// Only PLAINTEXT secrets are stripped.
+const SENSITIVE_FIELDS = ['pin', 'password', 'token', 'auth_token'];
 
 // ── settings-table helpers (sync status log) ────────────────────────────────
 function writeSetting(key: string, value: string, db: Database.Database = getDb()): void {
@@ -763,19 +766,34 @@ registerPullSpec('rebate_rules', { cloudTable: 'rebate_rules_cloud', scope: 'ten
 // ── Staff + permissions: pull DOWN (location config); override log pushes UP ───
 function applyEmployee(row: Record<string, unknown>, db: Database.Database = getDb()): void {
   const uid = String(row.uid ?? ''); if (!uid) return;
-  const role = row.role === 'manager' ? 'manager' : 'cashier';
+  const role = row.role === 'admin' ? 'admin' : row.role === 'manager' ? 'manager' : 'cashier';
+  const username = (row.username as string) ?? null; // null for cashiers (PIN only)
+  const mcp = row.must_change_password ? 1 : 0;
+  const mcpin = row.must_change_pin ? 1 : 0;
   const existing = db.prepare('SELECT id FROM users WHERE uid = ?').get(uid) as { id: number } | undefined;
   if (existing) {
-    db.prepare(`UPDATE users SET name=?, role=?, pin_hash=COALESCE(?, pin_hash), is_active=?, location_id=? WHERE uid=?`)
-      .run((row.name as string) ?? null, role, (row.pin_hash as string) ?? null, row.is_active ? 1 : 0, (row.location_id as string) ?? null, uid);
+    // COALESCE the hashes so a payload that omits one (e.g. a cashier row with no
+    // password) never wipes a locally-set credential.
+    db.prepare(
+      `UPDATE users SET username=?, name=?, role=?, password_hash=COALESCE(?, password_hash),
+         pin_hash=COALESCE(?, pin_hash), is_active=?, must_change_password=?, must_change_pin=?, location_id=? WHERE uid=?`
+    ).run(
+      username, (row.name as string) ?? null, role, (row.password_hash as string) ?? null,
+      (row.pin_hash as string) ?? null, row.is_active ? 1 : 0, mcp, mcpin, (row.location_id as string) ?? null, uid
+    );
   } else {
-    const username = String(row.username ?? ('user_' + uid.slice(0, 8)));
-    // Don't collide with a different local user's unique username.
-    const clash = db.prepare('SELECT 1 FROM users WHERE username = ? AND (uid IS NULL OR uid <> ?)').get(username, uid);
-    if (clash) return;
-    db.prepare(`INSERT INTO users (uid, username, name, role, password_hash, pin_hash, is_active, location_id)
-                VALUES (?, ?, ?, ?, '', ?, ?, ?)`)
-      .run(uid, username, (row.name as string) ?? null, role, (row.pin_hash as string) ?? null, row.is_active ? 1 : 0, (row.location_id as string) ?? null);
+    // Only guard against a username collision when this staff member has one.
+    if (username) {
+      const clash = db.prepare('SELECT 1 FROM users WHERE username = ? AND (uid IS NULL OR uid <> ?)').get(username, uid);
+      if (clash) return;
+    }
+    db.prepare(
+      `INSERT INTO users (uid, username, name, role, password_hash, pin_hash, is_active, must_change_password, must_change_pin, location_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      uid, username, (row.name as string) ?? null, role, (row.password_hash as string) ?? null,
+      (row.pin_hash as string) ?? null, row.is_active ? 1 : 0, mcp, mcpin, (row.location_id as string) ?? null
+    );
   }
 }
 function applyEmployeePermission(row: Record<string, unknown>, db: Database.Database = getDb()): void {
@@ -789,8 +807,10 @@ function applyEmployeePermission(row: Record<string, unknown>, db: Database.Data
     grant: row.is_granted ? 1 : 0, val: row.value ?? null, upd: String(row.updated_at ?? new Date().toISOString()),
   });
 }
-registerPullSpec('employees', { cloudTable: 'employees_cloud', apply: applyEmployee });
-registerPullSpec('employee_permissions', { cloudTable: 'employee_permissions_cloud', apply: applyEmployeePermission });
+// Staff are business-wide (the admin has no location; managers roam between
+// kiosks), so pull them tenant-wide rather than per-location.
+registerPullSpec('employees', { cloudTable: 'employees_cloud', scope: 'tenant', apply: applyEmployee });
+registerPullSpec('employee_permissions', { cloudTable: 'employee_permissions_cloud', scope: 'tenant', apply: applyEmployeePermission });
 
 function applyTimeClock(row: Record<string, unknown>, db: Database.Database = getDb()): void {
   const uid = String(row.uid ?? ''); if (!uid) return;
@@ -823,8 +843,10 @@ export function enqueueEmployee(operation: SyncOp, uid: string, db: Database.Dat
   const u = db.prepare('SELECT * FROM users WHERE uid = ?').get(uid) as Record<string, unknown> | undefined;
   if (!u) return false;
   return enqueueSync('employees', String(uid), operation, {
-    tenant_id: getTenantId(db), uid: u.uid, username: u.username, name: u.name ?? null,
-    role: u.role, pin_hash: u.pin_hash ?? null, is_active: !!u.is_active, updated_at: new Date().toISOString(),
+    tenant_id: getTenantId(db), uid: u.uid, username: u.username ?? null, name: u.name ?? null,
+    role: u.role, password_hash: u.password_hash ?? null, pin_hash: u.pin_hash ?? null,
+    must_change_password: !!u.must_change_password, must_change_pin: !!u.must_change_pin,
+    is_active: !!u.is_active, updated_at: new Date().toISOString(),
   }, db);
 }
 /** Push a single permission grant up. */
