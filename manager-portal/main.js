@@ -160,6 +160,12 @@ ipcMain.handle('portal:changePassword', async (_e, { username, oldPassword, newP
 });
 
 ipcMain.handle('portal:logout', () => { token = null; session = null; return { success: true }; });
+// Disconnect from the current business so a new business key can be entered.
+ipcMain.handle('portal:clearBusiness', () => {
+  token = null; session = null;
+  portalStore.businessKey = null; savePortalStore();
+  return { success: true };
+});
 ipcMain.handle('portal:session', () => ({ success: true, session }));
 
 // ── reporting ────────────────────────────────────────────────────────────────

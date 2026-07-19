@@ -31,6 +31,11 @@ function range() { return { start: document.getElementById('startDate').value, e
   document.querySelectorAll('.navbtn').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
   document.getElementById('applyRange').addEventListener('click', () => render());
   document.getElementById('logout').addEventListener('click', async () => { await window.portal.logout(); window.location.href = 'login.html'; });
+  document.getElementById('changeBusiness').addEventListener('click', async () => {
+    if (!confirm('Disconnect from this business and enter a new business key?')) return;
+    await window.portal.clearBusiness();
+    window.location.href = 'login.html';
+  });
   document.getElementById('cSave').addEventListener('click', saveCustomer);
   document.getElementById('nSave').addEventListener('click', saveNewCustomer);
   document.getElementById('mSave').addEventListener('click', saveMenuItem);

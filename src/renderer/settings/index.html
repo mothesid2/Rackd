@@ -367,6 +367,11 @@
             <option value="staging">Staging (test builds first)</option>
           </select>
         </div>
+        <div class="form-group" style="max-width:360px;margin-top:18px;border-top:1px solid #eee;padding-top:16px">
+          <label>Store connection</label>
+          <p style="font-size:12px;color:#888;margin:0 0 10px">Disconnect this register from its current business/location so you can enter a new activation key. Data already synced to the cloud is kept.</p>
+          <button class="btn" style="background:#b91c1c;color:#fff" onclick="disconnectRegister()">Disconnect &amp; change store…</button>
+        </div>
       </div>
     </div>
   </div>
@@ -623,6 +628,15 @@
         image: r.querySelector('.ad-image').value.trim(),
       })).filter((s) => s.image);
     }
+    // Owner-gated: unbind this register from its store so a new business key can be
+    // entered. Clears the local activation + location lock, then returns to setup.
+    async function disconnectRegister() {
+      if (!confirm('Disconnect this register from its current store?\n\nYou will need a business key to set it up again. Sales already synced to the cloud are kept — this does not delete data.')) return;
+      const r = await window.api.licenseDeactivate();
+      if (r && r.success === false) { showToast(r.error || 'Could not disconnect', 'error'); return; }
+      await window.api.navigate('activation');
+    }
+
     async function saveOwnerDisplay() {
       if (!ownerPinCached) { showToast('Unlock the Owner Console first', 'warning'); return; }
       const res = await window.api.ownerSetDisplayConfig(ownerPinCached, {

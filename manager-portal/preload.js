@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('portal', {
   login: (args) => ipcRenderer.invoke('portal:login', args),
   changePassword: (args) => ipcRenderer.invoke('portal:changePassword', args),
   logout: () => ipcRenderer.invoke('portal:logout'),
+  clearBusiness: () => ipcRenderer.invoke('portal:clearBusiness'),
   session: () => ipcRenderer.invoke('portal:session'),
   dashboard: (range) => ipcRenderer.invoke('portal:dashboard', range),
   locationReport: (args) => ipcRenderer.invoke('portal:locationReport', args),
