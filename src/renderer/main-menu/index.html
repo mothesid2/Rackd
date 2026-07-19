@@ -17,26 +17,14 @@
     }
     body { overflow: hidden; }
 
+    /* Full height minus the fixed 44px status bar — nothing can hide under it. */
     .launcher {
-      height: 100vh;
+      height: calc(100vh - 44px);
       display: flex;
       flex-direction: column;
-      gap: 16px;
-      padding: 20px 26px 44px;
+      gap: 14px;
+      padding: 18px 26px 16px;
     }
-
-    /* ── header: brand + live clock ─────────────────────────────────────────── */
-    .lch-header { display: flex; align-items: center; justify-content: space-between; }
-    .lch-brand { display: flex; align-items: center; gap: 14px; }
-    .lch-brand img { height: 56px; width: auto; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.18)); }
-    .lch-brand .wordmark {
-      font-family: 'Tw Cen MT','Century Gothic','Futura','Gill Sans','Segoe UI',sans-serif;
-      font-size: 40px; font-weight: 500; letter-spacing: 5px; line-height: 1;
-    }
-    .lch-brand .wordmark .d { color: var(--accent); text-shadow: 0 0 14px rgba(176,29,46,0.55); }
-    .lch-clock { text-align: right; }
-    .lch-clock .day { font-size: 15px; font-weight: 700; color: var(--ink); }
-    .lch-clock .who { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 
     /* ── metrics strip ──────────────────────────────────────────────────────── */
     .lch-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
@@ -45,8 +33,8 @@
       padding: 14px 18px; display: flex; align-items: center; gap: 14px;
       box-shadow: 0 1px 0 rgba(0,0,0,0.03), 0 8px 22px -14px rgba(0,0,0,0.25);
     }
-    .stat .ic { width: 40px; height: 40px; border-radius: 11px; flex: 0 0 auto; display: grid; place-items: center; }
-    .stat .ic svg { width: 20px; height: 20px; }
+    .stat .ic { width: 46px; height: 46px; border-radius: 12px; flex: 0 0 auto; display: grid; place-items: center; }
+    .stat .ic svg { width: 24px; height: 24px; }
     .stat.revenue .ic { background: rgba(70,160,90,0.12); color: #2f8f4e; }
     .stat.profit  .ic { background: rgba(176,29,46,0.10); color: var(--accent); }
     .stat.sales   .ic { background: rgba(40,60,90,0.10);  color: #2f4d7a; }
@@ -91,10 +79,10 @@
     .tile:hover::before { opacity: 1; }
     .tile:active { transform: translateY(-1px); }
     .tile .t-ic {
-      width: 52px; height: 52px; border-radius: 13px; display: grid; place-items: center;
+      width: 62px; height: 62px; border-radius: 15px; display: grid; place-items: center;
       background: rgba(176,29,46,0.16); border: 1px solid rgba(176,29,46,0.28);
     }
-    .tile .t-ic svg { width: 26px; height: 26px; color: #f0a6ae; }
+    .tile .t-ic svg { width: 34px; height: 34px; color: #f0a6ae; }
     .tile .t-title { font-size: 19px; font-weight: 700; color: #fff; line-height: 1.15; }
     .tile .t-sub { font-size: 12.5px; color: rgba(255,255,255,0.6); margin-top: 2px; }
     .tile .t-arrow { position: absolute; top: 16px; right: 16px; color: rgba(255,255,255,0.3); }
@@ -115,24 +103,12 @@
     .fullscreen-btn:hover { background: rgba(176,29,46,0.9); color: #fff; }
     .fullscreen-btn svg { width: 15px; height: 15px; }
 
-    @media (max-height: 720px) { .tile .t-ic { width: 44px; height: 44px; } .new-sale { height: 58px; } }
+    @media (max-height: 720px) { .tile .t-ic { width: 52px; height: 52px; } .tile .t-ic svg { width: 28px; height: 28px; } .new-sale { height: 56px; } .tile { padding: 14px 18px; } }
     @media (prefers-reduced-motion: reduce) { .tile, .new-sale { transition: none; } }
   </style>
 </head>
 <body>
   <div class="launcher">
-    <!-- Header -->
-    <div class="lch-header">
-      <div class="lch-brand">
-        <img src="../../../assets/logo-mark-dark.svg" alt="" />
-        <span class="wordmark"><span style="color:#23272d">Rack</span><span class="d">D</span></span>
-      </div>
-      <div class="lch-clock">
-        <div class="day" id="clockDay">—</div>
-        <div class="who" id="clockWho"></div>
-      </div>
-    </div>
-
     <!-- Today's metrics -->
     <div class="lch-metrics">
       <div class="stat revenue">
@@ -235,9 +211,6 @@
     document.addEventListener('DOMContentLoaded', async () => {
       const { session } = await window.api.getSession();
       currentRole = session?.role;
-      // Header: date + who's signed in.
-      document.getElementById('clockDay').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-      if (session?.username) document.getElementById('clockWho').textContent = `${session.username} · ${session.role || ''}`;
 
       if (session?.role === 'manager' || session?.role === 'admin') {
         document.getElementById('settingsBtn').style.display = '';
