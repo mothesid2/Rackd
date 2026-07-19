@@ -102,6 +102,19 @@ deployed. Your remaining actions:
       login to the client. On first POS login the admin is forced to change password + set a PIN;
       managers/cashiers you add in Settings get random creds shown once (forced-change too).
 
+## 8c. Batch 4 (bugs + owner console + storefront polish)
+Code-complete, committed; the three edge functions are **already redeployed**
+(`admin`, `storefront-payment-webhook`, `storefront-order-ready`). Your remaining actions:
+- [ ] **Run `deploy-045.sql`** — denormalizes customer name/phone onto online orders so
+      the auto-printed pickup ticket shows the customer.
+- [ ] **Run `deploy-046.sql`** — per-location revenue RPC + `owner_audit_log` for the
+      expanded Owner Console (Staff & permissions, Revenue, audited password resets).
+- [ ] **Auth/email/SMS config** — follow `docs/AUTH-EMAIL-SMS-SETUP.md`: enable Google +
+      Apple + Phone providers, set `RESEND_API_KEY` / `RESEND_FROM` secrets and verify the
+      Resend domain, and (recommended) point Supabase Auth SMTP at Resend.
+- [ ] The Owner Console gained **Staff & permissions**, **Revenue**, and a renamed
+      **Web Orders** tab — no client action, just what to expect.
+
 ## 9. Verify end-to-end
 - [ ] POS: open the day (manager login) → PIN sign-in → ring a sale → X/Z shows totals, online excluded from the drawer.
 - [ ] Storefront (test mode): create account → "Welcome back" on return → order → 5% fee line → pay (Stripe test) → pickup receipt auto-prints at the store → order shows in Owner Console + POS Receipts (Online — Prepaid).
