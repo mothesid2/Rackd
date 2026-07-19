@@ -65,16 +65,42 @@
     </div>
   </div>
 
+  <!-- Cancel / refund modal — manager/admin, requires an "unable to fulfill" reason -->
+  <div class="modal-overlay" id="cancelModal" style="display:none">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-title">Can't fulfill this order?</div>
+      <div style="font-size:14px;color:#333;margin:6px 0 12px">
+        This <strong>refunds the customer's card</strong> and returns the items to stock. Choose why:
+      </div>
+      <select id="cancelReason" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px">
+        <option value="out_of_stock">Out of stock</option>
+        <option value="item_damaged">Item damaged / not sellable</option>
+        <option value="id_compliance">ID / compliance issue</option>
+        <option value="store_closing">Store closing / can't prepare in time</option>
+        <option value="other">Other</option>
+      </select>
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn btn-gray" onclick="closeCancel()">Keep order</button>
+        <button class="btn" style="background:#b91c1c;color:#fff" id="cancelConfirm" onclick="confirmCancel()">Refund &amp; cancel</button>
+      </div>
+    </div>
+  </div>
+
   <div class="status-bar"><div class="status-left">Online Pickups</div><div class="status-right" id="empName"></div></div>
 
   <script src="../shared.js"></script>
   <script>
     let orders = [];
     let pickId = null;
+    let myRole = null;         // 'manager' | 'admin' | 'cashier' — gates refunds
+    let cancelId = null;       // order awaiting a cancel reason
 
     document.addEventListener('DOMContentLoaded', async () => {
       const s = await window.api.getSession();
-      if (s && s.success && s.session) document.getElementById('empName').textContent = 'Signed in: ' + (s.session.username || '');
+      if (s && s.success && s.session) {
+        myRole = s.session.role || null;
+        document.getElementById('empName').textContent = 'Signed in: ' + (s.session.username || '');
+      }
       load();
     });
 
@@ -94,6 +120,11 @@
       let next = '';
       if (st === 'new') next = `<button class="abtn prep" onclick="advance('${o.id}','preparing')">Start preparing</button>`;
       else if (st === 'preparing') next = `<button class="abtn ready" onclick="advance('${o.id}','ready')">Mark ready</button>`;
+      // Refund/cancel is a manager/admin action only (spec item 7).
+      const canRefund = myRole === 'manager' || myRole === 'admin';
+      const cancelBtn = canRefund
+        ? `<button class="abtn cancel" onclick="openCancel('${o.id}')">Can't fulfill</button>`
+        : '';
       return `
         <div class="ord">
           <div class="head"><span class="num">#${esc(o.order_number)}</span><span class="pill ${st}">${label}</span></div>
@@ -102,7 +133,7 @@
           <div class="actions">
             ${next}
             <button class="abtn pickup" onclick="openPick('${o.id}')">Hand off (check ID)</button>
-            <button class="abtn cancel" onclick="advance('${o.id}','cancelled')">Cancel</button>
+            ${cancelBtn}
           </div>
         </div>`;
     }
@@ -111,10 +142,24 @@
     function fmtWhen(s) { try { return new Date(String(s).replace(' ', 'T')).toLocaleString(); } catch { return s; } }
 
     async function advance(id, status) {
-      if (status === 'cancelled' && !confirm('Cancel this order? A paid order is refunded automatically.')) return;
       const r = await window.api.storefrontAdvance({ order_id: id, status });
       if (!r.success) { showToast(r.error || 'Failed', 'error'); return; }
-      showToast(status === 'ready' ? 'Marked ready — customer texted' : status === 'cancelled' ? 'Order cancelled' : 'Order updated', 'success');
+      showToast(status === 'ready' ? 'Marked ready — customer texted' : 'Order updated', 'success');
+      load();
+    }
+
+    // Cancel + refund — manager/admin only, with a required reason.
+    function openCancel(id) { cancelId = id; document.getElementById('cancelReason').value = 'out_of_stock'; openModal('cancelModal'); }
+    function closeCancel() { cancelId = null; closeModal('cancelModal'); }
+    async function confirmCancel() {
+      if (!cancelId) return;
+      const reason = document.getElementById('cancelReason').value;
+      const btn = document.getElementById('cancelConfirm'); btn.disabled = true; btn.textContent = 'Refunding…';
+      const r = await window.api.storefrontAdvance({ order_id: cancelId, status: 'cancelled', cancel_reason: reason });
+      btn.disabled = false; btn.textContent = 'Refund & cancel';
+      if (!r.success) { showToast(r.error || 'Failed', 'error'); return; }
+      showToast('Order cancelled and refunded', 'success');
+      closeCancel();
       load();
     }
 

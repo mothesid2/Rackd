@@ -401,9 +401,9 @@ export async function printPickupReceipt(
   lines.push(center('PAID ONLINE • DO NOT COLLECT PAYMENT'));
   lines.push(sep);
   lines.push(`Pickup #${order.order_number}`);
-  if (order.created_at) lines.push(fmtCT(order.created_at));
   if (order.customer_name) lines.push(`Customer: ${order.customer_name}`);
   if (order.customer_phone) lines.push(`Phone:    ${order.customer_phone}`);
+  if (order.created_at) lines.push(`Ordered:  ${fmtCT(order.created_at)}`);
   lines.push(sep);
   for (const it of order.items) {
     lines.push(String(it.name || 'Item').substring(0, W));
@@ -438,9 +438,9 @@ export async function printPickupReceipt(
       printer.drawLine();
       printer.alignLeft();
       printer.bold(true); printer.println(`Pickup #${order.order_number}`); printer.bold(false);
-      if (order.created_at) printer.println(fmtCT(order.created_at));
-      if (order.customer_name) printer.println(`Customer: ${order.customer_name}`);
+      if (order.customer_name) { printer.bold(true); printer.println(`Customer: ${order.customer_name}`); printer.bold(false); }
       if (order.customer_phone) printer.println(`Phone:    ${order.customer_phone}`);
+      if (order.created_at) printer.println(`Ordered:  ${fmtCT(order.created_at)}`);
       printer.drawLine();
       for (const it of order.items) {
         printer.println(String(it.name || 'Item').substring(0, W));

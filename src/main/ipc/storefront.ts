@@ -6,6 +6,10 @@ import { getEmployee } from '../permissions';
 import { enqueueStockMovement } from '../supabase/sync';
 import { nowCT } from '../utils/time';
 
+// The only accepted reasons to cancel+refund a paid online order — all forms of
+// "the store cannot fulfill it". Kept in sync with the pickups UI dropdown.
+const UNABLE_TO_FULFILL_REASONS = ['out_of_stock', 'item_damaged', 'id_compliance', 'store_closing', 'other'];
+
 interface OnlineOrderRow { id: string; subtotal?: number; tax?: number }
 interface OnlineItemRow { barcode: string | null; name: string; qty: number; unit_price: number; line_total: number }
 
@@ -76,11 +80,26 @@ export function registerStorefrontHandlers(): void {
 
   // Advance an order to preparing/ready. Routes through the edge function so the
   // customer gets the "ready" SMS (and refund/stock-restore on cancel) server-side.
+  //
+  // REFUND POLICY (spec item 7): a cancel refunds the customer's card, so it is
+  // gated — only a manager/admin may do it, and only with an explicit "unable to
+  // fulfill" reason. Customers have no self-service refund; this is the sole path.
   ipcMain.handle('storefront:advance', async (_e, args: { order_id: string; status: 'preparing' | 'ready' | 'cancelled'; cancel_reason?: string }) => {
     const sb = getSupabase();
     if (!sb) return { success: false, error: 'Cloud not configured' };
-    const { order_id, status, cancel_reason } = args || ({} as { order_id: string; status: string });
+    const { order_id, status, cancel_reason } = args || ({} as { order_id: string; status: string; cancel_reason?: string });
     if (!order_id || !['preparing', 'ready', 'cancelled'].includes(status)) return { success: false, error: 'Invalid request' };
+
+    if (status === 'cancelled') {
+      const session = getCurrentSession();
+      if (!session || (session.role !== 'manager' && session.role !== 'admin')) {
+        return { success: false, error: 'Only a manager or admin can cancel and refund an online order.' };
+      }
+      if (!cancel_reason || !UNABLE_TO_FULFILL_REASONS.includes(cancel_reason)) {
+        return { success: false, error: 'A reason (unable to fulfill) is required to cancel and refund.' };
+      }
+    }
+
     const { data, error } = await sb.functions.invoke('storefront-order-ready', {
       body: { order_id, status, cancel_reason },
     });

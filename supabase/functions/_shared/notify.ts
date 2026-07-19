@@ -17,6 +17,51 @@ export async function sendSms(to: string | null | undefined, body: string): Prom
   }
 }
 
+// Shared Resend email helper. App-owned transactional mail (order confirmed /
+// ready for pickup) so we don't depend on Supabase Auth's SMTP quota. Secrets:
+//   RESEND_API_KEY  — required, else this no-ops (returns false)
+//   RESEND_FROM     — verified sender, e.g. "Rackd <orders@rackd.com>"
+// Returns false on any failure and logs the Resend error so a broken key/domain
+// is visible in the function logs instead of silently swallowed.
+export async function sendEmail(
+  to: string | null | undefined,
+  subject: string,
+  html: string,
+  text?: string,
+): Promise<boolean> {
+  const key = Deno.env.get('RESEND_API_KEY');
+  const from = Deno.env.get('RESEND_FROM') || 'Rackd <onboarding@resend.dev>';
+  if (!key || !to) {
+    if (!key) console.warn('[sendEmail] RESEND_API_KEY not set — email skipped');
+    return false;
+  }
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to, subject, html, text: text || html.replace(/<[^>]+>/g, ' ') }),
+    });
+    if (!r.ok) {
+      console.error('[sendEmail] Resend error', r.status, await r.text().catch(() => ''));
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('[sendEmail] threw', String(e));
+    return false;
+  }
+}
+
+// Minimal branded wrapper so both emails share one look.
+export function emailShell(heading: string, bodyHtml: string): string {
+  return `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#1c1f24">
+    <div style="font-size:22px;font-weight:800;letter-spacing:3px;margin-bottom:16px">RACK<span style="color:#b01d2e">D</span></div>
+    <h1 style="font-size:20px;margin:0 0 12px">${heading}</h1>
+    ${bodyHtml}
+    <p style="font-size:12px;color:#8a9099;margin-top:24px;border-top:1px solid #eee;padding-top:12px">Bring a valid government photo ID (21+) to pick up your order.</p>
+  </div>`;
+}
+
 export const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, content-type, apikey',

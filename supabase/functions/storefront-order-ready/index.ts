@@ -9,7 +9,7 @@
 // the units back — mirror of the negative movement the payment webhook emitted.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@14';
-import { CORS, json, sendSms } from '../_shared/notify.ts';
+import { CORS, json, sendSms, sendEmail, emailShell } from '../_shared/notify.ts';
 
 const PAID = ['new', 'preparing', 'ready'];
 
@@ -69,9 +69,17 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  const { data: cust } = await admin.from('storefront_customers').select('phone').eq('id', updated.customer_id).single();
-  if (status === 'ready') await sendSms(cust?.phone, `Your order #${updated.order_number} is ready for pickup! Bring a valid ID (21+).`);
-  else if (status === 'cancelled') await sendSms(cust?.phone, `Your order #${updated.order_number} was cancelled${refunded ? ' and refunded' : ''}.`);
+  const { data: cust } = await admin.from('storefront_customers').select('phone, email, first_name').eq('id', updated.customer_id).single();
+  const hi = cust?.first_name ? `Hi ${cust.first_name}, ` : '';
+  if (status === 'ready') {
+    await sendSms(cust?.phone, `Your order #${updated.order_number} is ready for pickup! Bring a valid ID (21+).`);
+    await sendEmail(cust?.email, `Order #${updated.order_number} is ready for pickup`,
+      emailShell('Your order is ready 🎉', `<p>${hi}your order <strong>#${updated.order_number}</strong> is ready to pick up in store.</p>`));
+  } else if (status === 'cancelled') {
+    await sendSms(cust?.phone, `Your order #${updated.order_number} was cancelled${refunded ? ' and refunded' : ''}.`);
+    await sendEmail(cust?.email, `Order #${updated.order_number} was cancelled`,
+      emailShell('Order cancelled', `<p>${hi}your order <strong>#${updated.order_number}</strong> was cancelled${refunded ? ' and your payment has been refunded' : ''}.</p>`));
+  }
 
   return json({ success: true, status, refunded });
 });

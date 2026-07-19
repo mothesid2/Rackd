@@ -9,7 +9,7 @@
 // stay isolated (own endpoint + signing secret STRIPE_STOREFRONT_WEBHOOK_SECRET).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@14';
-import { sendSms } from '../_shared/notify.ts';
+import { sendSms, sendEmail, emailShell } from '../_shared/notify.ts';
 
 Deno.serve(async (req: Request) => {
   const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
@@ -40,7 +40,7 @@ Deno.serve(async (req: Request) => {
     await admin.from('online_orders').update({ status: 'new' }).eq('id', orderId);
 
     // Decrement register stock via the existing movement pull path.
-    const { data: itemRows } = await admin.from('online_order_items').select('barcode, qty').eq('order_id', orderId);
+    const { data: itemRows } = await admin.from('online_order_items').select('barcode, qty, name').eq('order_id', orderId);
     for (const it of itemRows ?? []) {
       if (!it.barcode) continue;
       await admin.from('stock_movements_cloud').insert({
@@ -50,8 +50,12 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const { data: cust } = await admin.from('storefront_customers').select('phone').eq('id', order.customer_id).single();
+    const { data: cust } = await admin.from('storefront_customers').select('phone, email, first_name').eq('id', order.customer_id).single();
     await sendSms(cust?.phone, `Your order #${order.order_number} is confirmed. We'll text you when it's ready for pickup.`);
+    const itemsHtml = (itemRows ?? []).map((it) => `<li>${it.qty || 1} × ${it.name || it.barcode}</li>`).join('');
+    const hi = cust?.first_name ? `Hi ${cust.first_name}, ` : '';
+    await sendEmail(cust?.email, `Order #${order.order_number} confirmed`,
+      emailShell('Order confirmed ✅', `<p>${hi}thanks for your order <strong>#${order.order_number}</strong>. We'll email and text you when it's ready for pickup.</p>${itemsHtml ? `<ul style="padding-left:18px">${itemsHtml}</ul>` : ''}`));
   }
 
   if (event.type === 'payment_intent.payment_failed' || event.type === 'payment_intent.canceled') {

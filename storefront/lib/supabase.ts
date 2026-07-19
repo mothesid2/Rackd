@@ -8,7 +8,15 @@ let client: SupabaseClient | null = null;
 export function supabase(): SupabaseClient {
   if (!client) {
     client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true },
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        // OAuth (Apple/Google) returns to /account/ with a `?code=` — parse and
+        // exchange it automatically. PKCE keeps the code in a query param, which
+        // survives the trailingSlash 308 redirect (a hash fragment can be lost).
+        detectSessionInUrl: true,
+        flowType: 'pkce',
+      },
     });
   }
   return client;

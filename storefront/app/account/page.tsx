@@ -3,6 +3,29 @@ import { useEffect, useState, useCallback } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 
+// Accepts a bare 10-digit US number (5550001234), a 1-prefixed 11-digit number,
+// common punctuation "(555) 000-1234", or an already-E.164 "+…". Returns E.164
+// or null when it clearly isn't a usable number.
+function normalizePhone(raw: string): string | null {
+  const t = (raw || '').trim();
+  const d = t.replace(/\D/g, '');
+  if (t.startsWith('+')) return d.length >= 8 ? '+' + d : null;
+  if (d.length === 10) return '+1' + d;
+  if (d.length === 11 && d[0] === '1') return '+' + d;
+  return null;
+}
+
+// Whole years between dob (YYYY-MM-DD) and today; NaN if unparseable.
+function ageFrom(dob: string): number {
+  const b = new Date(dob + 'T00:00:00');
+  if (isNaN(b.getTime())) return NaN;
+  const now = new Date();
+  let a = now.getFullYear() - b.getFullYear();
+  const m = now.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) a--;
+  return a;
+}
+
 export default function Account() {
   const [session, setSession] = useState<Session | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -62,19 +85,30 @@ export default function Account() {
 
   async function savePhone() {
     if (!session) return;
+    const p = normalizePhone(phone);
+    if (!p) { alert('Enter a valid 10-digit US phone number.'); return; }
     setBusy(true);
-    await supabase().from('storefront_customers').update({ phone }).eq('id', session.user.id);
+    await supabase().from('storefront_customers').update({ phone: p }).eq('id', session.user.id);
+    setPhone(p);
     setBusy(false); refresh();
   }
   async function attestAge() {
     setAgeErr(null);
     if (!dob) { setAgeErr('Enter your date of birth.'); return; }
+    // Block under-21 before the RPC so social/phone signups can't linger as a
+    // half-created account: we sign them straight back out.
+    if (ageFrom(dob) < 21) {
+      setAgeErr('You must be 21 or older to use this store. Signing you out…');
+      await supabase().auth.signOut();
+      setTimeout(() => location.reload(), 1500);
+      return;
+    }
     setBusy(true);
     const { error } = await supabase().rpc('self_attest_age', { p_dob: dob });
     setBusy(false);
     if (error) {
       const m = error.message || '';
-      if (/under_21/.test(m)) setAgeErr('You must be 21 or older to use this store.');
+      if (/under_21/.test(m)) { setAgeErr('You must be 21 or older to use this store. Signing you out…'); await supabase().auth.signOut(); setTimeout(() => location.reload(), 1500); return; }
       else if (/dob_invalid/.test(m)) setAgeErr('That date of birth isn’t valid.');
       else setAgeErr(m);
       return;
@@ -145,21 +179,28 @@ function AuthPanel() {
   const [busy, setBusy] = useState(false);
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const stash = () => { if (typeof window === 'undefined') return; localStorage.setItem('rackd_first', first.trim()); localStorage.setItem('rackd_last', last.trim()); localStorage.setItem('rackd_phone', phone.trim()); localStorage.setItem('rackd_dob', dob); };
+  const stash = () => { if (typeof window === 'undefined') return; localStorage.setItem('rackd_first', first.trim()); localStorage.setItem('rackd_last', last.trim()); localStorage.setItem('rackd_phone', normalizePhone(phone) || phone.trim()); localStorage.setItem('rackd_dob', dob); };
 
   async function oauth(provider: 'apple' | 'google') {
     setErr(null);
-    await supabase().auth.signInWithOAuth({ provider, options: { redirectTo: origin + '/account' } });
+    // Trailing slash matches next.config `trailingSlash: true` so we don't 308 mid-callback.
+    const { error } = await supabase().auth.signInWithOAuth({ provider, options: { redirectTo: origin + '/account/' } });
+    if (error) setErr(`Couldn’t start ${provider === 'apple' ? 'Apple' : 'Google'} sign-in: ${error.message}`);
   }
   async function signUp() {
     setErr(null); setMsg(null);
     if (!first.trim() || !last.trim() || !dob) return setErr('Please fill in your name and date of birth.');
+    const age = ageFrom(dob);
+    if (isNaN(age)) return setErr('That date of birth isn’t valid.');
+    if (age < 21) return setErr('You must be 21 or older to create an account.');
     if (!email || password.length < 6) return setErr('Enter an email and a password (6+ characters).');
+    const normPhone = phone.trim() ? normalizePhone(phone) : '';
+    if (phone.trim() && !normPhone) return setErr('Enter a valid 10-digit US phone number.');
     stash();
     setBusy(true);
     const { data, error } = await supabase().auth.signUp({
       email, password,
-      options: { emailRedirectTo: origin + '/account', data: { first_name: first.trim(), last_name: last.trim(), full_name: `${first} ${last}`.trim(), phone: phone.trim(), dob } },
+      options: { emailRedirectTo: origin + '/account/', data: { first_name: first.trim(), last_name: last.trim(), full_name: `${first} ${last}`.trim(), phone: normPhone || '', dob } },
     });
     setBusy(false);
     if (error) return setErr(error.message);
@@ -173,17 +214,21 @@ function AuthPanel() {
   }
   async function sendCode() {
     setErr(null);
-    if (!phone.trim()) return setErr('Enter your phone number.');
+    const p = normalizePhone(phone);
+    if (!p) return setErr('Enter a valid 10-digit US phone number.');
     stash();
     setBusy(true);
-    const { error } = await supabase().auth.signInWithOtp({ phone: phone.trim() });
+    const { error } = await supabase().auth.signInWithOtp({ phone: p });
     setBusy(false);
     if (error) return setErr(error.message);
     setCodeSent(true);
   }
   async function verifyCode() {
-    setErr(null); setBusy(true);
-    const { error } = await supabase().auth.verifyOtp({ phone: phone.trim(), token: code.trim(), type: 'sms' });
+    setErr(null);
+    const p = normalizePhone(phone);
+    if (!p) return setErr('Enter a valid 10-digit US phone number.');
+    setBusy(true);
+    const { error } = await supabase().auth.verifyOtp({ phone: p, token: code.trim(), type: 'sms' });
     setBusy(false);
     if (error) setErr('That code was incorrect or expired.');
   }
@@ -244,7 +289,8 @@ function AuthPanel() {
           <div className="grid gap-2.5">
             {!codeSent ? (
               <>
-                <input className={input} type="tel" placeholder="Phone number (+1…)" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <input className={input} type="tel" inputMode="tel" placeholder="Phone number, e.g. (555) 000-1234" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <p className="text-xs text-smoke -mt-1">US numbers only. 10 digits, no country code needed.</p>
                 <button disabled={busy} onClick={sendCode} className="rounded-lg bg-accent text-white py-2.5 font-semibold disabled:opacity-40">Text me a code</button>
                 <p className="text-xs text-smoke">New here? You&apos;ll add your name &amp; date of birth after verifying.</p>
               </>

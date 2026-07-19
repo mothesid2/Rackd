@@ -251,7 +251,7 @@ Deno.serve(async (req: Request) => {
         if (!tenantId) return json({ error: 'tenant_id required' }, 400);
         const { data: regs, error } = await admin
           .from('license_registrations')
-          .select('machine_id, location_id, last_seen_at, created_at, license_key')
+          .select('machine_id, location_id, last_seen_at, activated_at, license_key')
           .eq('tenant_id', tenantId)
           .order('last_seen_at', { ascending: false });
         if (error) throw error;

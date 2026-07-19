@@ -28,7 +28,7 @@ async function cycle(): Promise<void> {
 
   const { data: orders, error } = await sb
     .from('online_orders')
-    .select('id, order_number, subtotal, tax, online_fee, total, created_at, online_order_items(name, qty, line_total)')
+    .select('id, order_number, customer_name, customer_phone, subtotal, tax, online_fee, total, created_at, online_order_items(name, qty, line_total)')
     .eq('location_id', locationId)
     .is('receipt_printed_at', null)
     .in('status', ['new', 'preparing', 'ready'])
@@ -53,6 +53,8 @@ async function cycle(): Promise<void> {
       await printPickupReceipt(
         {
           order_number: (o.order_number as string) || String(o.id).slice(0, 8),
+          customer_name: (o.customer_name as string) || null,
+          customer_phone: (o.customer_phone as string) || null,
           items: items.map((i) => ({ qty: Number(i.qty) || 0, name: i.name, line_total: Number(i.line_total) || 0 })),
           subtotal: Number(o.subtotal) || 0,
           tax: Number(o.tax) || 0,
