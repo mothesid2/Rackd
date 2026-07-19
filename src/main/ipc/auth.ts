@@ -93,17 +93,32 @@ export function registerAuthHandlers(): void {
     }
   });
 
-  // PIN sign-in (register): resolve the employee by numeric PIN and open a shift.
-  ipcMain.handle('auth:pinLogin', async (_event, pin: string) => {
+  // Accounts to choose from on the PIN pad (active employees who have a PIN). The
+  // register picks the user first, then types the PIN — so PINs needn't be unique.
+  ipcMain.handle('auth:listPinUsers', () => {
+    try {
+      const db = getDb();
+      const rows = db.prepare(
+        "SELECT id, name, username, role FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND pin_hash <> '' ORDER BY role = 'cashier', name, username"
+      ).all() as { id: number; name: string | null; username: string; role: string }[];
+      return { success: true, users: rows.map((u) => ({ id: u.id, name: u.name || u.username, role: u.role })) };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // PIN sign-in (register): the renderer sends the CHOSEN employee id + their PIN.
+  ipcMain.handle('auth:pinLogin', async (_event, userId: number, pin: string) => {
     try {
       const db = getDb();
       // The day must be opened by a manager (username + password) before PIN sign-in.
       if (!isDayOpen(db)) {
         return { success: false, error: 'The day hasn’t been opened yet. A manager must sign in with a username and password first.', dayClosed: true };
       }
+      if (!userId) return { success: false, error: 'Select who you are, then enter your PIN.' };
       // Lazy require avoids the auth<->permissions import cycle at load time.
-      const { verifyPin } = require('../permissions') as typeof import('../permissions');
-      const r = verifyPin(db, String(pin || ''));
+      const { verifyPinForUser } = require('../permissions') as typeof import('../permissions');
+      const r = verifyPinForUser(db, Number(userId), String(pin || ''));
       if (!r.ok || !r.employee) return { success: false, error: r.error, lockedUntil: r.lockedUntil };
       currentSession = { userId: r.employee.id, username: r.employee.username, role: r.employee.role as Role };
       touchActivity();
@@ -139,12 +154,9 @@ export function registerAuthHandlers(): void {
       const needsPassword = u.role !== 'cashier';
       const newPin = String(args?.newPin ?? '');
       const newPassword = String(args?.newPassword ?? '');
-      if (newPin.length < 4 || !/^\d+$/.test(newPin)) return { success: false, error: 'PIN must be at least 4 digits.' };
-      if (needsPassword && newPassword.length < 6) return { success: false, error: 'Password must be at least 6 characters.' };
-
-      // A new PIN must be unique (PIN sign-in resolves by matching any employee).
-      const others = db.prepare("SELECT id, pin_hash FROM users WHERE is_active = 1 AND id <> ? AND pin_hash IS NOT NULL AND pin_hash <> ''").all(u.id) as { id: number; pin_hash: string }[];
-      if (others.some((o) => bcrypt.compareSync(newPin, o.pin_hash))) return { success: false, error: 'That PIN is already in use — choose another.' };
+      if (!/^\d{4}$/.test(newPin)) return { success: false, error: 'PIN must be exactly 4 digits.' };
+      if (needsPassword && newPassword.length < 8) return { success: false, error: 'Password must be at least 8 characters.' };
+      // PINs no longer need to be globally unique — sign-in is user-selected + PIN.
 
       db.transaction(() => {
         if (needsPassword) {

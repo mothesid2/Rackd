@@ -68,8 +68,9 @@
       <input type="hidden" id="eId" />
       <div class="form-group"><label>Name</label><input type="text" id="eName" placeholder="Jane Doe" /></div>
       <div class="form-group"><label>Username (login/reports)</label><input type="text" id="eUser" placeholder="jane" /></div>
-      <div class="form-group"><label>Role</label><select id="eRole"><option value="cashier">Cashier</option><option value="manager">Manager</option></select></div>
-      <div class="form-group"><label>PIN (blank = keep existing)</label><input type="password" id="ePin" inputmode="numeric" placeholder="4–8 digits" /></div>
+      <div class="form-group"><label>Role</label><select id="eRole" onchange="onRoleChange()"><option value="cashier">Cashier</option><option value="manager">Manager</option></select></div>
+      <div class="form-group" id="pwGroup" style="display:none"><label>Password <span style="text-transform:none;color:#888;font-weight:400">(blank = auto-generate)</span></label><input type="text" id="ePassword" placeholder="8+ characters" autocomplete="off" /></div>
+      <div class="form-group" id="pinGroup"><label>PIN <span style="text-transform:none;color:#888;font-weight:400">(blank = auto-generate)</span></label><input type="text" id="ePin" inputmode="numeric" maxlength="4" placeholder="4 digits" autocomplete="off" /></div>
       <div class="form-group"><label style="display:flex;align-items:center;gap:8px;text-transform:none"><input type="checkbox" id="eActive" checked style="width:auto" /> Active</label></div>
       <div class="modal-actions">
         <button class="btn btn-gray" onclick="closeModal('empModal')">Cancel</button>
@@ -94,7 +95,7 @@
 
     document.addEventListener('DOMContentLoaded', async () => {
       const s = (await window.api.getSession()).session;
-      if (s?.role !== 'manager') { document.getElementById('mgrBlock').style.display = 'block'; document.getElementById('body').style.display = 'none'; return; }
+      if (s?.role !== 'manager' && s?.role !== 'admin') { document.getElementById('mgrBlock').style.display = 'block'; document.getElementById('body').style.display = 'none'; return; }
       await loadStaff();
     });
 
@@ -166,6 +167,13 @@
       showToast('Discount cap saved', 'success');
     }
 
+    // Password field applies to a NEW manager only; PIN fields apply when creating
+    // any employee. Editing changes name/role/active only.
+    function onRoleChange() {
+      const creating = !document.getElementById('eId').value;
+      const isMgr = document.getElementById('eRole').value === 'manager';
+      document.getElementById('pwGroup').style.display = (creating && isMgr) ? '' : 'none';
+    }
     function openEmp(e) {
       document.getElementById('empTitle').textContent = e ? 'Edit Employee' : 'Add Employee';
       document.getElementById('eId').value = e ? e.id : '';
@@ -174,10 +182,15 @@
       document.getElementById('eUser').disabled = !!e;
       document.getElementById('eRole').value = e ? e.role : 'cashier';
       document.getElementById('ePin').value = '';
+      document.getElementById('ePassword').value = '';
       document.getElementById('eActive').checked = e ? !!e.is_active : true;
+      // PIN/password are set only at creation; editing changes name/role/active.
+      document.getElementById('pinGroup').style.display = e ? 'none' : '';
+      onRoleChange();
       openModal('empModal');
     }
     async function saveEmp() {
+      const creating = !document.getElementById('eId').value;
       const emp = {
         id: document.getElementById('eId').value || undefined,
         name: document.getElementById('eName').value.trim(),
@@ -185,6 +198,10 @@
         role: document.getElementById('eRole').value,
         is_active: document.getElementById('eActive').checked,
       };
+      if (creating) {
+        emp.pin = document.getElementById('ePin').value.trim();
+        if (emp.role === 'manager') emp.password = document.getElementById('ePassword').value;
+      }
       const btn = document.getElementById('empSave'); btn.disabled = true; btn.textContent = 'Saving…';
       const r = await window.api.permsSaveEmployee(emp);
       btn.disabled = false; btn.textContent = 'Save';
@@ -206,7 +223,7 @@
       el.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(6,8,11,.6)';
       el.innerHTML = `<div style="width:400px;max-width:92%;background:#fff;border-radius:16px;padding:24px;box-shadow:0 16px 44px rgba(0,0,0,.35)">
         <div style="font-size:18px;font-weight:800;margin-bottom:4px">${esc(c.name)} — ${c.role === 'manager' ? 'Manager' : 'Cashier'} added</div>
-        <div style="font-size:13px;color:#666;margin-bottom:16px">Give these to the employee. Shown once — they'll change them on first sign-in.</div>
+        <div style="font-size:13px;color:#666;margin-bottom:16px">Give these to the employee. Shown once here. Any auto-generated credential must be changed on first sign-in.</div>
         ${rows.map(([k,v]) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #eee"><span style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.05em">${k}</span><code style="font-size:16px;font-weight:700;letter-spacing:1px">${esc(v)}</code></div>`).join('')}
         <button id="credsDone" style="width:100%;margin-top:18px;padding:12px;border:none;border-radius:10px;background:#1b1d21;color:#fff;font-weight:700;cursor:pointer">Done</button>
       </div>`;

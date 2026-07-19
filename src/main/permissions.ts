@@ -121,6 +121,30 @@ export function verifyPin(db: Database.Database, pin: string): { ok: boolean; em
   return { ok: false, error: until ? 'Too many attempts — PIN entry locked.' : 'Incorrect PIN', lockedUntil: until || undefined };
 }
 
+/**
+ * Verify a PIN for ONE specific employee (register sign-in where the user is
+ * chosen from a dropdown first). Because the user is selected, PINs no longer need
+ * to be globally unique. Honors the shared lockout.
+ */
+export function verifyPinForUser(
+  db: Database.Database,
+  userId: number,
+  pin: string
+): { ok: boolean; employee?: EmployeeRef; error?: string; lockedUntil?: string } {
+  const lock = pinLockState(db);
+  if (lock.locked) return { ok: false, error: 'PIN entry is locked. Try again shortly.', lockedUntil: lock.until || undefined };
+  const pinStr = String(pin || '');
+  if (!pinStr) return { ok: false, error: 'Enter a PIN' };
+  const u = db.prepare("SELECT id, uid, name, username, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL AND pin_hash <> ''")
+    .get(userId) as { id: number; uid: string; name: string | null; username: string; role: string; pin_hash: string } | undefined;
+  if (u && bcrypt.compareSync(pinStr, u.pin_hash)) {
+    resetPinFail(db);
+    return { ok: true, employee: { id: u.id, uid: u.uid, name: u.name || u.username, username: u.username, role: u.role } };
+  }
+  const until = recordPinFail(db, 'sign_in');
+  return { ok: false, error: until ? 'Too many attempts — PIN entry locked.' : 'Incorrect PIN', lockedUntil: until || undefined };
+}
+
 /** Verify a MANAGER PIN specifically (for override authorization). */
 function verifyManagerPin(db: Database.Database, pin: string): EmployeeRef | null {
   if (pinLockState(db).locked) return null;

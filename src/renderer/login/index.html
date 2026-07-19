@@ -137,8 +137,14 @@
       <div id="dayNote" style="display:none;font-size:13px;color:#666;background:#f3f4f6;border-radius:8px;padding:10px 12px;margin-bottom:16px;line-height:1.45"></div>
       <div class="error-msg" id="errorMsg">Invalid PIN</div>
 
-      <!-- PIN pad (primary) -->
+      <!-- PIN pad (primary) — choose your account, then enter your 4-digit PIN -->
       <div id="pinPane">
+        <div class="form-group" style="margin-bottom:16px">
+          <label>Who's signing in?</label>
+          <select id="pinUser" style="width:100%;padding:11px 14px;border:1.5px solid #ddd;border-radius:10px;font-size:15px;color:#1a1a1a;background:#fafafa;outline:none">
+            <option value="">Select your name…</option>
+          </select>
+        </div>
         <div id="pinDots" style="text-align:center;font-size:26px;letter-spacing:6px;height:34px;color:#333;margin-bottom:8px">– – – –</div>
         <div id="pinKeypad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:280px;margin:0 auto"></div>
         <div style="text-align:center;margin-top:14px"><a href="#" id="usePassword" style="font-size:13px;color:#888;text-decoration:none">Use username &amp; password</a></div>
@@ -176,7 +182,7 @@
       <input type="hidden" id="cpOld" />
       <div id="cpPwFields">
         <div class="form-group">
-          <label>New Password</label>
+          <label>New Password (8+ characters)</label>
           <input type="password" id="cpNew" autocomplete="new-password" />
         </div>
         <div class="form-group">
@@ -186,12 +192,12 @@
       </div>
       <div id="cpPinFields">
         <div class="form-group">
-          <label>New PIN (4+ digits)</label>
-          <input type="password" inputmode="numeric" id="cpPin" autocomplete="off" />
+          <label>New PIN (4 digits)</label>
+          <input type="password" inputmode="numeric" id="cpPin" maxlength="4" autocomplete="off" />
         </div>
         <div class="form-group">
           <label>Confirm New PIN</label>
-          <input type="password" inputmode="numeric" id="cpPinConfirm" autocomplete="off" />
+          <input type="password" inputmode="numeric" id="cpPinConfirm" maxlength="4" autocomplete="off" />
         </div>
       </div>
       <div class="error-msg" id="cpError" style="display:none"></div>
@@ -243,20 +249,39 @@
     passwordEl.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
     usernameEl.addEventListener('keydown', e => { if (e.key === 'Enter') passwordEl.focus(); });
 
-    // ── PIN sign-in ─────────────────────────────────────────────────────────
+    // ── PIN sign-in (choose account, then 4-digit PIN) ───────────────────────
     let pin = '';
     const pinDots = document.getElementById('pinDots');
+    const pinUserEl = document.getElementById('pinUser');
     function renderPinDots() { pinDots.textContent = pin ? pin.split('').map(() => '●').join('  ') : '– – – –'; }
+
+    // Populate the "who's signing in?" dropdown from the local accounts.
+    async function loadPinUsers() {
+      try {
+        const r = await window.api.listPinUsers();
+        if (!r || !r.success) return;
+        pinUserEl.innerHTML = '<option value="">Select your name…</option>' +
+          r.users.map(u => `<option value="${u.id}">${u.name}${u.role === 'manager' ? ' (Manager)' : u.role === 'admin' ? ' (Admin)' : ''}</option>`).join('');
+      } catch { /* offline shell */ }
+    }
+
     function pinKey(k) {
       document.getElementById('errorMsg').style.display = 'none';
-      if (k === '⌫') pin = pin.slice(0, -1);
-      else if (k === '✓') return submitPin();
-      else if (pin.length < 8) pin += k;
+      if (k === '⌫') { pin = pin.slice(0, -1); renderPinDots(); return; }
+      if (k === '✓') return submitPin();
+      if (pin.length < 4) pin += k;
       renderPinDots();
+      if (pin.length === 4) submitPin(); // exactly-4 PIN → submit automatically
     }
     async function submitPin() {
-      if (pin.length < 4) return;
-      const res = await window.api.pinLogin(pin);
+      if (pin.length !== 4) return;
+      const userId = Number(pinUserEl.value);
+      if (!userId) {
+        const err = document.getElementById('errorMsg');
+        err.textContent = 'Select your name first.'; err.style.display = 'block';
+        pin = ''; renderPinDots(); return;
+      }
+      const res = await window.api.pinLogin(userId, pin);
       if (res.success) {
         pin = '';
         if (res.user?.must_change_pin || res.user?.must_change_password) {
@@ -292,7 +317,7 @@
     const pinPane = document.getElementById('pinPane');
     const pwPane = document.getElementById('pwPane');
     document.getElementById('usePassword').addEventListener('click', (e) => { e.preventDefault(); pinPane.style.display = 'none'; pwPane.style.display = 'block'; usernameEl.focus(); });
-    document.getElementById('usePin').addEventListener('click', (e) => { e.preventDefault(); pwPane.style.display = 'none'; pinPane.style.display = 'block'; });
+    document.getElementById('usePin').addEventListener('click', (e) => { e.preventDefault(); pwPane.style.display = 'none'; pinPane.style.display = 'block'; loadPinUsers(); });
     // Hardware keyboard: type the PIN when the PIN pane is showing.
     document.addEventListener('keydown', (e) => {
       if (pinPane.style.display === 'none') return;
@@ -311,13 +336,13 @@
       let newPassword, newPin;
       if (needsPassword) {
         newPassword = document.getElementById('cpNew').value;
+        if (newPassword.length < 8) return fail('Password must be at least 8 characters');
         if (newPassword !== document.getElementById('cpConfirm').value) return fail('Passwords do not match');
-        if (newPassword.length < 6) return fail('Password must be at least 6 characters');
       }
       if (needsPin) {
         newPin = document.getElementById('cpPin').value;
+        if (!/^\d{4}$/.test(newPin)) return fail('PIN must be exactly 4 digits');
         if (newPin !== document.getElementById('cpPinConfirm').value) return fail('PINs do not match');
-        if (!/^\d{4,}$/.test(newPin)) return fail('PIN must be at least 4 digits');
       }
       const res = await window.api.completeFirstLogin({ newPassword, newPin });
       if (res.success) {
@@ -355,6 +380,7 @@
         heading.textContent = 'Sign In';
         pinPane.style.display = 'block';
         pwPane.style.display = 'none';
+        loadPinUsers();
       }
     }
 

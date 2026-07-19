@@ -108,25 +108,49 @@ export function registerPermissionHandlers(): void {
       if (!name) return { success: false, error: 'Enter a name.' };
 
       const uid = randomUUID();
-      const pin = genUniquePin(db);
+
+      // PIN: use the one the creator typed (must be 4–8 digits and unused), else
+      // generate a random one. A chosen PIN "just works"; a generated one must be
+      // changed on first login.
+      const typedPin = String(emp.pin ?? '').trim();
+      let pin: string;
+      let mustChangePin = 1;
+      if (typedPin) {
+        if (!/^\d{4}$/.test(typedPin)) return { success: false, error: 'PIN must be exactly 4 digits.' };
+        pin = typedPin; // duplicates allowed — sign-in selects the user first
+        mustChangePin = 0;
+      } else {
+        pin = genUniquePin(db);
+      }
       const pinHash = bcrypt.hashSync(pin, 10);
+
       let username: string | null = null;
       let password: string | null = null;
       let passwordHash: string | null = null;
+      let mustChangePassword = 0;
 
       if (role === 'manager') {
         username = String(emp.username || '').trim();
         if (!username) return { success: false, error: 'Enter a username for the manager.' };
         if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) return { success: false, error: 'That username is already taken.' };
-        password = genPassword();
+        // Password: use the one the creator typed (6+ chars), else generate one and
+        // force a change on first login.
+        const typedPw = String(emp.password ?? '');
+        if (typedPw) {
+          if (typedPw.length < 8) return { success: false, error: 'Password must be at least 8 characters.' };
+          password = typedPw;
+        } else {
+          password = genPassword();
+          mustChangePassword = 1;
+        }
         passwordHash = bcrypt.hashSync(password, 10);
       }
 
       db.transaction(() => {
         db.prepare(
           `INSERT INTO users (uid, username, name, role, password_hash, pin_hash, is_active, must_change_password, must_change_pin)
-           VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1)`
-        ).run(uid, username, name, role, passwordHash, pinHash, role === 'manager' ? 1 : 0);
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`
+        ).run(uid, username, name, role, passwordHash, pinHash, role === 'manager' ? mustChangePassword : 0, mustChangePin);
         enqueueEmployee('insert', uid, db);
       })();
 
