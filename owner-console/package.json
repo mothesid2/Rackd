@@ -1,6 +1,6 @@
 {
   "name": "rackd-owner-console",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Rackd Owner Console — private cockpit: provisioning, kiosks, online orders, and publishing updates.",
   "main": "main.js",
   "author": "Rackd",
@@ -11,17 +11,31 @@
   },
   "devDependencies": {
     "cross-env": "^7.0.3",
-    "electron": "^41.2.0",
+    "electron": "^41.10.2",
     "electron-builder": "^24.13.3"
   },
   "build": {
     "appId": "com.rackd.owner",
     "productName": "Rackd Owner Console",
     "npmRebuild": false,
-    "directories": { "output": "dist" },
-    "files": ["main.js", "preload.js", "config.js", "renderer/**/*", "assets/**/*"],
-    "win": { "target": "nsis", "icon": "assets/logo.png" },
-    "mac": { "target": "dmg", "icon": "assets/logo.png" },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "config.js",
+      "renderer/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/logo.png"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/logo.png"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
