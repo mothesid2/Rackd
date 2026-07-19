@@ -116,7 +116,6 @@ input:focus, select:focus { border-color: var(--accent-line); box-shadow: 0 0 0 
   border-color: transparent;
   background: linear-gradient(180deg, var(--accent-bright) 0%, var(--accent) 100%);
   color: var(--accent-ink);
-  box-shadow: 0 6px 18px rgba(176, 29, 46, 0.28);
 }
 .btn-accent:hover { filter: brightness(1.07); background: linear-gradient(180deg, var(--accent-bright) 0%, var(--accent) 100%); }
 .btn:disabled { opacity: 0.5; cursor: default; filter: none; }
