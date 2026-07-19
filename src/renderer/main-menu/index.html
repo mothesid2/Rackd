@@ -84,19 +84,19 @@
       justify-content: center;
       gap: 10px;
       width: 100%;
-      height: 60px;
+      height: 54px;
       border-radius: 5px;
       border: none;
       background:
         repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.05) 3px, rgba(255,255,255,0.05) 4px, transparent 4px, transparent 9px, rgba(255,255,255,0.03) 9px, rgba(255,255,255,0.03) 10px),
-        linear-gradient(180deg, #3d8a28 0%, #2e6c1a 50%, #245514 100%);
+        linear-gradient(180deg, #c8283a 0%, #b01d2e 50%, #8f1626 100%);
       color: #fff;
       font-size: 19px;
       font-weight: 700;
       cursor: pointer;
       margin-bottom: 12px;
       transition: filter 0.15s, transform 0.1s;
-      box-shadow: 0 3px 10px rgba(35,80,15,0.4), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.2);
+      box-shadow: 0 3px 12px rgba(176,29,46,0.42), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.2);
       text-shadow: 0 1px 3px rgba(0,0,0,0.3);
       letter-spacing: 0.5px;
       position: relative;
@@ -112,8 +112,10 @@
     .new-sale-btn:active { filter: brightness(0.92); transform: translateY(0); }
     .new-sale-btn svg { width: 26px; height: 26px; }
 
-    /* nav buttons in left */
-    .nav-section { flex: 1; display: flex; flex-direction: column; }
+    /* nav buttons in left — scrolls within the column if a role has more buttons
+       (e.g. managers also see Settings), so none are ever clipped at the edge. */
+    .nav-section { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+    .nav-section::-webkit-scrollbar { width: 0; }
 
     /* Right column — overview card */
     .right-col {
@@ -224,7 +226,7 @@
   <div class="main-layout">
     <!-- LEFT COLUMN -->
     <div class="left-col">
-      <div class="logo-header" style="justify-content:center;gap:14px;padding:24px 10px">
+      <div class="logo-header" style="justify-content:center;gap:14px;padding:10px 10px 14px">
         <img src="../../../assets/logo-mark-dark.svg" alt="" style="height:76px;width:auto;display:block;filter:drop-shadow(0 5px 12px rgba(0,0,0,0.22))" />
         <span style="font-family:'Tw Cen MT','Century Gothic','Futura','Gill Sans','Segoe UI',sans-serif;font-size:44px;font-weight:500;letter-spacing:5px;text-shadow:0 2px 6px rgba(0,0,0,0.12)">
           <span style="color:#23272d">Rack</span><span style="color:#b01d2e;text-shadow:0 0 16px rgba(176,29,46,0.7),0 0 4px rgba(176,29,46,0.5)">D</span>
@@ -408,11 +410,6 @@
             <div class="units" id="topItemUnits"></div>
           </div>
         </div>
-
-        <div class="low-stock-section">
-          <div class="low-stock-title">Low Stock Alerts</div>
-          <div id="lowStockList"></div>
-        </div>
       </div>
     </div>
   </div>
@@ -483,22 +480,7 @@
         document.getElementById('topItemName').textContent = ov.top_item.name;
         document.getElementById('topItemUnits').textContent = `${ov.top_item.units_sold} units sold`;
       }
-
-      const lowList = document.getElementById('lowStockList');
-      if (ov.low_stock && ov.low_stock.length > 0) {
-        lowList.innerHTML = ov.low_stock.map(item => `
-          <div class="low-stock-item">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-            <span class="ls-name">${esc(item.name)}</span>
-            <span class="ls-qty"><strong>${item.stock_qty}</strong> left</span>
-          </div>
-        `).join('');
-      } else {
-        lowList.innerHTML = '<div style="color:#888;font-size:13px;padding:8px 0">No low stock items</div>';
-      }
+      // Low-stock alerts now live on the Merchandise / Inventory page, not here.
     }
 
     // Refresh overview every 30 seconds

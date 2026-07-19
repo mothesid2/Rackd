@@ -353,8 +353,6 @@
         usernameEl.focus();
       } else {
         heading.textContent = 'Sign In';
-        const by = state && state.day && state.day.openedByName;
-        if (by) { dayNote.textContent = `Day opened by ${by}. Enter your PIN to sign in.`; dayNote.style.display = 'block'; }
         pinPane.style.display = 'block';
         pwPane.style.display = 'none';
       }

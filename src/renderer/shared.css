@@ -118,12 +118,12 @@ html, body {
   display: flex;
   align-items: center;
   width: 100%;
-  height: 76px;
+  height: 64px;
   border-radius: 5px;          /* less round */
   border: none;
   cursor: pointer;
   text-align: left;
-  margin-bottom: 9px;
+  margin-bottom: 8px;
   overflow: hidden;
   transition: filter 0.15s ease, transform 0.1s ease;
   text-decoration: none;
@@ -134,7 +134,8 @@ html, body {
 .nav-btn:hover  { filter: brightness(1.15); transform: translateY(-1px); }
 .nav-btn:active { filter: brightness(0.92); transform: translateY(0); }
 
-/* Brushed metal texture: fine horizontal micro-lines over the base gradient */
+/* Brushed metal texture over a single, coherent charcoal base (brand ground).
+   Every nav button shares this; only Log Out differs (semantic red exit). */
 .nav-btn {
   background:
     repeating-linear-gradient(
@@ -148,7 +149,7 @@ html, body {
       rgba(255,255,255,0.025) 9px,
       rgba(255,255,255,0.025) 10px
     ),
-    linear-gradient(180deg, #344060 0%, #263050 50%, #1e2840 100%);
+    linear-gradient(180deg, #2f343c 0%, #23272d 50%, #1f232a 100%);
 }
 
 /* Top sheen */
@@ -168,45 +169,14 @@ html, body {
   background: rgba(0,0,0,0.4);
 }
 
-.nav-btn.receipts-btn {
-  background:
-    repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.04) 3px, rgba(255,255,255,0.04) 4px, transparent 4px, transparent 9px, rgba(255,255,255,0.025) 9px, rgba(255,255,255,0.025) 10px),
-    linear-gradient(180deg, #353b44 0%, #23272d 50%, #20242a 100%);
-}
-.nav-btn.merchandise-btn {
-  background:
-    repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.04) 3px, rgba(255,255,255,0.04) 4px, transparent 4px, transparent 9px, rgba(255,255,255,0.025) 9px, rgba(255,255,255,0.025) 10px),
-    linear-gradient(180deg, #1e5c70 0%, #175068 50%, #10404e 100%);
-}
-.nav-btn.xzout-btn {
-  background:
-    repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.04) 3px, rgba(255,255,255,0.04) 4px, transparent 4px, transparent 9px, rgba(255,255,255,0.025) 9px, rgba(255,255,255,0.025) 10px),
-    linear-gradient(180deg, #2c3a4e 0%, #222e3e 50%, #1a2430 100%);
-}
+/* All nav buttons share the charcoal base above — one coherent surface. The red
+   accent lives on the icon tile (below), not on eight different button colors. */
+
+/* Log Out is the one exception: a muted brand-red gradient (semantic "exit"). */
 .nav-btn.logout-btn {
   background:
     repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.04) 3px, rgba(255,255,255,0.04) 4px, transparent 4px, transparent 9px, rgba(255,255,255,0.025) 9px, rgba(255,255,255,0.025) 10px),
-    linear-gradient(180deg, #5a2020 0%, #481818 50%, #361010 100%);
-}
-.nav-btn.customer-btn {
-  background:
-    repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.04) 3px, rgba(255,255,255,0.04) 4px, transparent 4px, transparent 9px, rgba(255,255,255,0.025) 9px, rgba(255,255,255,0.025) 10px),
-    linear-gradient(180deg, #2f343c 0%, #23272d 50%, #1f232a 100%);
-}
-.nav-btn.inventory-btn {
-  background:
-    repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.04) 3px, rgba(255,255,255,0.04) 4px, transparent 4px, transparent 9px, rgba(255,255,255,0.025) 9px, rgba(255,255,255,0.025) 10px),
-    linear-gradient(180deg, #344060 0%, #263050 50%, #1e2840 100%);
-}
-.nav-btn.invoice-btn {
-  background:
-    repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.04) 3px, rgba(255,255,255,0.04) 4px, transparent 4px, transparent 9px, rgba(255,255,255,0.025) 9px, rgba(255,255,255,0.025) 10px),
-    linear-gradient(180deg, #1e5c70 0%, #175068 50%, #10404e 100%);
-}
-.nav-btn.edit-btn {
-  background:
-    repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.04) 3px, rgba(255,255,255,0.04) 4px, transparent 4px, transparent 9px, rgba(255,255,255,0.025) 9px, rgba(255,255,255,0.025) 10px),
-    linear-gradient(180deg, #353b44 0%, #23272d 50%, #20242a 100%);
+    linear-gradient(180deg, #5a2222 0%, #481a1a 50%, #3a1414 100%);
 }
 
 .nav-icon-area {
