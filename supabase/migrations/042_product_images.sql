@@ -54,6 +54,7 @@ create policy "product_images_manager_update" on storage.objects for update to a
   );
 
 -- ── storefront_menu gains image_url ──────────────────────────────────────────
+drop function if exists public.storefront_menu(uuid);
 create or replace function public.storefront_menu(p_location uuid)
 returns table (barcode text, name text, category text, price numeric, available integer, stock_status text, image_url text)
 language sql stable security definer set search_path = public as $$
