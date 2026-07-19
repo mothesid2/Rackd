@@ -65,33 +65,38 @@
       gap: 14px;
     }
     .tile {
-      position: relative; overflow: hidden; cursor: pointer; text-align: left;
-      border: none; border-radius: 14px; padding: 18px 20px;
-      display: flex; flex-direction: column; justify-content: space-between; gap: 10px;
+      position: relative; overflow: hidden; cursor: pointer;
+      border: none; border-radius: 18px; padding: 20px 22px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 14px;
+      /* faint topographic waves at the base + charcoal body */
       background:
-        repeating-linear-gradient(0deg, transparent 0 3px, rgba(255,255,255,0.035) 3px 4px, transparent 4px 9px, rgba(255,255,255,0.02) 9px 10px),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='150'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.045' stroke-width='1.2'%3E%3Cpath d='M-10 110 C 70 88 120 132 170 110 S 260 88 330 108'/%3E%3Cpath d='M-10 124 C 70 102 120 146 170 124 S 260 102 330 122'/%3E%3Cpath d='M-10 96 C 70 74 120 118 170 96 S 260 74 330 94'/%3E%3C/g%3E%3C/svg%3E") bottom center / 100% auto no-repeat,
         linear-gradient(180deg, var(--charcoal-1) 0%, var(--charcoal-2) 52%, var(--charcoal-3) 100%);
-      box-shadow: 0 6px 18px -8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.28);
+      box-shadow: 0 6px 18px -8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.28);
       transition: transform 0.12s ease, box-shadow 0.12s ease;
     }
-    .tile::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); opacity: 0; transition: opacity 0.12s; }
-    .tile:hover { transform: translateY(-3px); box-shadow: 0 14px 30px -10px rgba(0,0,0,0.55); }
-    .tile:hover::before { opacity: 1; }
+    .tile:hover { transform: translateY(-3px); box-shadow: 0 16px 32px -10px rgba(0,0,0,0.6); }
     .tile:active { transform: translateY(-1px); }
+    /* Circular badge with a soft red halo + gold icon. */
     .tile .t-ic {
-      width: 62px; height: 62px; border-radius: 15px; display: grid; place-items: center;
-      background: rgba(176,29,46,0.16); border: 1px solid rgba(176,29,46,0.28);
+      width: 88px; height: 88px; border-radius: 50%; display: grid; place-items: center; flex: 0 0 auto;
+      background: radial-gradient(circle at 50% 34%, #86212f 0%, #591a24 56%, #431520 100%);
+      box-shadow: 0 0 0 7px rgba(176,29,46,0.10), 0 0 28px 4px rgba(176,29,46,0.38), inset 0 1px 2px rgba(255,255,255,0.16), inset 0 -2px 5px rgba(0,0,0,0.35);
     }
-    .tile .t-ic svg { width: 34px; height: 34px; color: #f0a6ae; }
-    .tile .t-title { font-size: 19px; font-weight: 700; color: #fff; line-height: 1.15; }
-    .tile .t-sub { font-size: 12.5px; color: rgba(255,255,255,0.6); margin-top: 2px; }
-    .tile .t-arrow { position: absolute; top: 16px; right: 16px; color: rgba(255,255,255,0.3); }
-    .tile .t-arrow svg { width: 18px; height: 18px; }
-    /* Log Out — semantic muted-red exit, its accent rail always visible. */
-    .tile.exit { background: linear-gradient(180deg, #5a2222 0%, #481a1a 52%, #3a1414 100%); }
-    .tile.exit::before { opacity: 1; }
-    .tile.exit .t-ic { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.14); }
-    .tile.exit .t-ic svg { color: #f2c0bc; }
+    .tile .t-ic svg { width: 42px; height: 42px; color: #e7cd92; }
+    .tile .t-title { position: relative; display: inline-block; font-size: 21px; font-weight: 700; color: #fff; line-height: 1.15; padding-bottom: 9px; }
+    .tile .t-title::after { content: ''; position: absolute; left: 50%; transform: translateX(-50%); bottom: 0; width: 38px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, #e7cd92, #b98f3e); }
+    .tile .t-sub { font-size: 13px; color: rgba(255,255,255,0.58); margin-top: 8px; }
+    .tile .t-arrow { position: absolute; top: 50%; right: 18px; transform: translateY(-50%); color: #e7cd92; opacity: 0.75; }
+    .tile .t-arrow svg { width: 22px; height: 22px; }
+    /* Log Out — semantic maroon exit. */
+    .tile.exit {
+      background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='150'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.05' stroke-width='1.2'%3E%3Cpath d='M-10 110 C 70 88 120 132 170 110 S 260 88 330 108'/%3E%3Cpath d='M-10 124 C 70 102 120 146 170 124 S 260 102 330 122'/%3E%3C/g%3E%3C/svg%3E") bottom center / 100% auto no-repeat,
+        linear-gradient(180deg, #5f2327 0%, #4a1a1e 52%, #3a1417 100%);
+    }
+    .tile.exit .t-ic { background: radial-gradient(circle at 50% 34%, #9a2a33 0%, #6d1e26 56%, #4d1620 100%); }
+    .tile.exit .t-ic svg { color: #f0d9a6; }
 
     /* Fullscreen toggle */
     .fullscreen-btn {
@@ -103,7 +108,7 @@
     .fullscreen-btn:hover { background: rgba(176,29,46,0.9); color: #fff; }
     .fullscreen-btn svg { width: 15px; height: 15px; }
 
-    @media (max-height: 720px) { .tile .t-ic { width: 52px; height: 52px; } .tile .t-ic svg { width: 28px; height: 28px; } .new-sale { height: 56px; } .tile { padding: 14px 18px; } }
+    @media (max-height: 760px) { .tile .t-ic { width: 68px; height: 68px; } .tile .t-ic svg { width: 34px; height: 34px; } .tile .t-title { font-size: 19px; } .new-sale { height: 56px; } .tile { padding: 14px 18px; gap: 10px; } }
     @media (prefers-reduced-motion: reduce) { .tile, .new-sale { transition: none; } }
   </style>
 </head>
@@ -159,7 +164,7 @@
 
       <button class="tile" onclick="navigate('pickups')">
         <div class="t-ic"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></div>
-        <div><div class="t-title">Online Pickups</div><div class="t-sub">BOPIS order queue</div></div>
+        <div><div class="t-title">Online Pickups</div><div class="t-sub">Web order pickups</div></div>
         <span class="t-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
       </button>
 
@@ -189,9 +194,9 @@
     </svg>
   </button>
 
-  <!-- Status bar -->
+  <!-- Status bar: who's signed in + date (left), live clock (right) -->
   <div class="status-bar">
-    <div class="status-left" id="status-left">Loading…</div>
+    <div class="status-left" id="status-left"></div>
     <div class="status-right" id="status-right"></div>
   </div>
 
@@ -211,6 +216,15 @@
     document.addEventListener('DOMContentLoaded', async () => {
       const { session } = await window.api.getSession();
       currentRole = session?.role;
+
+      // Status bar: "Logged in: <Role>  |  <date>" on the left, live clock on the right.
+      const roleName = session?.role ? session.role.charAt(0).toUpperCase() + session.role.slice(1) : '';
+      const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' });
+      const who = session?.username ? `${session.username} · ${roleName}` : roleName;
+      document.getElementById('status-left').innerHTML =
+        `Logged in:&nbsp;<strong style="color:#e7cd92">${who}</strong>&nbsp;&nbsp;|&nbsp;&nbsp;${dateStr}`;
+      const tick = () => { document.getElementById('status-right').textContent = new Date().toLocaleTimeString('en-US'); };
+      tick(); setInterval(tick, 1000);
 
       if (session?.role === 'manager' || session?.role === 'admin') {
         document.getElementById('settingsBtn').style.display = '';
