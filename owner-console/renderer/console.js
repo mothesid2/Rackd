@@ -124,9 +124,9 @@ async function renderKiosks() {
   }));
 }
 
-// ── Online orders ───────────────────────────────────────────────────────────
+// ── Web Orders ──────────────────────────────────────────────────────────────
 async function renderOrders() {
-  view.innerHTML = `<div class="sec-head"><div class="h2">Online orders</div></div><div id="oWrap"><div class="spin">Loading…</div></div>`;
+  view.innerHTML = `<div class="sec-head"><div class="h2">Web Orders</div><div class="muted" style="font-size:12px">Online pickup orders across this business's locations</div></div><div id="oWrap"><div class="spin">Loading…</div></div>`;
   const r = await window.owner.onlineOrders(currentTenant);
   if (!r.success) { $('oWrap').innerHTML = `<div class="card muted">${esc(r.error)}</div>`; return; }
   const orders = r.orders || [];
@@ -181,8 +181,93 @@ async function renderPublish() {
   }));
 }
 
+// ── Staff & permissions ───────────────────────────────────────────────────────
+const PERM_LABELS = {
+  apply_discount: 'Apply discount', process_refund: 'Process refund', override_price: 'Override price',
+  inventory_adjust: 'Adjust inventory', view_reports: 'View reports', manage_rebates: 'Manage rebates',
+  open_drawer_no_sale: 'Open drawer (no sale)', clock_others: 'Clock others in/out',
+};
+const PERM_KEYS = Object.keys(PERM_LABELS);
+let staffList = [];
+
+async function renderStaff() {
+  view.innerHTML = `<div class="sec-head"><div class="h2">Staff &amp; permissions</div></div><div id="sWrap"><div class="spin">Loading…</div></div>`;
+  if (!currentTenant) { $('sWrap').innerHTML = '<div class="card muted">Pick a business.</div>'; return; }
+  const r = await window.owner.staff(currentTenant);
+  if (!r.success) { $('sWrap').innerHTML = `<div class="card muted">${esc(r.error)}</div>`; return; }
+  staffList = r.staff || [];
+  if (!staffList.length) { $('sWrap').innerHTML = '<div class="card muted">No staff yet. Staff are created on the POS / Manager Portal.</div>'; return; }
+  $('sWrap').innerHTML = staffList.map((e) => {
+    const isAdmin = e.role === 'admin';
+    const toggles = PERM_KEYS.map((k) => {
+      const on = isAdmin || !!(e.permissions[k] && e.permissions[k].is_granted);
+      return `<label class="permtog${isAdmin ? ' locked' : ''}">
+        <input type="checkbox" data-uid="${esc(e.uid)}" data-key="${k}" ${on ? 'checked' : ''} ${isAdmin ? 'disabled' : ''}/>
+        <span>${PERM_LABELS[k]}</span></label>`;
+    }).join('');
+    return `<div class="card" style="margin-bottom:12px">
+      <div class="rowflex" style="justify-content:space-between">
+        <div>
+          <div style="font-weight:700;font-size:15px">${esc(e.name || e.username || 'Staff')}
+            <span class="badge ${isAdmin ? 'warn' : 'dim'}" style="margin-left:6px">${esc(e.role || '')}</span>
+            ${e.is_active ? '' : '<span class="badge dim" style="margin-left:4px">inactive</span>'}</div>
+          <div class="muted" style="font-size:12px;margin-top:2px">${esc(e.username || '—')} · ${esc(e.location_name || '')}</div>
+        </div>
+        <button class="rowbtn" data-resetpw="${esc(e.uid)}" data-who="${esc(e.username || e.name || 'this user')}">Reset password</button>
+      </div>
+      ${isAdmin
+        ? '<div class="muted" style="font-size:12px;margin-top:12px">Admins have every permission — nothing to toggle.</div>'
+        : `<div class="permgrid" style="margin-top:12px">${toggles}</div>`}
+    </div>`;
+  }).join('');
+
+  $('sWrap').querySelectorAll('input[type=checkbox]').forEach((cb) => cb.addEventListener('change', async () => {
+    cb.disabled = true;
+    const r = await window.owner.setStaffPermission({
+      tenant_id: currentTenant, employee_uid: cb.dataset.uid, permission_key: cb.dataset.key, is_granted: cb.checked,
+    });
+    cb.disabled = false;
+    if (r.success) toast('Permission updated — applies on the register’s next sync');
+    else { cb.checked = !cb.checked; toast(r.error || 'Failed', true); }
+  }));
+  $('sWrap').querySelectorAll('[data-resetpw]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(`Reset the password for ${b.dataset.who}? They'll get a temporary password and must change it on next login.`)) return;
+    b.disabled = true; b.textContent = 'Resetting…';
+    const r = await window.owner.resetStaffPassword(currentTenant, b.dataset.resetpw);
+    b.disabled = false; b.textContent = 'Reset password';
+    if (!r.success) { toast(r.error || 'Failed', true); return; }
+    $('tpWho').textContent = r.username || b.dataset.who;
+    $('tpPass').textContent = r.temp_password || '—';
+    $('tempPwModal').style.display = 'flex';
+  }));
+}
+
+// ── Revenue (per location) ────────────────────────────────────────────────────
+async function renderRevenue() {
+  view.innerHTML = `<div class="sec-head"><div class="h2">Revenue by location</div><div class="muted" style="font-size:12px">In-store POS sales · last 30 days</div></div><div id="rvWrap"><div class="spin">Loading…</div></div>`;
+  if (!currentTenant) { $('rvWrap').innerHTML = '<div class="card muted">Pick a business.</div>'; return; }
+  const r = await window.owner.revenueByLocation(currentTenant);
+  if (!r.success) { $('rvWrap').innerHTML = `<div class="card muted">${esc(r.error)}</div>`; return; }
+  const locs = r.locations || [];
+  const total = locs.reduce((s, l) => s + Number(l.revenue || 0), 0);
+  const txns = locs.reduce((s, l) => s + Number(l.txn_count || 0), 0);
+  const kpis = `<div class="kpi-row">
+    <div class="kpi"><div class="lbl">Total POS revenue</div><div class="val">${fmt(total)}</div></div>
+    <div class="kpi"><div class="lbl">Transactions</div><div class="val">${txns}</div></div>
+    <div class="kpi"><div class="lbl">Locations</div><div class="val">${locs.filter((l) => l.location_id).length}</div></div>
+  </div>`;
+  $('rvWrap').innerHTML = kpis + (locs.length ? `<div class="card" style="padding:0;overflow:hidden"><table class="grid">
+    <thead><tr><th>Location</th><th class="num">Transactions</th><th class="num">Refunds</th><th class="num">Revenue</th></tr></thead>
+    <tbody>${locs.map((l) => `<tr>
+      <td>${esc(l.location_name)}</td>
+      <td class="num muted">${l.txn_count || 0}</td>
+      <td class="num muted">${l.refund_count || 0}</td>
+      <td class="num" style="font-weight:700">${fmt(l.revenue)}</td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="card muted">No sales in this window yet.</div>');
+}
+
 // ── nav ───────────────────────────────────────────────────────────────────────
-const TABS = { businesses: renderBusinesses, kiosks: renderKiosks, orders: renderOrders, publish: renderPublish };
+const TABS = { businesses: renderBusinesses, kiosks: renderKiosks, orders: renderOrders, staff: renderStaff, revenue: renderRevenue, publish: renderPublish };
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.navbtn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
@@ -223,7 +308,7 @@ $('rConfirm').addEventListener('click', async () => {
 
 // ── boot ───────────────────────────────────────────────────────────────────────
 $('logout').addEventListener('click', async () => { await window.owner.logout(); window.location.href = 'login.html'; });
-$('bizSelect').addEventListener('change', (e) => { currentTenant = e.target.value; if (['kiosks', 'orders'].includes(currentTab)) switchTab(currentTab); });
+$('bizSelect').addEventListener('change', (e) => { currentTenant = e.target.value; if (['kiosks', 'orders', 'staff', 'revenue'].includes(currentTab)) switchTab(currentTab); });
 document.querySelectorAll('.navbtn').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
 (async () => {

@@ -489,6 +489,135 @@ Deno.serve(async (req: Request) => {
         });
       }
 
+      // ── staff & permissions (spec item 8) ─────────────────────────────────
+      // List every employee for a tenant with their per-permission grants, so the
+      // owner can edit ANY user's permissions and reset ANY user's password.
+      case 'staff': {
+        const tenantId = body.tenant_id as string;
+        if (!tenantId) return json({ error: 'tenant_id required' }, 400);
+        const { data: emps } = await admin
+          .from('employees_cloud')
+          .select('uid, username, name, role, location_id, is_active, must_change_password')
+          .eq('tenant_id', tenantId).order('role').order('name');
+        const { data: perms } = await admin
+          .from('employee_permissions_cloud')
+          .select('employee_uid, permission_key, is_granted, value')
+          .eq('tenant_id', tenantId);
+        const permsByEmp: Record<string, Record<string, { is_granted: boolean; value: number | null }>> = {};
+        for (const p of perms ?? []) {
+          (permsByEmp[p.employee_uid as string] ||= {})[p.permission_key as string] = {
+            is_granted: !!p.is_granted, value: (p.value as number | null) ?? null,
+          };
+        }
+        const { data: locs } = await admin.from('locations').select('id, name').eq('tenant_id', tenantId);
+        const locName: Record<string, string> = {};
+        for (const l of locs ?? []) locName[l.id as string] = l.name as string;
+        return json({
+          staff: (emps ?? []).map((e) => ({
+            ...e, location_name: e.location_id ? (locName[e.location_id as string] || '—') : 'All locations',
+            permissions: permsByEmp[e.uid as string] || {},
+          })),
+        });
+      }
+
+      // Grant/revoke ONE permission for an employee. Updates the existing cloud row
+      // in place (preserving its uid so the POS pull converges) or inserts a new
+      // grant. Audited. The POS applies it on its next sync pull.
+      case 'setStaffPermission': {
+        const tenantId = body.tenant_id as string;
+        const employeeUid = body.employee_uid as string;
+        const permissionKey = body.permission_key as string;
+        const isGranted = !!body.is_granted;
+        const value = (body.value as number | null) ?? null;
+        if (!tenantId || !employeeUid || !permissionKey) return json({ error: 'tenant_id + employee_uid + permission_key required' }, 400);
+        const { data: emp } = await admin.from('employees_cloud')
+          .select('location_id, register_id, username, name').eq('tenant_id', tenantId).eq('uid', employeeUid).maybeSingle();
+        if (!emp) return json({ error: 'employee not found' }, 404);
+        const { data: existing } = await admin.from('employee_permissions_cloud')
+          .select('uid').eq('tenant_id', tenantId).eq('employee_uid', employeeUid).eq('permission_key', permissionKey).maybeSingle();
+        const nowIso = new Date().toISOString();
+        if (existing?.uid) {
+          const { error } = await admin.from('employee_permissions_cloud')
+            .update({ is_granted: isGranted, value, updated_at: nowIso })
+            .eq('tenant_id', tenantId).eq('uid', existing.uid);
+          if (error) throw error;
+        } else {
+          const { error } = await admin.from('employee_permissions_cloud').insert({
+            uid: crypto.randomUUID(), tenant_id: tenantId, location_id: emp.location_id, register_id: emp.register_id,
+            employee_uid: employeeUid, permission_key: permissionKey, is_granted: isGranted, value,
+            created_at: nowIso, updated_at: nowIso,
+          });
+          if (error) throw error;
+        }
+        await admin.from('owner_audit_log').insert({
+          tenant_id: tenantId, action: 'set_permission', target_uid: employeeUid,
+          target_label: emp.username || emp.name, detail: { permission_key: permissionKey, is_granted: isGranted, value },
+        });
+        return json({ ok: true });
+      }
+
+      // Reset ANY employee's password to a new temporary one (shown once), forcing
+      // a change on next login. Never silent — always audited.
+      case 'resetStaffPassword': {
+        const tenantId = body.tenant_id as string;
+        const employeeUid = body.employee_uid as string;
+        if (!tenantId || !employeeUid) return json({ error: 'tenant_id + employee_uid required' }, 400);
+        const { data: emp } = await admin.from('employees_cloud')
+          .select('username, name, role').eq('tenant_id', tenantId).eq('uid', employeeUid).maybeSingle();
+        if (!emp) return json({ error: 'employee not found' }, 404);
+        const temp = genPassword();
+        const hash = bcrypt.hashSync(temp, 10);
+        const { error } = await admin.from('employees_cloud')
+          .update({ password_hash: hash, must_change_password: true, updated_at: new Date().toISOString() })
+          .eq('tenant_id', tenantId).eq('uid', employeeUid);
+        if (error) throw error;
+        await admin.from('owner_audit_log').insert({
+          tenant_id: tenantId, action: 'reset_password', target_uid: employeeUid,
+          target_label: emp.username || emp.name, detail: { role: emp.role },
+        });
+        return json({ ok: true, username: emp.username, temp_password: temp });
+      }
+
+      // Per-location POS revenue for the "Revenue" tab.
+      case 'revenueByLocation': {
+        const tenantId = body.tenant_id as string;
+        const end = body.end ? new Date(String(body.end)) : new Date();
+        const start = body.start ? new Date(String(body.start)) : new Date(end.getTime() - 30 * 86400000);
+        const { data: rows, error } = await admin.rpc('store_sales_by_location', { p_start: start.toISOString(), p_end: end.toISOString() });
+        if (error) throw error;
+        const { data: locs } = await admin.from('locations').select('id, name, tenant_id').eq('tenant_id', tenantId);
+        const locName: Record<string, string> = {};
+        for (const l of locs ?? []) locName[l.id as string] = l.name as string;
+        // deno-lint-ignore no-explicit-any
+        const mine = (rows as any[] ?? []).filter((r) => r.tenant_id === tenantId);
+        const byLoc = (locs ?? []).map((l) => {
+          const agg = mine.find((r) => r.location_id === l.id);
+          return { location_id: l.id, location_name: l.name, revenue: Number(agg?.revenue) || 0,
+                   txn_count: Number(agg?.txn_count) || 0, refund_count: Number(agg?.refund_count) || 0 };
+        });
+        // Any sales with no/legacy location_id (unattributed).
+        const unattrib = mine.filter((r) => !r.location_id || !locName[r.location_id]);
+        if (unattrib.length) {
+          byLoc.push({ location_id: null as unknown as string, location_name: 'Unattributed',
+            revenue: unattrib.reduce((s, r) => s + Number(r.revenue || 0), 0),
+            txn_count: unattrib.reduce((s, r) => s + Number(r.txn_count || 0), 0),
+            refund_count: unattrib.reduce((s, r) => s + Number(r.refund_count || 0), 0) });
+        }
+        byLoc.sort((a, b) => b.revenue - a.revenue);
+        return json({ window: { start: start.toISOString(), end: end.toISOString() }, locations: byLoc });
+      }
+
+      // Recent owner audit trail for a tenant.
+      case 'auditLog': {
+        const tenantId = body.tenant_id as string;
+        if (!tenantId) return json({ error: 'tenant_id required' }, 400);
+        const { data, error } = await admin.from('owner_audit_log')
+          .select('action, target_label, detail, created_at')
+          .eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(100);
+        if (error) throw error;
+        return json({ log: data ?? [] });
+      }
+
       // ── manufacturer SFTP credentials (rebate scan-data submission) ────────
       case 'mfrList': {
         const tenantId = body.tenant_id as string;

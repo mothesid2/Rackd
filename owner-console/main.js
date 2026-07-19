@@ -135,6 +135,13 @@ ipcMain.handle('owner:cancelReset', async (_e, tenantId, machineId) => wrap(() =
 // ── online orders overview ──────────────────────────────────────────────────
 ipcMain.handle('owner:onlineOrders', async (_e, tenantId) => wrap(() => callAdmin('onlineOrders', { tenant_id: tenantId || null })));
 
+// ── staff, permissions & per-location revenue (item 8) ──────────────────────────
+ipcMain.handle('owner:staff', async (_e, tenantId) => wrap(() => callAdmin('staff', { tenant_id: tenantId })));
+ipcMain.handle('owner:setStaffPermission', async (_e, payload) => wrap(() => callAdmin('setStaffPermission', payload || {})));
+ipcMain.handle('owner:resetStaffPassword', async (_e, tenantId, employeeUid) => wrap(() => callAdmin('resetStaffPassword', { tenant_id: tenantId, employee_uid: employeeUid })));
+ipcMain.handle('owner:revenueByLocation', async (_e, tenantId) => wrap(() => callAdmin('revenueByLocation', { tenant_id: tenantId })));
+ipcMain.handle('owner:auditLog', async (_e, tenantId) => wrap(() => callAdmin('auditLog', { tenant_id: tenantId })));
+
 // ── publish (staging -> production) ────────────────────────────────────────────
 ipcMain.handle('owner:publishStatus', async () => wrap(() => callAdmin('publishStatus')));
 ipcMain.handle('owner:publish', async (_e, appId) => wrap(() => callAdmin('publish', { app: appId })));

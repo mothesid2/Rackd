@@ -15,6 +15,10 @@
     .badge.on { background: rgba(70,180,95,0.14); color: var(--good); }
     .badge.warn { background: rgba(224,161,58,0.15); color: var(--warn); }
     .badge.dim { background: var(--panel-2); color: var(--muted); }
+    .permgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+    .permtog { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+    .permtog input { width: 15px; height: 15px; accent-color: var(--accent, #b01d2e); cursor: pointer; }
+    .permtog.locked { opacity: 0.65; cursor: default; }
   </style>
 </head>
 <body>
@@ -42,7 +46,16 @@
       </button>
       <button class="navbtn" data-tab="orders">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
-        Online orders
+        Web Orders
+      </button>
+      <div class="nav-label">Team</div>
+      <button class="navbtn" data-tab="staff">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Staff &amp; permissions
+      </button>
+      <button class="navbtn" data-tab="revenue">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Revenue
       </button>
       <div class="nav-label">Release</div>
       <button class="navbtn" data-tab="publish">
@@ -112,6 +125,18 @@
       <div class="row" style="justify-content:flex-end">
         <button class="btn" onclick="document.getElementById('resetModal').style.display='none'">Cancel</button>
         <button class="btn" style="background:#5a2323;color:#f2c7c7" id="rConfirm">Queue reset</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Temporary password (shown once after a reset) -->
+  <div class="overlay" id="tempPwModal">
+    <div class="modal" style="width:440px">
+      <h3>Password reset — deliver this</h3>
+      <div class="muted" style="font-size:12.5px;margin-bottom:14px">Give this temporary password to <strong id="tpWho"></strong>. It's shown <strong>once</strong>; they must change it on next login. This reset was recorded in the audit log.</div>
+      <div><div class="muted" style="font-size:11px">Temporary password</div><div class="keycode" id="tpPass" style="font-size:15px;display:inline-block;margin-top:3px"></div></div>
+      <div class="row" style="justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-accent" onclick="document.getElementById('tempPwModal').style.display='none'">Done</button>
       </div>
     </div>
   </div>

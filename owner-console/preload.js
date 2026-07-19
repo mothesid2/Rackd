@@ -18,6 +18,12 @@ contextBridge.exposeInMainWorld('owner', {
 
   onlineOrders: (tenantId) => ipcRenderer.invoke('owner:onlineOrders', tenantId),
 
+  staff: (tenantId) => ipcRenderer.invoke('owner:staff', tenantId),
+  setStaffPermission: (payload) => ipcRenderer.invoke('owner:setStaffPermission', payload),
+  resetStaffPassword: (tenantId, employeeUid) => ipcRenderer.invoke('owner:resetStaffPassword', tenantId, employeeUid),
+  revenueByLocation: (tenantId) => ipcRenderer.invoke('owner:revenueByLocation', tenantId),
+  auditLog: (tenantId) => ipcRenderer.invoke('owner:auditLog', tenantId),
+
   publishStatus: () => ipcRenderer.invoke('owner:publishStatus'),
   publish: (appId) => ipcRenderer.invoke('owner:publish', appId),
 });
