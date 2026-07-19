@@ -49,10 +49,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main className="max-w-3xl mx-auto px-4 py-6 pb-28">{children}</main>
 
           <footer className="mt-10 border-t border-black/10">
-            <div className="max-w-3xl mx-auto px-4 py-8 flex items-center gap-3 text-xs text-smoke">
+            <div className="max-w-3xl mx-auto px-4 py-8 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-smoke">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/logo-mark-dark.svg" alt="" className="w-5 h-5 opacity-70" />
               <span>Must be 21+ with valid ID. Pickup only — bring your ID to collect your order.</span>
+              <span className="flex-1" />
+              <a href="mailto:support@r4ckd.net" className="font-semibold text-ink hover:text-accent transition-colors">
+                Contact us: support@r4ckd.net
+              </a>
             </div>
           </footer>
         </CartProvider>

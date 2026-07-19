@@ -34,10 +34,12 @@ export default function Account() {
   const [busy, setBusy] = useState(false);
   const [welcomeBack, setWelcomeBack] = useState<string | null>(null);
 
-  // signed-in view: DOB (age gate) + phone
+  // signed-in view: DOB (age gate) + phone + per-use-case SMS consent
   const [dob, setDob] = useState('');
   const [ageErr, setAgeErr] = useState<string | null>(null);
   const [phone, setPhone] = useState('');
+  const [smsOrders, setSmsOrders] = useState(false);
+  const [smsMarketing, setSmsMarketing] = useState(false);
 
   const refresh = useCallback(async () => {
     const { data: { session } } = await supabase().auth.getSession();
@@ -68,11 +70,13 @@ export default function Account() {
       if (signupDob && !data?.age_verified) {
         await supabase().rpc('self_attest_age', { p_dob: signupDob }).then(({ error }: { error: unknown }) => { if (!error && typeof window !== 'undefined') localStorage.removeItem('rackd_dob'); });
         const { data: d2 } = await supabase().from('storefront_customers').select('*').eq('id', session.user.id).maybeSingle();
-        if (d2) { setProfile(d2); if (d2.phone) setPhone(d2.phone); setLoading(false); return; }
+        if (d2) { setProfile(d2); if (d2.phone) setPhone(d2.phone); setSmsOrders(!!d2.sms_consent_transactional); setSmsMarketing(!!d2.sms_consent_marketing); setLoading(false); return; }
       }
 
       setProfile(data);
       if (data?.phone) setPhone(data.phone);
+      setSmsOrders(!!data?.sms_consent_transactional);
+      setSmsMarketing(!!data?.sms_consent_marketing);
     }
     setLoading(false);
   }, []);
@@ -88,7 +92,12 @@ export default function Account() {
     const p = normalizePhone(phone);
     if (!p) { alert('Enter a valid 10-digit US phone number.'); return; }
     setBusy(true);
-    await supabase().from('storefront_customers').update({ phone: p }).eq('id', session.user.id);
+    await supabase().from('storefront_customers').update({
+      phone: p,
+      sms_consent_transactional: smsOrders,
+      sms_consent_marketing: smsMarketing,
+      sms_consent_at: new Date().toISOString(),
+    }).eq('id', session.user.id);
     setPhone(p);
     setBusy(false); refresh();
   }
@@ -150,10 +159,27 @@ export default function Account() {
       </div>
 
       <div className="bg-white rounded-xl border p-4">
-        <div className="font-semibold mb-2">Mobile (for pickup texts)</div>
+        <div className="font-semibold mb-2">Mobile number</div>
         <div className="flex gap-2">
           <input className="border rounded-lg px-3 py-2 flex-1" placeholder="(555) 000-0000" value={phone} onChange={(e) => setPhone(e.target.value)} />
           <button className="rounded-lg border px-4" onClick={savePhone} disabled={busy}>Save</button>
+        </div>
+
+        <div className="mt-3 grid gap-2">
+          <div className="text-sm font-semibold">Text me about:</div>
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-0.5" checked={smsOrders} onChange={(e) => setSmsOrders(e.target.checked)} />
+            <span><strong>Order &amp; pickup updates</strong> — confirmations and a text when my order is ready to collect.</span>
+          </label>
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-0.5" checked={smsMarketing} onChange={(e) => setSmsMarketing(e.target.checked)} />
+            <span><strong>Deals &amp; promotions</strong> — occasional offers from my store.</span>
+          </label>
+          <p className="text-xs text-smoke leading-relaxed">
+            By checking a box you agree to receive automated text messages from Rackd at the number above. Consent isn&apos;t a condition of purchase.
+            Message frequency varies. Message &amp; data rates may apply. Reply <strong>STOP</strong> to unsubscribe, <strong>HELP</strong> for help.
+            See our <a href="mailto:support@r4ckd.net" className="underline">contact</a> for questions.
+          </p>
         </div>
       </div>
 
