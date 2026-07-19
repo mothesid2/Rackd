@@ -86,6 +86,22 @@ Stripe → storefront → email → desktop apps → provisioning. `[x]` = alrea
 
 ---
 
+## 8b. Batch 3 additions (auth model + storefront signup/sort + POS UI)
+Everything below is CODE-complete, committed, and pushed to `main`/`demo`; functions are
+deployed. Your remaining actions:
+- [ ] **Run `deploy-043.sql` + `deploy-044.sql`** (SQL editor). 043 = unified staff auth
+      (employees_cloud forced-change flags + tenant-scoped RLS); 044 = location address/zip/logo.
+      *(The `admin` fn already redeployed — it needs 043's columns to provision the admin.)*
+- [ ] **Enable auth providers** (Supabase → Authentication → Providers) for the storefront's
+      new signup options: **Google** + **Apple** (OAuth client IDs/secrets), and **Phone**
+      (a Twilio/MessageBird SMS provider). Email/password already works.
+- [ ] **Cloudflare production branch = `main`** now (it has all batch-3 code). Add the env
+      vars under **Variables and secrets** (Production + Preview) — see §3.
+- [ ] Provisioning changed: **Owner Console → New business** now also asks for an **admin
+      username** and returns the **admin password once**. Deliver the business key + admin
+      login to the client. On first POS login the admin is forced to change password + set a PIN;
+      managers/cashiers you add in Settings get random creds shown once (forced-change too).
+
 ## 9. Verify end-to-end
 - [ ] POS: open the day (manager login) → PIN sign-in → ring a sale → X/Z shows totals, online excluded from the drawer.
 - [ ] Storefront (test mode): create account → "Welcome back" on return → order → 5% fee line → pay (Stripe test) → pickup receipt auto-prints at the store → order shows in Owner Console + POS Receipts (Online — Prepaid).
