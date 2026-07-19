@@ -8,10 +8,30 @@
 // Function, authorized by that secret. No client build ever contains it.
 
 const { app, BrowserWindow, ipcMain } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const cfg = require('./config');
+
+// Auto-update from the per-app channel (app-updates/owner/<channel>). Ship a build
+// with `node scripts/ship.js owner` and promote it in the console's Publish tab;
+// installed consoles then update themselves on the next launch. Never in dev.
+function updaterChannel() { return process.env.RACKD_CHANNEL === 'staging' ? 'staging' : 'production'; }
+function startUpdater() {
+  if (!app.isPackaged) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  try {
+    autoUpdater.setFeedURL({ provider: 'generic', url: `${cfg.SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/app-updates/owner/${updaterChannel()}` });
+  } catch { /* ignore */ }
+  let bootApply = true;
+  setTimeout(() => { bootApply = false; }, 3 * 60 * 1000);
+  autoUpdater.on('update-downloaded', () => { if (bootApply) { try { autoUpdater.quitAndInstall(true, true); } catch { /* ignore */ } } });
+  autoUpdater.on('error', () => { /* non-fatal */ });
+  setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 3000);
+  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 6 * 60 * 60 * 1000);
+}
 
 // Demo build: watermarked "DEMO" + isolated local data (separate productName ->
 // separate userData). A packaged demo installer injects rackdDemo:true. Cloud
@@ -85,7 +105,7 @@ function createWindow() {
   attachDemoBadge(win);
   return win;
 }
-app.whenReady().then(() => { loadStore(); createWindow(); app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); }); });
+app.whenReady().then(() => { loadStore(); createWindow(); startUpdater(); app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); }); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
 // ── auth ─────────────────────────────────────────────────────────────────────
