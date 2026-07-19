@@ -1,7 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('portal', {
-  login: (code) => ipcRenderer.invoke('portal:login', code),
+  status: () => ipcRenderer.invoke('portal:status'),
+  setBusiness: (key) => ipcRenderer.invoke('portal:setBusiness', key),
+  login: (args) => ipcRenderer.invoke('portal:login', args),
+  changePassword: (args) => ipcRenderer.invoke('portal:changePassword', args),
   logout: () => ipcRenderer.invoke('portal:logout'),
   session: () => ipcRenderer.invoke('portal:session'),
   dashboard: (range) => ipcRenderer.invoke('portal:dashboard', range),
@@ -17,6 +20,8 @@ contextBridge.exposeInMainWorld('portal', {
   stripeConnect: (args) => ipcRenderer.invoke('portal:stripeConnect', args),
   openExternal: (url) => ipcRenderer.invoke('portal:openExternal', url),
   uploadProductImage: (args) => ipcRenderer.invoke('portal:uploadProductImage', args),
+  setBranding: (args) => ipcRenderer.invoke('portal:setBranding', args),
+  uploadLocationLogo: (args) => ipcRenderer.invoke('portal:uploadLocationLogo', args),
   menu: (args) => ipcRenderer.invoke('portal:menu', args),
   setMenuItem: (args) => ipcRenderer.invoke('portal:setMenuItem', args),
   orders: (args) => ipcRenderer.invoke('portal:orders', args),

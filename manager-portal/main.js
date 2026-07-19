@@ -9,6 +9,7 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
+const fs = require('fs');
 const { randomUUID } = require('crypto');
 const cfg = require('./config');
 
@@ -52,6 +53,14 @@ function attachDemoBadge(win) {
 // In-memory session (never persisted to disk — a portal re-login is cheap).
 let token = null;
 let session = null; // { tenant_id, kind, exp }
+
+// The business key binds this portal to a business ONCE (like installing it for
+// them). Managers then sign in with their username + password. Persisted so it's
+// entered a single time.
+const STORE_PATH = () => path.join(app.getPath('userData'), 'portal.json');
+let portalStore = { businessKey: null };
+try { portalStore = { ...portalStore, ...JSON.parse(fs.readFileSync(STORE_PATH(), 'utf8')) }; } catch { /* first run */ }
+function savePortalStore() { try { fs.writeFileSync(STORE_PATH(), JSON.stringify(portalStore), { mode: 0o600 }); } catch (e) { console.error(e); } }
 
 function decode(jwt) {
   try { return JSON.parse(Buffer.from(jwt.split('.')[1], 'base64').toString()); } catch { return {}; }
@@ -107,24 +116,49 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
 // ── auth ─────────────────────────────────────────────────────────────────────
-ipcMain.handle('portal:login', async (_e, code) => {
+// First-run: is this portal bound to a business yet?
+ipcMain.handle('portal:status', () => ({ success: true, hasBusiness: !!portalStore.businessKey, session }));
+
+// Bind the portal to a business (validate the key, then remember it).
+ipcMain.handle('portal:setBusiness', async (_e, key) => {
+  const businessKey = String(key || '').trim();
+  if (!businessKey) return { success: false, error: 'Enter your business key.' };
   try {
-    const data = await sb('/functions/v1/jwt-issuer', {
-      method: 'POST',
-      body: { license_key: String(code || '').trim() },
-    });
-    if (!data || !data.token) return { success: false, error: 'Invalid code.' };
-    const claims = decode(data.token);
-    if (claims.kind !== 'manager') {
-      return { success: false, error: 'That code is not a manager code. In the owner console use “+ Manager Code”.' };
-    }
-    token = data.token;
-    session = { tenant_id: claims.tenant_id, kind: claims.kind, exp: claims.exp };
-    return { success: true, session: { tenant_id: claims.tenant_id } };
-  } catch (e) {
-    return { success: false, error: String(e.message || e) };
-  }
+    // A harmless probe that the key is valid: list_locations on jwt-issuer.
+    const r = await sb('/functions/v1/jwt-issuer', { method: 'POST', body: { license_key: businessKey, list_locations: true } });
+    if (!r) return { success: false, error: 'Business key was rejected.' };
+    portalStore.businessKey = businessKey; savePortalStore();
+    return { success: true };
+  } catch (e) { return { success: false, error: /401|invalid/i.test(String(e)) ? 'Business key invalid or inactive.' : String(e.message || e) }; }
 });
+
+// Manager/admin sign-in with the SAME username + password as the POS.
+ipcMain.handle('portal:login', async (_e, { username, password } = {}) => {
+  if (!portalStore.businessKey) return { success: false, error: 'Enter your business key first.' };
+  try {
+    const data = await sb('/functions/v1/staff-login', {
+      method: 'POST', body: { license_key: portalStore.businessKey, username: String(username || '').trim(), password: password || '' },
+    });
+    if (!data || !data.token) return { success: false, error: 'Sign-in failed.' };
+    token = data.token;
+    const claims = decode(token);
+    session = { tenant_id: claims.tenant_id, kind: claims.kind, exp: claims.exp, username: String(username || '').trim() };
+    return { success: true, session: { tenant_id: claims.tenant_id }, must_change_password: !!data.must_change_password, name: data.name };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
+
+// Forced/voluntary password change (unifies with the POS credential).
+ipcMain.handle('portal:changePassword', async (_e, { username, oldPassword, newPassword } = {}) => {
+  if (!portalStore.businessKey) return { success: false, error: 'No business set.' };
+  try {
+    await sb('/functions/v1/staff-change-password', {
+      method: 'POST',
+      body: { license_key: portalStore.businessKey, username: String(username || '').trim(), old_password: oldPassword || '', new_password: newPassword || '' },
+    });
+    return { success: true };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
+
 ipcMain.handle('portal:logout', () => { token = null; session = null; return { success: true }; });
 ipcMain.handle('portal:session', () => ({ success: true, session }));
 
@@ -223,7 +257,7 @@ ipcMain.handle('portal:updateCustomer', async (_e, { uid, fields } = {}) => {
 ipcMain.handle('portal:storefrontLocations', async () => {
   try {
     requireAuth();
-    const rows = await sb('/rest/v1/locations?select=id,name,is_storefront_enabled,tax_rate,stripe_account_id,stripe_onboarding_complete&order=name');
+    const rows = await sb('/rest/v1/locations?select=id,name,is_storefront_enabled,tax_rate,stripe_account_id,stripe_onboarding_complete,address,zip,logo_url,show_logo&order=name');
     return { success: true, locations: rows || [] };
   } catch (e) { return { success: false, error: String(e.message || e) }; }
 });
@@ -241,6 +275,41 @@ ipcMain.handle('portal:stripeConnect', async (_e, { action, location_id } = {}) 
   } catch (e) { return { success: false, error: String(e.message || e) }; }
 });
 ipcMain.handle('portal:openExternal', (_e, url) => { if (url) shell.openExternal(String(url)); return { success: true }; });
+
+// Storefront listing branding (item 2): address shown on the listing + optional
+// per-location logo (else a default shopping-bag icon).
+ipcMain.handle('portal:setBranding', async (_e, { location_id, address, logo_url, show_logo, zip } = {}) => {
+  try {
+    requireAuth();
+    if (!location_id) throw new Error('pick a location');
+    const rows = await sb('/rest/v1/rpc/set_storefront_branding', {
+      method: 'POST',
+      body: { p_location: location_id, p_address: address ?? null, p_logo_url: logo_url ?? null, p_show_logo: show_logo ?? null, p_zip: zip ?? null },
+    });
+    return { success: true, location: Array.isArray(rows) ? rows[0] : rows };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
+ipcMain.handle('portal:uploadLocationLogo', async (_e, { location_id, base64, ext, contentType } = {}) => {
+  try {
+    requireAuth();
+    if (!location_id || !base64) throw new Error('missing logo');
+    const e = (String(ext || 'png').replace(/[^a-z0-9]/gi, '').toLowerCase()) || 'png';
+    const objectPath = `${session.tenant_id}/logo-${location_id}.${e}`;
+    const base = SUPABASE_URL.replace(/\/$/, '');
+    const up = await fetch(`${base}/storage/v1/object/product-images/${objectPath}`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, 'Content-Type': contentType || 'image/png', 'x-upsert': 'true' },
+      body: Buffer.from(base64, 'base64'),
+    });
+    if (!up.ok) throw new Error(`upload failed: ${(await up.text()) || up.status}`);
+    const logoUrl = `${base}/storage/v1/object/public/product-images/${objectPath}?v=${Date.now()}`;
+    // Persist the URL + turn the logo on.
+    await sb('/rest/v1/rpc/set_storefront_branding', {
+      method: 'POST', body: { p_location: location_id, p_address: null, p_logo_url: logoUrl, p_show_logo: true },
+    });
+    return { success: true, logo_url: logoUrl };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
 
 // Product photo upload (item 11). Business-wide by barcode: uploads to the
 // product-images bucket at <tenant>/<barcode>.<ext>, then upserts the public URL

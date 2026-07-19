@@ -3,28 +3,18 @@ import { useEffect, useState, useCallback } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 
-/** Split a full name into first / rest. "" first name means we captured nothing. */
-function splitName(full: string): { first: string; last: string } {
-  const parts = full.trim().replace(/\s+/g, ' ').split(' ');
-  const first = parts.shift() ?? '';
-  return { first, last: parts.join(' ') };
-}
-
 export default function Account() {
   const [session, setSession] = useState<Session | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [profile, setProfile] = useState<any>(null);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [dob, setDob] = useState('');
-  const [ageErr, setAgeErr] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  // "Welcome back, {first name}" — shown only on a SUBSEQUENT login, never the
-  // account-creation session (the visit that first captured the name).
   const [welcomeBack, setWelcomeBack] = useState<string | null>(null);
+
+  // signed-in view: DOB (age gate) + phone
+  const [dob, setDob] = useState('');
+  const [ageErr, setAgeErr] = useState<string | null>(null);
+  const [phone, setPhone] = useState('');
 
   const refresh = useCallback(async () => {
     const { data: { session } } = await supabase().auth.getSession();
@@ -33,28 +23,29 @@ export default function Account() {
       await supabase().from('storefront_customers').upsert({ id: session.user.id, email: session.user.email }, { onConflict: 'id', ignoreDuplicates: true });
       const { data } = await supabase().from('storefront_customers').select('*').eq('id', session.user.id).maybeSingle();
 
-      // Returning customer = the profile already carried a name BEFORE this load.
       const returning = !!data?.first_name;
-      if (returning) {
-        // Suppress the greeting during the creation session itself (a reload right
-        // after the name was first saved), but greet on every later sign-in.
-        const createdThisSession = typeof window !== 'undefined' && sessionStorage.getItem('rackd_created') === '1';
-        if (!createdThisSession) setWelcomeBack(data.first_name as string);
-      } else {
-        // Creation session: capture the name from the sign-in form (localStorage)
-        // or the auth user_metadata, then persist it to the profile.
-        const pending =
-          (typeof window !== 'undefined' && localStorage.getItem('rackd_pending_name')) ||
-          (session.user.user_metadata?.full_name as string | undefined) || '';
-        const { first, last } = splitName(pending);
-        if (first) {
-          await supabase().from('storefront_customers').update({ first_name: first, last_name: last || null }).eq('id', session.user.id);
-          if (data) { data.first_name = first; data.last_name = last || null; }
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('rackd_pending_name');
-            sessionStorage.setItem('rackd_created', '1'); // don't greet for the rest of this session
-          }
-        }
+      const createdThisSession = typeof window !== 'undefined' && sessionStorage.getItem('rackd_created') === '1';
+      if (returning && !createdThisSession) setWelcomeBack(data.first_name as string);
+
+      // Creation session: backfill the profile from what was captured at signup
+      // (auth user_metadata, or localStorage from the phone/social path).
+      const meta = (session.user.user_metadata || {}) as Record<string, string>;
+      const ls = (k: string) => (typeof window !== 'undefined' ? localStorage.getItem(k) || '' : '');
+      const patch: Record<string, string> = {};
+      if (!data?.first_name && (meta.first_name || ls('rackd_first'))) patch.first_name = meta.first_name || ls('rackd_first');
+      if (!data?.last_name && (meta.last_name || ls('rackd_last'))) patch.last_name = meta.last_name || ls('rackd_last');
+      if (!data?.phone && (meta.phone || ls('rackd_phone') || session.user.phone)) patch.phone = meta.phone || ls('rackd_phone') || session.user.phone || '';
+      if (Object.keys(patch).length) {
+        await supabase().from('storefront_customers').update(patch).eq('id', session.user.id);
+        Object.assign(data || {}, patch);
+        if (typeof window !== 'undefined') { ['rackd_first', 'rackd_last', 'rackd_phone'].forEach((k) => localStorage.removeItem(k)); sessionStorage.setItem('rackd_created', '1'); }
+      }
+      // DOB captured at signup feeds the existing age gate.
+      const signupDob = meta.dob || ls('rackd_dob');
+      if (signupDob && !data?.age_verified) {
+        await supabase().rpc('self_attest_age', { p_dob: signupDob }).then(({ error }: { error: unknown }) => { if (!error && typeof window !== 'undefined') localStorage.removeItem('rackd_dob'); });
+        const { data: d2 } = await supabase().from('storefront_customers').select('*').eq('id', session.user.id).maybeSingle();
+        if (d2) { setProfile(d2); if (d2.phone) setPhone(d2.phone); setLoading(false); return; }
       }
 
       setProfile(data);
@@ -69,18 +60,6 @@ export default function Account() {
     return () => sub.subscription.unsubscribe();
   }, [refresh]);
 
-  async function sendLink() {
-    if (!email) return;
-    // Stash the captured name so we can persist it once the magic link is clicked
-    // (which may open a fresh browser context); also pass it into auth metadata.
-    const trimmed = name.trim();
-    if (trimmed && typeof window !== 'undefined') localStorage.setItem('rackd_pending_name', trimmed);
-    await supabase().auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin + '/account', data: trimmed ? { full_name: trimmed } : undefined },
-    });
-    setSent(true);
-  }
   async function savePhone() {
     if (!session) return;
     setBusy(true);
@@ -103,24 +82,8 @@ export default function Account() {
     refresh();
   }
 
-  if (loading) return <p className="text-neutral-400">Loading…</p>;
-
-  if (!session) return (
-    <div>
-      <h1 className="text-2xl font-extrabold mb-1">Sign in</h1>
-      <p className="text-sm text-neutral-500 mb-4">We&apos;ll email you a secure sign-in link. Must be 21+.</p>
-      {sent ? (
-        <div className="bg-white rounded-xl border p-4">Check your email for a sign-in link.</div>
-      ) : (
-        <div className="bg-white rounded-xl border p-4 grid gap-3">
-          <input className="border rounded-lg px-3 py-2" type="text" autoComplete="name" placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
-          <input className="border rounded-lg px-3 py-2" type="email" placeholder="you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <button className="rounded-lg bg-ink text-white py-2.5 font-semibold disabled:opacity-40" disabled={!email} onClick={sendLink}>Email me a link</button>
-          <p className="text-xs text-neutral-400">New here? Add your name so we can set up your account. Returning? Just your email is fine.</p>
-        </div>
-      )}
-    </div>
-  );
+  if (loading) return <p className="text-smoke">Loading…</p>;
+  if (!session) return <AuthPanel />;
 
   const verified = !!profile?.age_verified;
   return (
@@ -132,8 +95,8 @@ export default function Account() {
       )}
       <h1 className="text-2xl font-extrabold">Account</h1>
       <div className="bg-white rounded-xl border p-4">
-        <div className="text-sm text-neutral-500">Signed in as</div>
-        <div className="font-semibold">{session.user.email}</div>
+        <div className="text-sm text-smoke">Signed in as</div>
+        <div className="font-semibold">{session.user.email || session.user.phone}</div>
       </div>
 
       <div className="bg-white rounded-xl border p-4">
@@ -142,7 +105,7 @@ export default function Account() {
           <div className="text-green-700">✓ Verified{profile.age_verified_at ? ` on ${new Date(profile.age_verified_at).toLocaleDateString()}` : ''}</div>
         ) : (
           <>
-            <p className="text-sm text-neutral-500 mb-3">Required before checkout. Enter your date of birth to confirm you are 21 or older. <strong>Bring a valid government photo ID to pick up your order</strong> — staff verify it in person.</p>
+            <p className="text-sm text-smoke mb-3">Required before checkout. Enter your date of birth to confirm you are 21 or older. <strong>Bring a valid government photo ID to pick up your order</strong> — staff verify it in person.</p>
             <div className="flex gap-2 items-center">
               <input className="border rounded-lg px-3 py-2" type="date" value={dob} onChange={(e) => setDob(e.target.value)} max={new Date().toISOString().slice(0, 10)} />
               <button className="rounded-lg bg-accent text-white px-4 py-2.5 font-semibold disabled:opacity-40" disabled={busy} onClick={attestAge}>Confirm I&apos;m 21+</button>
@@ -160,7 +123,141 @@ export default function Account() {
         </div>
       </div>
 
-      <button className="text-sm text-neutral-500 text-left" onClick={async () => { await supabase().auth.signOut(); refresh(); }}>Sign out</button>
+      <button className="text-sm text-smoke text-left" onClick={async () => { await supabase().auth.signOut(); location.reload(); }}>Sign out</button>
+    </div>
+  );
+}
+
+// ── signed-out: social / phone / email+password ──────────────────────────────
+function AuthPanel() {
+  const [tab, setTab] = useState<'email' | 'phone'>('email');
+  const [mode, setMode] = useState<'signup' | 'signin'>('signup');
+  const [first, setFirst] = useState('');
+  const [last, setLast] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [dob, setDob] = useState('');
+  const [code, setCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const stash = () => { if (typeof window === 'undefined') return; localStorage.setItem('rackd_first', first.trim()); localStorage.setItem('rackd_last', last.trim()); localStorage.setItem('rackd_phone', phone.trim()); localStorage.setItem('rackd_dob', dob); };
+
+  async function oauth(provider: 'apple' | 'google') {
+    setErr(null);
+    await supabase().auth.signInWithOAuth({ provider, options: { redirectTo: origin + '/account' } });
+  }
+  async function signUp() {
+    setErr(null); setMsg(null);
+    if (!first.trim() || !last.trim() || !dob) return setErr('Please fill in your name and date of birth.');
+    if (!email || password.length < 6) return setErr('Enter an email and a password (6+ characters).');
+    stash();
+    setBusy(true);
+    const { data, error } = await supabase().auth.signUp({
+      email, password,
+      options: { emailRedirectTo: origin + '/account', data: { first_name: first.trim(), last_name: last.trim(), full_name: `${first} ${last}`.trim(), phone: phone.trim(), dob } },
+    });
+    setBusy(false);
+    if (error) return setErr(error.message);
+    if (!data.session) setMsg('Check your email to confirm your account, then come back to finish.');
+  }
+  async function signIn() {
+    setErr(null); setBusy(true);
+    const { error } = await supabase().auth.signInWithPassword({ email, password });
+    setBusy(false);
+    if (error) setErr(/confirm/i.test(error.message) ? 'Please confirm your email first — check your inbox.' : 'Wrong email or password.');
+  }
+  async function sendCode() {
+    setErr(null);
+    if (!phone.trim()) return setErr('Enter your phone number.');
+    stash();
+    setBusy(true);
+    const { error } = await supabase().auth.signInWithOtp({ phone: phone.trim() });
+    setBusy(false);
+    if (error) return setErr(error.message);
+    setCodeSent(true);
+  }
+  async function verifyCode() {
+    setErr(null); setBusy(true);
+    const { error } = await supabase().auth.verifyOtp({ phone: phone.trim(), token: code.trim(), type: 'sms' });
+    setBusy(false);
+    if (error) setErr('That code was incorrect or expired.');
+  }
+
+  const input = 'border rounded-lg px-3 py-2 w-full';
+  return (
+    <div>
+      <h1 className="font-display font-extrabold text-2xl mb-1">Sign in or create an account</h1>
+      <p className="text-sm text-smoke mb-4">21+ only. Order ahead, pick up in store.</p>
+
+      <div className="bg-white rounded-2xl border border-black/10 shadow-tag p-4 grid gap-3">
+        {msg && <div className="rounded-lg bg-green-600/10 text-green-800 text-sm p-3">{msg}</div>}
+        {err && <div className="rounded-lg bg-red-600/10 text-red-700 text-sm p-3">{err}</div>}
+
+        {/* Social */}
+        <button onClick={() => oauth('apple')} className="flex items-center justify-center gap-2 rounded-lg bg-black text-white py-2.5 font-semibold">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M16.365 1.43c0 1.14-.42 2.2-1.12 3-.76.88-2 .93-2.56.9-.05-1.06.44-2.16 1.1-2.87.74-.8 2-.9 2.58-1.03zM20.5 17.2c-.36.83-.53 1.2-1 1.94-.66 1.03-1.6 2.3-2.76 2.31-1.03.01-1.3-.67-2.7-.66-1.4.01-1.7.67-2.73.65-1.16-.02-2.05-1.17-2.71-2.2-1.85-2.9-2.05-6.3-.9-8.1.8-1.28 2.07-2.03 3.26-2.03 1.2 0 1.96.67 2.96.67.97 0 1.56-.67 2.96-.67 1.05 0 2.17.57 2.96 1.56-2.6 1.42-2.18 5.13.41 6.53z"/></svg>
+          Continue with Apple
+        </button>
+        <button onClick={() => oauth('google')} className="flex items-center justify-center gap-2 rounded-lg border border-black/15 py-2.5 font-semibold">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.76h3.56c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.56-2.76c-.98.66-2.24 1.06-3.72 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.2 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84C6.71 7.3 9.14 5.38 12 5.38z"/></svg>
+          Continue with Google
+        </button>
+
+        <div className="flex items-center gap-3 text-xs text-smoke my-1"><span className="flex-1 h-px bg-black/10" />or<span className="flex-1 h-px bg-black/10" /></div>
+
+        {/* Tabs */}
+        <div className="flex gap-2 text-sm font-semibold">
+          <button onClick={() => setTab('email')} className={`flex-1 rounded-lg py-1.5 ${tab === 'email' ? 'bg-ink text-white' : 'border border-black/10'}`}>Email</button>
+          <button onClick={() => setTab('phone')} className={`flex-1 rounded-lg py-1.5 ${tab === 'phone' ? 'bg-ink text-white' : 'border border-black/10'}`}>Phone</button>
+        </div>
+
+        {tab === 'email' && mode === 'signup' && (
+          <div className="grid gap-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
+              <input className={input} placeholder="First name" value={first} onChange={(e) => setFirst(e.target.value)} />
+              <input className={input} placeholder="Last name" value={last} onChange={(e) => setLast(e.target.value)} />
+            </div>
+            <input className={input} type="tel" placeholder="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <input className={input} type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input className={input} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <label className="text-xs text-smoke">Date of birth (must be 21+)
+              <input className={input + ' mt-1'} type="date" value={dob} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setDob(e.target.value)} />
+            </label>
+            <button disabled={busy} onClick={signUp} className="rounded-lg bg-accent text-white py-2.5 font-semibold disabled:opacity-40">Create account</button>
+            <button onClick={() => { setMode('signin'); setErr(null); }} className="text-sm text-smoke">Already have an account? Sign in</button>
+          </div>
+        )}
+        {tab === 'email' && mode === 'signin' && (
+          <div className="grid gap-2.5">
+            <input className={input} type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input className={input} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <button disabled={busy} onClick={signIn} className="rounded-lg bg-accent text-white py-2.5 font-semibold disabled:opacity-40">Sign in</button>
+            <button onClick={() => { setMode('signup'); setErr(null); }} className="text-sm text-smoke">New here? Create an account</button>
+          </div>
+        )}
+        {tab === 'phone' && (
+          <div className="grid gap-2.5">
+            {!codeSent ? (
+              <>
+                <input className={input} type="tel" placeholder="Phone number (+1…)" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <button disabled={busy} onClick={sendCode} className="rounded-lg bg-accent text-white py-2.5 font-semibold disabled:opacity-40">Text me a code</button>
+                <p className="text-xs text-smoke">New here? You&apos;ll add your name &amp; date of birth after verifying.</p>
+              </>
+            ) : (
+              <>
+                <input className={input} inputMode="numeric" placeholder="6-digit code" value={code} onChange={(e) => setCode(e.target.value)} />
+                <button disabled={busy} onClick={verifyCode} className="rounded-lg bg-accent text-white py-2.5 font-semibold disabled:opacity-40">Verify &amp; continue</button>
+                <button onClick={() => setCodeSent(false)} className="text-sm text-smoke">Use a different number</button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

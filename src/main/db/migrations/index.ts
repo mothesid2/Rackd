@@ -48,14 +48,30 @@ export function runMigrations(db: Database.Database): void {
   );
 
   const pending = MIGRATIONS.filter((m) => !applied.has(m.id)).sort((a, b) => a.id - b.id);
+  if (pending.length === 0) return;
 
-  for (const m of pending) {
-    const apply = db.transaction(() => {
-      m.up(db);
-      db.prepare('INSERT INTO schema_migrations (id, name) VALUES (?, ?)').run(m.id, m.name);
-    });
-    apply();
-    console.log(`[migrations] applied ${String(m.id).padStart(3, '0')}_${m.name}`);
+  // Some migrations rebuild a table (DROP + recreate) to change a CHECK or drop a
+  // NOT NULL. With foreign_keys ON (getDb enables it) that DROP fails on any table
+  // referenced by a FK. Toggle enforcement OFF around the whole run — this MUST be
+  // done outside the per-migration transaction, because the foreign_keys pragma is
+  // a no-op while a transaction is open. Restore it (+ a sanity check) afterward.
+  const fkWasOn = db.pragma('foreign_keys', { simple: true }) === 1;
+  if (fkWasOn) db.pragma('foreign_keys = OFF');
+  try {
+    for (const m of pending) {
+      const apply = db.transaction(() => {
+        m.up(db);
+        db.prepare('INSERT INTO schema_migrations (id, name) VALUES (?, ?)').run(m.id, m.name);
+      });
+      apply();
+      console.log(`[migrations] applied ${String(m.id).padStart(3, '0')}_${m.name}`);
+    }
+    const violations = db.pragma('foreign_key_check') as unknown[];
+    if (Array.isArray(violations) && violations.length) {
+      console.warn(`[migrations] foreign_key_check reported ${violations.length} issue(s) after rebuild.`);
+    }
+  } finally {
+    if (fkWasOn) db.pragma('foreign_keys = ON');
   }
 }
 

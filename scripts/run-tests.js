@@ -28,6 +28,27 @@ async function main() {
   const hoursAgo = (h) => new Date(now.getTime() - h * 3.6e6);
   const active = { active: true, tier: 'pro', features: [], expires_at: null, tenant_id: 't', license_key: 'k' };
 
+  console.log('migrations (FK-safe rebuild):');
+  await check('013 rebuilds users with foreign_keys ON + referencing rows', () => {
+    const p = path.join(os.tmpdir(), `rackd-fk-${Date.now()}.db`);
+    const fk = new Database(p);
+    fk.pragma('foreign_keys = ON');
+    initSchema(fk); // creates old-form users + FK tables (transactions.cashier_id -> users.id)
+    // Simulate an existing install: a user + a transaction that references it.
+    const uid = fk.prepare("INSERT INTO users (username, password_hash, role) VALUES ('mgr','h','manager')").run().lastInsertRowid;
+    fk.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, payment_method, payment_status) VALUES (?, 1, 0, 0, 0, 1, 'cash', 'completed')").run(uid);
+    runMigrations(fk); // must NOT throw despite the FK reference + DROP TABLE users
+    const u = fk.prepare('SELECT role, must_change_pin FROM users WHERE id = ?').get(uid);
+    assert.equal(u.role, 'manager');
+    assert.equal(u.must_change_pin, 0);
+    // The rebuild preserved the id, so the transaction's FK still resolves.
+    const t = fk.prepare('SELECT cashier_id FROM transactions WHERE cashier_id = ?').get(uid);
+    assert.ok(t);
+    assert.equal(fk.pragma('foreign_keys', { simple: true }), 1); // restored ON
+    fk.close();
+    for (const f of [p, p + '-shm', p + '-wal']) { try { fs.unlinkSync(f); } catch { /* ignore */ } }
+  });
+
   console.log('license state machine:');
   await check('unconfigured -> full/unenforced', () => {
     const s = computeStatusFrom(active, hoursAgo(1), false, now);

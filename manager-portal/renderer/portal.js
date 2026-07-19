@@ -297,6 +297,25 @@ async function renderStorefront() {
       </tbody>
     </table>
 
+    <div class="h2">Storefront listing <span class="muted" style="font-weight:400;font-size:13px">— the address and logo customers see when picking a store</span></div>
+    <table class="grid" style="margin-bottom:22px">
+      <thead><tr><th>Location</th><th>Address</th><th>Logo</th></tr></thead>
+      <tbody>
+        ${sfLocs.map((l) => `
+          <tr>
+            <td><strong>${esc(l.name)}</strong></td>
+            <td><input data-addr="${esc(l.id)}" value="${esc(l.address || '')}" placeholder="123 Main St, City ST" style="width:190px" />
+              <input data-zip="${esc(l.id)}" value="${esc(l.zip || '')}" placeholder="ZIP" style="width:64px" maxlength="10" />
+              <button class="rowbtn" onclick="saveAddress('${esc(l.id)}')">Save</button></td>
+            <td>
+              ${l.logo_url ? `<img src="${esc(l.logo_url)}" alt="" style="width:30px;height:30px;border-radius:6px;object-fit:cover;vertical-align:middle;margin-right:6px" />` : '<span class="muted" style="margin-right:6px">bag icon</span>'}
+              <button class="rowbtn" onclick="uploadLogo('${esc(l.id)}')">${l.logo_url ? 'Change' : 'Upload'}</button>
+              <label style="font-size:12px;margin-left:8px;cursor:pointer"><input type="checkbox" ${l.show_logo ? 'checked' : ''} onchange="toggleLogo('${esc(l.id)}', this.checked)" /> show logo</label>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+
     <div class="h2">Online menu
       <select id="menuLocSel" style="margin-left:8px">
         ${sfLocs.map((l) => `<option value="${esc(l.id)}" ${l.id === menuLoc ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}
@@ -338,6 +357,39 @@ async function stripeRefresh(id) {
   if (!r.success) { toast(r.error || 'Could not refresh', true); return; }
   toast(r.onboarded ? 'Payouts ready' : 'Onboarding still incomplete', !r.onboarded);
   renderStorefront();
+}
+
+// ── storefront listing branding (address + logo) ──────────────────────────────
+async function saveAddress(id) {
+  const address = document.querySelector(`[data-addr="${id}"]`).value.trim();
+  const zip = document.querySelector(`[data-zip="${id}"]`).value.trim();
+  const r = await window.portal.setBranding({ location_id: id, address, zip });
+  if (r.success) { const l = sfLocs.find((x) => x.id === id); if (l) { l.address = address; l.zip = zip; } }
+  toast(r.success ? 'Address saved' : (r.error || 'Failed'), !r.success);
+}
+async function toggleLogo(id, show) {
+  const r = await window.portal.setBranding({ location_id: id, show_logo: show });
+  if (!r.success) { toast(r.error || 'Failed', true); renderStorefront(); return; }
+  const l = sfLocs.find((x) => x.id === id); if (l) l.show_logo = show;
+  toast(show ? 'Logo shown on listing' : 'Using default icon');
+}
+function uploadLogo(id) {
+  const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*';
+  input.onchange = () => {
+    const file = input.files && input.files[0]; if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast('Image too large (max 5MB)', true); return; }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = String(reader.result).split(',')[1];
+      const ext = (file.name.split('.').pop() || 'png');
+      toast('Uploading logo…');
+      const r = await window.portal.uploadLocationLogo({ location_id: id, base64, ext, contentType: file.type });
+      if (!r.success) { toast(r.error || 'Upload failed', true); return; }
+      toast('Logo updated'); renderStorefront();
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
 }
 async function saveTax(id) {
   const el = document.querySelector(`[data-tax="${id}"]`);
