@@ -12,6 +12,7 @@
     "release": "npm run dist && node ../scripts/publish-update.js production manager dist"
   },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "electron-updater": "^6.3.9"
   },
   "devDependencies": {

@@ -59,6 +59,59 @@ function render() {
   if (curTab === 'storefront') return renderStorefront();
   if (curTab === 'orders') return renderOrders();
   if (curTab === 'rebates') return renderRebates();
+  if (curTab === 'staff') return renderStaff();
+}
+
+// ── cashiers ────────────────────────────────────────────────────────────────
+async function renderStaff() {
+  const view = document.getElementById('view');
+  view.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div class="h2" style="margin:0">Cashiers</div>
+      <button class="btn btn-accent" id="addCashier">+ Add cashier</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:12px">Cashiers sign in on the register by PIN. Managers &amp; admins are set up on the POS by an admin.</div>
+    <div id="staffWrap"><div class="spin">Loading…</div></div>`;
+  document.getElementById('addCashier').addEventListener('click', () => openCashier(null));
+  const r = await window.portal.staff();
+  const wrap = document.getElementById('staffWrap');
+  if (!r.success) { wrap.innerHTML = `<div class="card muted">${esc(r.error || 'Could not load staff')}</div>`; return; }
+  const cashiers = (r.staff || []).filter((s) => s.role === 'cashier');
+  const others = (r.staff || []).filter((s) => s.role !== 'cashier');
+  wrap.innerHTML = `<div class="card" style="padding:0;overflow:hidden"><table class="grid"><tbody>${
+    cashiers.length ? cashiers.map((s) => `<tr>
+      <td>${esc(s.name || '—')}${s.is_active ? '' : ' <span style="font-size:10.5px;color:var(--muted);border:1px solid var(--line-soft);border-radius:999px;padding:1px 7px;margin-left:4px">inactive</span>'}${s.must_change_pin ? ' <span style="font-size:10.5px;color:#b8860b;background:rgba(224,161,58,.14);border-radius:999px;padding:1px 7px;margin-left:4px">temp PIN</span>' : ''}</td>
+      <td class="num" style="width:200px">
+        <button class="rowbtn" data-edit='${JSON.stringify(s).replace(/'/g, "&#39;")}'>Edit</button>
+        <button class="rowbtn" data-pin="${esc(s.uid)}" data-name="${esc(s.name || '')}">Reset PIN</button>
+      </td></tr>`).join('') : '<tr><td class="muted">No cashiers yet.</td></tr>'
+  }</tbody></table></div>${
+    others.length ? `<div class="muted" style="font-size:12px;margin-top:10px">${others.length} manager/admin account(s) — managed on the POS.</div>` : ''
+  }`;
+  wrap.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => openCashier(JSON.parse(b.dataset.edit))));
+  wrap.querySelectorAll('[data-pin]').forEach((b) => b.addEventListener('click', async () => {
+    const pin = prompt(`New 4-digit PIN for ${b.dataset.name} (blank = auto-generate):`, '');
+    if (pin === null) return;
+    const r = await window.portal.updateCashier({ uid: b.dataset.pin, pin: pin.trim() || genPin4() });
+    if (!r.success) return toast(r.error || 'Failed', true);
+    alert(`New PIN for ${b.dataset.name}: ${r.pin}\n\nGive it to them — they change it on next sign-in.`);
+    render();
+  }));
+}
+function genPin4() { return Array.from({ length: 4 }, () => Math.floor(Math.random() * 10)).join(''); }
+function openCashier(s) {
+  const name = prompt(s ? 'Rename cashier:' : 'New cashier name:', s ? (s.name || '') : '');
+  if (name === null || !name.trim()) return;
+  if (s) {
+    window.portal.updateCashier({ uid: s.uid, name: name.trim() }).then((r) => { if (r.success) { toast('Saved'); render(); } else toast(r.error || 'Failed', true); });
+  } else {
+    const pin = prompt('4-digit PIN (blank = auto-generate):', '');
+    if (pin === null) return;
+    window.portal.createCashier({ name: name.trim(), pin: pin.trim() }).then((r) => {
+      if (!r.success) return toast(r.error || 'Failed', true);
+      alert(`Cashier "${name.trim()}" created.\nPIN: ${r.pin}\n\nGive it to them — they change it on next sign-in.`);
+      render();
+    });
+  }
 }
 
 // ── rebates ─────────────────────────────────────────────────────────────────

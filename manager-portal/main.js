@@ -11,6 +11,7 @@ const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const { randomUUID } = require('crypto');
+const bcrypt = require('bcryptjs');
 const cfg = require('./config');
 
 // Demo/sandbox build: isolated data (a separate Supabase project via env) so a demo
@@ -254,6 +255,66 @@ ipcMain.handle('portal:updateCustomer', async (_e, { uid, fields } = {}) => {
       method: 'PATCH', headers: { Prefer: 'return=representation' }, body: patch,
     });
     return { success: true, customer: (rows && rows[0]) || null };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
+
+// ── staff: cashier add/edit (syncs down to every register) ────────────────────
+// Managers manage CASHIERS from the portal. The account is written to
+// employees_cloud (RLS: tenant-scoped, managers may write); each register pulls it
+// and the cashier can then sign in by PIN. Managers/admins are provisioned on the
+// POS by an admin.
+function genPin() { return Array.from({ length: 4 }, () => Math.floor(Math.random() * 10)).join(''); }
+
+ipcMain.handle('portal:staff', async () => {
+  try {
+    requireAuth();
+    const rows = await sb('/rest/v1/employees_cloud?select=uid,name,username,role,is_active,must_change_pin,updated_at&order=role,name');
+    return { success: true, staff: rows || [] };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
+
+// Create a cashier (name + optional 4-digit PIN; blank auto-generates). Returns the
+// PIN once to hand over. The cashier must change it on first sign-in.
+ipcMain.handle('portal:createCashier', async (_e, { name, pin } = {}) => {
+  try {
+    requireAuth();
+    const nm = String(name || '').trim();
+    if (!nm) throw new Error('Enter the cashier’s name');
+    const p = String(pin || '').trim() || genPin();
+    if (!/^\d{4}$/.test(p)) throw new Error('PIN must be exactly 4 digits');
+    const row = {
+      uid: randomUUID(), tenant_id: session.tenant_id, register_id: 'manager',
+      name: nm, role: 'cashier', username: null,
+      pin_hash: bcrypt.hashSync(p, 10), is_active: true,
+      must_change_pin: !String(pin || '').trim(), // forced change only when auto-generated
+    };
+    const rows = await sb('/rest/v1/employees_cloud', {
+      method: 'POST', headers: { Prefer: 'return=representation' }, body: row,
+    });
+    return { success: true, staff: (rows && rows[0]) || null, pin: p };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
+
+// Edit a cashier: rename / activate-deactivate, and optionally reset the PIN.
+ipcMain.handle('portal:updateCashier', async (_e, { uid, name, is_active, pin } = {}) => {
+  try {
+    requireAuth();
+    if (!uid) throw new Error('missing staff id');
+    const patch = { register_id: 'manager' };
+    if (name !== undefined) patch.name = String(name).trim();
+    if (is_active !== undefined) patch.is_active = !!is_active;
+    let newPin = null;
+    if (pin !== undefined && pin !== null && String(pin).trim() !== '') {
+      const p = String(pin).trim();
+      if (!/^\d{4}$/.test(p)) throw new Error('PIN must be exactly 4 digits');
+      patch.pin_hash = bcrypt.hashSync(p, 10);
+      patch.must_change_pin = false;
+      newPin = p;
+    }
+    const rows = await sb(`/rest/v1/employees_cloud?uid=eq.${encodeURIComponent(uid)}`, {
+      method: 'PATCH', headers: { Prefer: 'return=representation' }, body: patch,
+    });
+    return { success: true, staff: (rows && rows[0]) || null, pin: newPin };
   } catch (e) { return { success: false, error: String(e.message || e) }; }
 });
 
