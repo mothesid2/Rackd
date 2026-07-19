@@ -1,70 +1,8 @@
 {
   "name": "sei-vape-pos",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "rackd Point of Sale System",
   "main": "dist/main/index.js",
-  "scripts": {
-    "start": "npm run build:main && electron .",
-    "build:main": "tsc -p tsconfig.json",
-    "build": "npm run build:main && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
-    "desktop:prod": "npm run build:main && node scripts/build-desktop.js . prod",
-    "desktop:demo": "npm run build:main && node scripts/build-desktop.js . demo",
-    "fleet:demo": "node scripts/build-fleet.js demo",
-    "fleet:prod": "node scripts/build-fleet.js prod",
-    "fleet:all": "node scripts/build-fleet.js all",
-    "seed": "electron dist/main/db/seed.js",
-    "update": "git pull && npm start",
-    "dev": "npm run build:main && electron . --dev",
-    "test": "npm run build:main && electron scripts/run-tests.js",
-    "release:staging": "npm run build && node scripts/publish-update.js staging",
-    "release": "npm run build && node scripts/publish-update.js production",
-    "ship": "node scripts/ship.js",
-    "ship:prod": "node scripts/ship.js pos --production",
-    "build:mac": "npm run build:main && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
-    "release:mac": "npm run build:mac && node scripts/publish-update.js production",
-    "release:mac:staging": "npm run build:mac && node scripts/publish-update.js staging",
-    "postinstall": "electron-rebuild -f"
-  },
-  "build": {
-    "appId": "com.rackd.pos",
-    "productName": "rackd POS",
-    "npmRebuild": false,
-    "publish": {
-      "provider": "generic",
-      "url": "https://zougcsomgqnfumqkwuoj.supabase.co/storage/v1/object/public/app-updates/pos/production"
-    },
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "src/renderer/**/*",
-      "assets/**/*",
-      "node_modules/**/*"
-    ],
-    "win": {
-      "target": "nsis",
-      "icon": "assets/logo.png"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "artifactName": "Rackd-POS-Setup-${version}.${ext}",
-      "shortcutName": "Rackd POS"
-    },
-    "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "icon": "assets/logo.png",
-      "category": "public.app-category.business",
-      "artifactName": "Rackd-POS-${version}-${arch}.${ext}"
-    },
-    "dmg": {
-      "title": "Rackd POS ${version}"
-    }
-  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
     "@supabase/supabase-js": "^2.108.2",
@@ -80,17 +18,5 @@
   },
   "optionalDependencies": {
     "@thiagoelg/node-printer": "^0.6.2"
-  },
-  "devDependencies": {
-    "@electron/rebuild": "^3.6.0",
-    "@types/bcryptjs": "^2.4.6",
-    "@types/better-sqlite3": "^7.6.8",
-    "@types/luxon": "^3.7.1",
-    "@types/node": "^20.19.39",
-    "@types/ws": "^8.18.1",
-    "cross-env": "^10.1.0",
-    "electron": "^41.2.0",
-    "electron-builder": "^24.13.3",
-    "typescript": "^5.3.3"
   }
 }
