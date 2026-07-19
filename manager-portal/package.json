@@ -1,6 +1,6 @@
 {
   "name": "rackd-manager-portal",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "rackd Manager Portal — cross-location reporting & light management (not a POS).",
   "main": "main.js",
   "author": "rackd",
@@ -23,7 +23,9 @@
     "appId": "com.rackd.manager",
     "productName": "rackd Manager Portal",
     "npmRebuild": false,
-    "directories": { "output": "dist" },
+    "directories": {
+      "output": "dist"
+    },
     "publish": {
       "provider": "generic",
       "url": "https://zougcsomgqnfumqkwuoj.supabase.co/storage/v1/object/public/app-updates/manager/production"
