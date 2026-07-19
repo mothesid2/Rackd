@@ -6,6 +6,7 @@ import {
   getDeadLetters,
   retryDeadLetter,
   clearDeadLetter,
+  resyncAllInventory,
 } from '../supabase/sync';
 
 /** Sync health + dead-letter management for the renderer / manager PWA. */
@@ -17,6 +18,18 @@ export function registerSyncHandlers(): void {
     try {
       await triggerSyncNow();
       return { success: true, status: status() };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // Re-push a snapshot of ALL inventory to the cloud, then run a cycle. Fixes the
+  // Manager Portal / Owner Console showing stale or empty inventory after a re-key.
+  ipcMain.handle('sync:resyncAll', async () => {
+    try {
+      const n = resyncAllInventory();
+      await triggerSyncNow();
+      return { success: true, queued: n };
     } catch (err) {
       return { success: false, error: String(err) };
     }

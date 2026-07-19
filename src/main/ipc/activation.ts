@@ -96,7 +96,9 @@ async function bindLicense(key: string, locationId: string | null): Promise<{ su
   // Pull the business's staff immediately so the provisioned admin credential works
   // right after setup (the login screen expects an existing account, not "create").
   try {
-    const { triggerSyncNow } = require('../supabase/sync') as typeof import('../supabase/sync');
+    const { triggerSyncNow, resyncAllInventory } = require('../supabase/sync') as typeof import('../supabase/sync');
+    // Push all current stock to the (possibly new) tenant so the portals see it.
+    resyncAllInventory();
     await triggerSyncNow();
   } catch { /* non-fatal — the 60s worker will pull shortly */ }
   const status = computeStatus();

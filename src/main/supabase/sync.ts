@@ -510,6 +510,20 @@ export function enqueueInventorySnapshot(
 }
 
 /**
+ * Push a fresh snapshot of EVERY product to inventory_cloud. Inventory otherwise
+ * only syncs on edit/sale, so after activation or a re-key the current stock would
+ * never reach the (new) tenant's cloud — leaving the Manager Portal / Owner Console
+ * with empty inventory. Called on bind + available as a manual "resync to cloud".
+ */
+export function resyncAllInventory(db: Database.Database = getDb()): number {
+  if (!isSupabaseConfigured()) return 0;
+  const ids = db.prepare('SELECT id FROM products').all() as { id: number }[];
+  let n = 0;
+  for (const { id } of ids) if (enqueueInventorySnapshot(id, 'manual', db)) n++;
+  return n;
+}
+
+/**
  * Phase 2 producer: record a stock MOVEMENT (delta) for a product and enqueue it
  * to stock_movements_cloud so location peers converge to the same count. Writes
  * the local `stock_movements` log row first (source of truth for replay/audit),

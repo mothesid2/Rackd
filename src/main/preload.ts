@@ -131,6 +131,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Cloud sync health + dead-letter admin
   syncTrigger: () => ipcRenderer.invoke('sync:trigger'),
+  syncResyncAll: () => ipcRenderer.invoke('sync:resyncAll'),
   syncStatus: () => ipcRenderer.invoke('sync:status'),
   syncDeadLetters: () => ipcRenderer.invoke('sync:dead-letters'),
   syncRetryDeadLetter: (id: number) => ipcRenderer.invoke('sync:retry-dead-letter', id),
