@@ -164,6 +164,10 @@
         <div style="text-align:center;margin-top:12px"><a href="#" id="usePin" style="font-size:13px;color:#888;text-decoration:none">Use PIN</a></div>
       </div>
 
+      <div style="text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #eee">
+        <a href="#" id="disconnectLink" style="font-size:12px;color:#b91c1c;text-decoration:none">Disconnect this register / enter a new key</a>
+      </div>
+
       <style>
         #pinKeypad .pinkey { border:1px solid #e2e2e2; border-radius:12px; background:#fafafa; font-size:22px; font-weight:700; padding:16px 0; cursor:pointer; }
         #pinKeypad .pinkey:active { background:#eee; }
@@ -387,6 +391,14 @@
     }
 
     document.addEventListener('DOMContentLoaded', initDayGate);
+
+    // Re-key without signing in: unbind this register and return to activation.
+    document.getElementById('disconnectLink').addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (!confirm('Disconnect this register from its store and enter a new business key?\n\nSales already synced to the cloud are kept — this does not delete data.')) return;
+      try { await window.api.licenseDeactivate(); } catch { /* ignore */ }
+      await window.api.navigate('activation');
+    });
   </script>
 </body>
 </html>

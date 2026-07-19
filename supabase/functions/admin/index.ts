@@ -568,7 +568,10 @@ Deno.serve(async (req: Request) => {
         const temp = genPassword();
         const hash = bcrypt.hashSync(temp, 10);
         const { error } = await admin.from('employees_cloud')
-          .update({ password_hash: hash, must_change_password: true, updated_at: new Date().toISOString() })
+          // Full credential reset: force a new password AND a new PIN on next login.
+          // The POS daily login is PIN-based, so resetting the password alone would
+          // leave the user unable to sign in with their (unchanged) PIN.
+          .update({ password_hash: hash, must_change_password: true, must_change_pin: true, updated_at: new Date().toISOString() })
           .eq('tenant_id', tenantId).eq('uid', employeeUid);
         if (error) throw error;
         await admin.from('owner_audit_log').insert({
