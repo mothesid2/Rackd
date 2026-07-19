@@ -18,6 +18,8 @@
     "test": "npm run build:main && electron scripts/run-tests.js",
     "release:staging": "npm run build && node scripts/publish-update.js staging",
     "release": "npm run build && node scripts/publish-update.js production",
+    "ship": "node scripts/ship.js",
+    "ship:prod": "node scripts/ship.js pos --production",
     "build:mac": "npm run build:main && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
     "release:mac": "npm run build:mac && node scripts/publish-update.js production",
     "release:mac:staging": "npm run build:mac && node scripts/publish-update.js staging",
