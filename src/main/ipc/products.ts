@@ -143,24 +143,31 @@ export function registerProductHandlers(): void {
       const w = assertWritable('inventory_edit'); if (!w.ok) return { success: false, error: w.error };
       if (getCurrentSession()?.role !== 'manager') return { success: false, error: 'Manager access required' };
       const db = getDb();
-      const result = db
-        .prepare(
-          `INSERT INTO products (barcode, name, category, vendor, price, cost, stock_qty, low_stock_threshold, age_restricted, low_stock_alert)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          product.barcode || null,
-          product.name,
-          product.category || null,
-          product.vendor || null,
-          product.price,
-          product.cost,
-          product.stock_qty,
-          product.low_stock_threshold,
-          product.age_restricted ? 1 : 0,
-          product.low_stock_alert === 0 ? 0 : 1
-        );
-      return { success: true, id: result.lastInsertRowid };
+      let newId: number | bigint = 0;
+      db.transaction(() => {
+        const result = db
+          .prepare(
+            `INSERT INTO products (barcode, name, category, vendor, price, cost, stock_qty, low_stock_threshold, age_restricted, low_stock_alert)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            product.barcode || null,
+            product.name,
+            product.category || null,
+            product.vendor || null,
+            product.price,
+            product.cost,
+            product.stock_qty,
+            product.low_stock_threshold,
+            product.age_restricted ? 1 : 0,
+            product.low_stock_alert === 0 ? 0 : 1
+          );
+        newId = result.lastInsertRowid;
+        // Cloud sync: a new product's starting stock must reach inventory_cloud too.
+        enqueueInventorySnapshot(Number(newId), 'manual', db);
+        if (product.stock_qty) enqueueStockMovement(Number(newId), product.stock_qty, 'receive', db);
+      })();
+      return { success: true, id: newId };
     } catch (err) {
       return { success: false, error: String(err) };
     }
@@ -177,7 +184,20 @@ export function registerProductHandlers(): void {
 
       const sets = fields.map((f) => `${f} = ?`).join(', ');
       const vals = fields.map((f) => data[f]);
-      db.prepare(`UPDATE products SET ${sets}, updated_at = ? WHERE id = ?`).run(...vals, nowCT(), id);
+      db.transaction(() => {
+        let prevStock: number | null = null;
+        if (fields.includes('stock_qty')) {
+          prevStock = (db.prepare('SELECT stock_qty FROM products WHERE id = ?').get(id) as { stock_qty: number } | undefined)?.stock_qty ?? null;
+        }
+        db.prepare(`UPDATE products SET ${sets}, updated_at = ? WHERE id = ?`).run(...vals, nowCT(), id);
+        // Cloud sync: any edit here (incl. the Bulk Edit grid) must reach inventory_cloud,
+        // not just the dedicated adjustStock delta modal.
+        enqueueInventorySnapshot(id, 'manual', db);
+        if (prevStock != null) {
+          const delta = Number(data.stock_qty) - prevStock;
+          if (delta) enqueueStockMovement(id, delta, 'manual', db);
+        }
+      })();
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -363,7 +383,7 @@ export function registerProductHandlers(): void {
       const insertMany = db.transaction((rows: string[][]) => {
         for (const row of rows) {
           const get = (key: string) => row[headers.indexOf(key)]?.trim() || '';
-          insert.run(
+          const res = insert.run(
             get('barcode') || null,
             get('name'),
             get('category') || null,
@@ -374,6 +394,8 @@ export function registerProductHandlers(): void {
             parseInt(get('low_stock_threshold') || get('threshold')) || 5,
             truthy(get('age_restricted') || get('age_restriction') || get('21+')) ? 1 : 0
           );
+          // Cloud sync: bulk-imported rows need to reach inventory_cloud too.
+          enqueueInventorySnapshot(Number(res.lastInsertRowid), 'manual', db);
           imported++;
         }
       });

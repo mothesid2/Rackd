@@ -121,6 +121,11 @@
         </div>
       </div>
 
+      <div class="report-section" id="xTipPoolSection" style="display:none">
+        <div class="report-section-title">Tip Pool</div>
+        <div id="xTipPoolRows"></div>
+      </div>
+
       <hr class="report-divider" />
       <div class="report-total-row"><span>Total Collection</span><span id="xTotal">—</span></div>
 
@@ -247,6 +252,11 @@
       document.getElementById('xPayTiles').innerHTML = tiles.map(t =>
         `<div class="metric-tile"><div class="lbl">${esc(t.lbl)}</div><div class="val ${t.cls}">${fmt(t.val)}</div></div>`).join('');
 
+      if (r.card_processing_fee_amount > 0) {
+        document.getElementById('xPayTiles').insertAdjacentHTML('beforeend',
+          `<div class="metric-tile"><div class="lbl">Est. card fees (${r.card_processing_fee_pct}%)</div><div class="val amber">-${fmt(r.card_processing_fee_amount)}</div></div>`);
+      }
+
       document.getElementById('xRefunds').innerHTML = r.refunds.count
         ? `<span class="lbl">${r.refunds.count} refund${r.refunds.count !== 1 ? 's' : ''}</span><span class="val" style="color:#991b1b">${fmt(r.refunds.total)}</span>`
         : '<span class="lbl">Refunds</span><span class="val">None</span>';
@@ -259,6 +269,14 @@
         ? '<div style="font-size:13px;color:#999">No sales</div>'
         : r.top_products.map((t, i) => `<div class="report-line-row"><span class="lbl"><span class="rank-badge">#${i + 1}</span>${esc(t.name)}</span><span class="val">${fmt(t.revenue)}</span></div>`).join('');
 
+      const tpSection = document.getElementById('xTipPoolSection');
+      if (r.tip_pool && r.tip_pool.total_tips > 0) {
+        tpSection.style.display = 'block';
+        document.getElementById('xTipPoolRows').innerHTML = renderTipPoolRows(r.tip_pool);
+      } else {
+        tpSection.style.display = 'none';
+      }
+
       const scopeLabel = r.scope === 'location' ? 'Location (all registers)' : 'This register';
       document.getElementById('xCardTitle').textContent = r.scope === 'location' ? 'X Report — Location' : 'X Report';
       document.getElementById('status-left').textContent = `X Report · ${scopeLabel} · ${r.period.label}`;
@@ -266,6 +284,33 @@
 
     function buildLineRow(label, val) {
       return `<div class="report-line-row"><span class="lbl">${esc(String(label))}</span><span class="val">${esc(String(val))}</span></div>`;
+    }
+
+    // Tip pool (batch 5, rebuilt to the user's legal spec): shared by the X
+    // Report card and the Z Report results. Managers/owner never appear here
+    // as recipients (excluded from the calculation entirely, not just the fee
+    // cut) — only cashier-role staff who clocked hours can receive a share.
+    // If nobody eligible worked, pooling is skipped (sole-service exception)
+    // and this shows DIRECT per-employee tip totals instead of pooled shares.
+    function renderTipPoolRows(tp) {
+      if (!tp || tp.total_tips <= 0) return '<div style="font-size:13px;color:#999">No tips collected</div>';
+      if (!tp.pooled) {
+        const direct = tp.by_employee.length
+          ? tp.by_employee.map((e) => `<div class="report-line-row"><span class="lbl">${esc(e.name)}</span><span class="val">${fmt(e.share)}</span></div>`).join('')
+          : '<div style="font-size:13px;color:#999">No sales with tips in this range.</div>';
+        return `<div style="font-size:12.5px;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 10px;margin-bottom:8px">Not pooled — ${esc(tp.skip_reason || 'no eligible employees clocked in')}</div>`
+          + buildLineRow('Total tips', fmt(tp.total_tips))
+          + `<div style="margin-top:8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;color:#888">Direct, per employee (not pooled)</div>` + direct;
+      }
+      const rows = [
+        buildLineRow('Total tips', fmt(tp.total_tips)),
+        buildLineRow(`Card processing deduction (${tp.merchant_fee_pct}% of card tips)`, '-' + fmt(tp.deduction_amount)),
+        buildLineRow('Pool to distribute', fmt(tp.pool_amount)),
+      ].join('');
+      const emp = tp.by_employee.length
+        ? tp.by_employee.map((e) => `<div class="report-line-row"><span class="lbl">${esc(e.name)} <span style="color:#aaa;font-size:12px">(${e.hours.toFixed(2)} hrs)</span></span><span class="val">${fmt(e.share)}</span></div>`).join('')
+        : '<div style="font-size:13px;color:#999">No eligible hours logged in this range — nobody to distribute to yet.</div>';
+      return rows + `<div style="margin-top:8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;color:#888">Per employee (cashiers only — managers are excluded by law)</div>` + emp;
     }
 
     function renderZResults(r) {
@@ -284,7 +329,12 @@
           ${buildLineRow('Cash', fmt(r.cash_total))}
           ${buildLineRow('Card', fmt(r.card_total))}
           ${buildLineRow('Transactions', r.sale_count)}
+          ${r.card_processing_fee_amount > 0 ? buildLineRow(`Est. card processing fee (${r.card_processing_fee_pct}%)`, '-' + fmt(r.card_processing_fee_amount)) : ''}
         </div>
+        ${r.tip_pool && r.tip_pool.total_tips > 0 ? `<div class="report-section">
+          <div class="report-section-title">Tip Pool</div>
+          ${renderTipPoolRows(r.tip_pool)}
+        </div>` : ''}
         <hr class="report-divider" />
         <div class="report-total-row"><span>Total Net Sales</span><span>${fmt(r.net_sales)}</span></div>`;
     }

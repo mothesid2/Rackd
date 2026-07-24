@@ -12,8 +12,10 @@ const { computeStatusFrom, computeStatus } = require('../dist/main/supabase/lice
 const {
   isSyncAllowed, failureUpdate, enqueueSync, recordFailure,
   getDeadLetters, retryDeadLetter, clearDeadLetter, getSyncStatus, getTenantId, enqueueCustomer,
+  applyEmployee, applyTimeClock,
 } = require('../dist/main/supabase/sync');
 const { cacheToken, getValidToken } = require('../dist/main/supabase/tokenManager');
+const { computeTipPool, saveTipPoolLedger } = require('../dist/main/ipc/xzout');
 const { initSchema } = require('../dist/main/db/schema');
 const { runMigrations } = require('../dist/main/db/migrations');
 
@@ -138,6 +140,177 @@ async function main() {
     enqueueCustomer('update', id, db);
     assert.equal(db.prepare('SELECT uid FROM customers WHERE id=?').get(id).uid, before);
   });
+
+  console.log('applyEmployee — cashiers are PIN-only (db-backed):');
+  await check('pull self-heals a legacy cashier row stuck with a password + forced-change flag', () => {
+    // Simulates a row created by the old buggy auth:createUser, before cashiers
+    // were made PIN-only — password_hash set, must_change_password permanently 1
+    // because nothing ever cleared it for a cashier, forcing a credential-change
+    // prompt on every login instead of just the first.
+    db.prepare(
+      "INSERT INTO users (uid, username, name, role, password_hash, pin_hash, is_active, must_change_password, must_change_pin) VALUES ('legacy-cash-1', NULL, 'Legacy Cash', 'cashier', 'stuck-hash', 'pin-hash', 1, 1, 1)"
+    ).run();
+    // Worst case: the stale cloud copy also still says must_change_password true.
+    applyEmployee({ uid: 'legacy-cash-1', role: 'cashier', name: 'Legacy Cash', is_active: true, must_change_password: true, must_change_pin: true, pin_hash: 'pin-hash-2' }, db);
+    const row = db.prepare('SELECT password_hash, must_change_password FROM users WHERE uid=?').get('legacy-cash-1');
+    assert.equal(row.password_hash, null);
+    assert.equal(row.must_change_password, 0);
+  });
+  await check('a freshly-inserted cashier never gets a password even if the payload has one', () => {
+    applyEmployee({ uid: 'new-cash-1', role: 'cashier', name: 'New Cash', is_active: true, must_change_password: true, must_change_pin: true, pin_hash: 'ph', password_hash: 'should-be-dropped' }, db);
+    const row = db.prepare('SELECT password_hash, must_change_password FROM users WHERE uid=?').get('new-cash-1');
+    assert.equal(row.password_hash, null);
+    assert.equal(row.must_change_password, 0);
+  });
+  await check('a manager keeps a real password + must_change_password (not swept up by the cashier fix)', () => {
+    applyEmployee({ uid: 'mgr-pull-1', role: 'manager', name: 'Pulled Mgr', username: 'pulledmgr', is_active: true, must_change_password: true, password_hash: 'real-hash' }, db);
+    const row = db.prepare('SELECT password_hash, must_change_password FROM users WHERE uid=?').get('mgr-pull-1');
+    assert.equal(row.password_hash, 'real-hash');
+    assert.equal(row.must_change_password, 1);
+  });
+
+  console.log('applyTimeClock — clock_in survives a pull (batch 5, item 8 fix):');
+  await check('a corrected clock_in from the cloud actually overwrites the local one', () => {
+    db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('punch-1','emp-1','Worker','2026-07-24T09:00:00Z',NULL)").run();
+    applyTimeClock({ uid: 'punch-1', employee_uid: 'emp-1', employee_name: 'Worker', clock_in: '2026-07-24T08:30:00Z', clock_out: null, updated_at: '2026-07-24T10:00:00Z' }, db);
+    const row = db.prepare('SELECT clock_in FROM time_clock WHERE uid=?').get('punch-1');
+    assert.equal(row.clock_in, '2026-07-24T08:30:00Z');
+  });
+
+  console.log('tip pool (batch 5, legal rebuild, db-backed):');
+  // Clean slate — the applyTimeClock test above left an open (no clock_out)
+  // punch in time_clock, which would otherwise bleed into today's hours here.
+  db.prepare("DELETE FROM transactions").run();
+  db.prepare("DELETE FROM time_clock").run();
+  db.prepare("UPDATE settings SET value = '3' WHERE key = 'merchant_fee_pct'").run();
+
+  // Known staff — role is what makes the FLSA exclusion testable at all.
+  const aliceId = db.prepare("INSERT INTO users (uid, username, name, role, password_hash, pin_hash, is_active) VALUES ('leg-cash-alice', NULL, 'Alice', 'cashier', NULL, 'x', 1)").run().lastInsertRowid;
+  const bobId = db.prepare("INSERT INTO users (uid, username, name, role, password_hash, pin_hash, is_active) VALUES ('leg-cash-bob', NULL, 'Bob', 'cashier', NULL, 'x', 1)").run().lastInsertRowid;
+  const mannyId = db.prepare("INSERT INTO users (uid, username, name, role, password_hash, pin_hash, is_active) VALUES ('leg-mgr-manny', 'manny', 'Manny', 'manager', 'x', NULL, 1)").run().lastInsertRowid;
+  const monaId = db.prepare("INSERT INTO users (uid, username, name, role, password_hash, pin_hash, is_active) VALUES ('leg-mgr-mona', 'mona', 'Mona', 'manager', 'x', NULL, 1)").run().lastInsertRowid;
+
+  await check("user's own worked example: $97 pool, 12 of 24 hours -> $48.50 (both cashiers)", () => {
+    db.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, tip_amount, payment_method, payment_status, created_at) VALUES (?, 100, 0, 0, 0, 100, 100, 'card', 'completed', '2026-07-24T18:00:00.000-05:00')").run(aliceId);
+    db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('tp-in-1','leg-cash-alice','Alice','2026-07-24T08:00:00.000-05:00','2026-07-24T20:00:00.000-05:00')").run();
+    db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('tp-in-2','leg-cash-bob','Bob','2026-07-24T08:00:00.000-05:00','2026-07-24T20:00:00.000-05:00')").run();
+    const tp = computeTipPool(db, '2026-07-24', '2026-07-24');
+    assert.equal(tp.pooled, true);
+    assert.equal(tp.total_tips, 100);
+    assert.equal(tp.merchant_fee_pct, 3);
+    assert.equal(tp.deduction_amount, 3);
+    assert.equal(tp.pool_amount, 97);
+    assert.equal(tp.total_hours, 24);
+    assert.equal(tp.by_employee.length, 2);
+    for (const e of tp.by_employee) assert.equal(e.share, 48.5);
+    const sum = tp.by_employee.reduce((s, e) => s + e.share, 0);
+    assert.ok(Math.abs(sum - tp.pool_amount) < 0.001, 'shares must sum to the pool exactly');
+  });
+
+  await check('FLSA: a manager who also worked gets ZERO and is excluded from the hours denominator entirely', () => {
+    db.prepare("DELETE FROM transactions").run();
+    db.prepare("DELETE FROM time_clock").run();
+    // Same $100/3% as above, but Manny (manager) also clocked 12h alongside
+    // Alice (cashier). If Manny leaked into the split, Alice would get less
+    // than the full pool. She must get the WHOLE $97 — Manny gets nothing and
+    // must not even appear in by_employee.
+    db.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, tip_amount, payment_method, payment_status, created_at) VALUES (?, 100, 0, 0, 0, 100, 100, 'card', 'completed', '2026-07-27T18:00:00.000-05:00')").run(aliceId);
+    db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('tp-in-3','leg-cash-alice','Alice','2026-07-27T08:00:00.000-05:00','2026-07-27T20:00:00.000-05:00')").run();
+    db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('tp-in-4','leg-mgr-manny','Manny','2026-07-27T08:00:00.000-05:00','2026-07-27T20:00:00.000-05:00')").run();
+    const tp = computeTipPool(db, '2026-07-27', '2026-07-27');
+    assert.equal(tp.pooled, true);
+    assert.equal(tp.total_hours, 12, 'only Alice (cashier) counts toward hours — Manny (manager) must not');
+    assert.equal(tp.by_employee.length, 1);
+    assert.equal(tp.by_employee[0].name, 'Alice');
+    assert.equal(tp.by_employee[0].share, 97);
+    assert.ok(!tp.by_employee.some((e) => e.name === 'Manny'), 'a manager must never appear as a tip-pool recipient');
+  });
+
+  await check('29 CFR 531.52 sole-service exception: only a manager worked -> not pooled, no deduction, direct attribution', () => {
+    db.prepare("DELETE FROM transactions").run();
+    db.prepare("DELETE FROM time_clock").run();
+    db.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, tip_amount, payment_method, payment_status, created_at) VALUES (?, 50, 0, 0, 0, 50, 50, 'card', 'completed', '2026-07-28T18:00:00.000-05:00')").run(mannyId);
+    db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('tp-in-5','leg-mgr-manny','Manny','2026-07-28T08:00:00.000-05:00','2026-07-28T20:00:00.000-05:00')").run();
+    const tp = computeTipPool(db, '2026-07-28', '2026-07-28');
+    assert.equal(tp.pooled, false);
+    assert.ok(typeof tp.skip_reason === 'string' && tp.skip_reason.length > 0, 'skip_reason should explain why pooling was skipped');
+    assert.equal(tp.deduction_amount, 0, 'no processing-fee deduction on directly-attributed tips');
+    assert.equal(tp.pool_amount, 0);
+    assert.equal(tp.by_employee.length, 1);
+    assert.equal(tp.by_employee[0].name, 'Manny');
+    assert.equal(tp.by_employee[0].share, 50, "Manny keeps his own directly-rung tips in full — sole-service exception");
+  });
+
+  await check('multiple managers, no cashiers: each keeps only their own rung tips, never pooled with each other', () => {
+    db.prepare("DELETE FROM transactions").run();
+    db.prepare("DELETE FROM time_clock").run();
+    db.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, tip_amount, payment_method, payment_status, created_at) VALUES (?, 20, 0, 0, 0, 20, 20, 'card', 'completed', '2026-07-29T12:00:00.000-05:00')").run(mannyId);
+    db.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, tip_amount, payment_method, payment_status, created_at) VALUES (?, 80, 0, 0, 0, 80, 80, 'card', 'completed', '2026-07-29T14:00:00.000-05:00')").run(monaId);
+    db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('tp-in-6','leg-mgr-manny','Manny','2026-07-29T08:00:00.000-05:00','2026-07-29T16:00:00.000-05:00')").run();
+    db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('tp-in-7','leg-mgr-mona','Mona','2026-07-29T08:00:00.000-05:00','2026-07-29T16:00:00.000-05:00')").run();
+    const tp = computeTipPool(db, '2026-07-29', '2026-07-29');
+    assert.equal(tp.pooled, false);
+    const manny = tp.by_employee.find((e) => e.name === 'Manny');
+    const mona = tp.by_employee.find((e) => e.name === 'Mona');
+    assert.equal(manny.share, 20, "Manny keeps only his own $20 — not averaged/split with Mona's $80");
+    assert.equal(mona.share, 80, "Mona keeps only her own $80");
+  });
+
+  await check('cash tips carry no processing-cost deduction — only the card-tendered portion is fee-based', () => {
+    db.prepare("DELETE FROM transactions").run();
+    db.prepare("DELETE FROM time_clock").run();
+    // $60 cash tip + $40 card tip = $100 total; only the $40 card portion is
+    // subject to the 3% fee ($1.20), not the full $100 (which would be $3).
+    db.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, tip_amount, payment_method, payment_status, created_at) VALUES (?, 60, 0, 0, 0, 60, 60, 'cash', 'completed', '2026-07-30T12:00:00.000-05:00')").run(aliceId);
+    db.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, tip_amount, payment_method, payment_status, created_at) VALUES (?, 40, 0, 0, 0, 40, 40, 'card', 'completed', '2026-07-30T14:00:00.000-05:00')").run(aliceId);
+    db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('tp-in-8','leg-cash-alice','Alice','2026-07-30T08:00:00.000-05:00','2026-07-30T16:00:00.000-05:00')").run();
+    const tp = computeTipPool(db, '2026-07-30', '2026-07-30');
+    assert.equal(tp.total_tips, 100);
+    assert.equal(tp.card_tip_total, 40);
+    assert.equal(tp.deduction_amount, 1.2, '3% of the $40 card portion, not 3% of the full $100');
+    assert.equal(tp.pool_amount, 98.8);
+  });
+
+  await check('merchant fee is read from settings (configurable, not hardcoded) and defaults to 0 until set', () => {
+    db.prepare("DELETE FROM transactions").run();
+    db.prepare("DELETE FROM time_clock").run();
+    db.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, tip_amount, payment_method, payment_status, created_at) VALUES (?, 100, 0, 0, 0, 100, 100, 'card', 'completed', '2026-07-31T12:00:00.000-05:00')").run(aliceId);
+    db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('tp-in-9','leg-cash-alice','Alice','2026-07-31T08:00:00.000-05:00','2026-07-31T16:00:00.000-05:00')").run();
+    db.prepare("UPDATE settings SET value = '0' WHERE key = 'merchant_fee_pct'").run();
+    const unset = computeTipPool(db, '2026-07-31', '2026-07-31');
+    assert.equal(unset.deduction_amount, 0, 'no deduction until the owner explicitly sets a real rate — never a guessed default');
+    db.prepare("UPDATE settings SET value = '2.9' WHERE key = 'merchant_fee_pct'").run();
+    const set = computeTipPool(db, '2026-07-31', '2026-07-31');
+    assert.equal(set.merchant_fee_pct, 2.9);
+    assert.equal(set.deduction_amount, 2.9);
+    db.prepare("UPDATE settings SET value = '3' WHERE key = 'merchant_fee_pct'").run();
+  });
+
+  await check('audit ledger persists the fee rate and deduction actually used, not just the final shares', () => {
+    db.prepare("DELETE FROM transactions").run();
+    db.prepare("DELETE FROM time_clock").run();
+    db.prepare("DELETE FROM tip_pool_shares").run();
+    db.prepare("DELETE FROM tip_pool_ledger").run();
+    db.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, tip_amount, payment_method, payment_status, created_at) VALUES (?, 100, 0, 0, 0, 100, 100, 'card', 'completed', '2026-08-01T12:00:00.000-05:00')").run(aliceId);
+    db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('tp-in-10','leg-cash-alice','Alice','2026-08-01T08:00:00.000-05:00','2026-08-01T16:00:00.000-05:00')").run();
+    const tp = computeTipPool(db, '2026-08-01', '2026-08-01');
+    saveTipPoolLedger(db, '2026-08-01', null, tp);
+    const ledger = db.prepare("SELECT * FROM tip_pool_ledger WHERE report_date = '2026-08-01'").get();
+    assert.ok(ledger, 'ledger row must exist');
+    assert.equal(ledger.merchant_fee_pct, 3);
+    assert.equal(ledger.deduction_amount, tp.deduction_amount);
+    assert.equal(ledger.pool_amount, tp.pool_amount);
+    assert.equal(ledger.pooled, 1);
+    const shares = db.prepare("SELECT * FROM tip_pool_shares WHERE ledger_id = ?").all(ledger.id);
+    assert.equal(shares.length, 1);
+    assert.equal(shares[0].employee_name, 'Alice');
+    assert.equal(shares[0].share_amount, tp.by_employee[0].share);
+  });
+
+  db.prepare("DELETE FROM transactions").run();
+  db.prepare("DELETE FROM time_clock").run();
+  db.prepare("DELETE FROM tip_pool_shares").run();
+  db.prepare("DELETE FROM tip_pool_ledger").run();
 
   console.log('permissions (db-backed):');
   const bcryptP = require('bcryptjs');

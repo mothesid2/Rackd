@@ -10,6 +10,9 @@ import { fmt, STRIPE_PUBLISHABLE_KEY, ONLINE_FEE_RATE } from '@/lib/config';
 
 const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
+// Round-half-up to the cent, matching Postgres numeric round() (reserve_online_order).
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
 export default function Checkout() {
   const cart = useCart();
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
@@ -17,6 +20,7 @@ export default function Checkout() {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [taxRate, setTaxRate] = useState(0);
 
   useEffect(() => { (async () => {
     const { data: { session } } = await supabase().auth.getSession();
@@ -26,6 +30,19 @@ export default function Checkout() {
       setVerified(!!data?.age_verified);
     }
   })(); }, []);
+
+  useEffect(() => { (async () => {
+    if (!cart.locationId) return;
+    const { data } = await supabase().from('locations').select('tax_rate').eq('id', cart.locationId).maybeSingle();
+    setTaxRate(Number(data?.tax_rate) || 0);
+  })(); }, [cart.locationId]);
+
+  // Four line items, each rounded against its own base — mirrors reserve_online_order
+  // exactly (item 4 reversal: tax applies to the subtotal AND to the surcharge).
+  const tax = round2(cart.subtotal * taxRate);
+  const fee = round2(cart.subtotal * ONLINE_FEE_RATE);
+  const feeTax = round2(fee * taxRate);
+  const total = round2(cart.subtotal + tax + fee + feeTax);
 
   async function startPayment() {
     setBusy(true); setError(null);
@@ -61,10 +78,16 @@ export default function Checkout() {
         ))}
         <div className="flex justify-between border-t mt-2 pt-2 text-sm"><span>Subtotal</span><span>{fmt(cart.subtotal)}</span></div>
         <div className="flex justify-between py-0.5 text-sm text-smoke">
-          <span>Online Order Fee ({Math.round(ONLINE_FEE_RATE * 100)}%)</span><span>{fmt(cart.subtotal * ONLINE_FEE_RATE)}</span>
+          <span>Sales tax{taxRate ? ` (${(taxRate * 100).toFixed(2)}%)` : ''}</span><span>{fmt(tax)}</span>
         </div>
-        <div className="flex justify-between border-t mt-1.5 pt-2 font-bold"><span>Total before tax</span><span>{fmt(cart.subtotal * (1 + ONLINE_FEE_RATE))}</span></div>
-        <div className="text-xs text-neutral-400 mt-1">Sales tax is added at payment. Pickup only — bring your ID.</div>
+        <div className="flex justify-between py-0.5 text-sm text-smoke">
+          <span>Online Order Fee ({Math.round(ONLINE_FEE_RATE * 100)}%)</span><span>{fmt(fee)}</span>
+        </div>
+        <div className="flex justify-between py-0.5 text-sm text-smoke">
+          <span>Tax on Online Order Fee{taxRate ? ` (${(taxRate * 100).toFixed(2)}%)` : ''}</span><span>{fmt(feeTax)}</span>
+        </div>
+        <div className="flex justify-between border-t mt-1.5 pt-2 font-bold"><span>Total</span><span>{fmt(total)}</span></div>
+        <div className="text-xs text-neutral-400 mt-1">Pickup only — bring your ID.</div>
       </div>
 
       {error && <div className="bg-red-50 text-red-700 rounded-lg p-3 text-sm">{error}</div>}

@@ -12,8 +12,13 @@ const fs = require('fs');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 
-// minimal .env loader
-for (const line of (fs.existsSync('.env') ? fs.readFileSync('.env', 'utf8') : '').split(/\r?\n/)) {
+// minimal .env loader — always the ROOT .env (this script's own directory is
+// <root>/scripts, so this resolves correctly no matter which app folder you run
+// `npm run release:staging` from). manager-portal/ and owner-console/ have no
+// .env of their own by design (one set of cloud credentials, not three copies to
+// keep in sync) — reading based on process.cwd() silently found nothing there.
+const ROOT_ENV = path.join(__dirname, '..', '.env');
+for (const line of (fs.existsSync(ROOT_ENV) ? fs.readFileSync(ROOT_ENV, 'utf8') : '').split(/\r?\n/)) {
   const m = line.match(/^\s*([\w.]+)\s*=\s*(.*)\s*$/);
   if (m && !line.trim().startsWith('#') && process.env[m[1]] === undefined) process.env[m[1]] = m[2].trim();
 }

@@ -104,18 +104,18 @@
           </div>
           <div class="form-group" style="max-width:160px">
             <label>Role</label>
-            <select id="newRole">
+            <select id="newRole" onchange="onNewRoleChange()">
               <option value="cashier">Cashier</option>
               <option value="manager">Manager</option>
             </select>
           </div>
         </div>
-        <div class="form-group" style="max-width:280px">
+        <div class="form-group" style="max-width:280px" id="newPasswordGroup">
           <label>Temporary Password</label>
           <input type="password" id="newPassword" autocomplete="new-password" placeholder="Min. 4 characters" />
         </div>
-        <p style="font-size:12px;color:#888;margin-top:-8px;margin-bottom:12px">
-          The user will be required to change their password on first login.
+        <p style="font-size:12px;color:#888;margin-top:-8px;margin-bottom:12px" id="newUserHint">
+          Cashiers sign in with a PIN only — one will be generated for you to hand over. They'll be asked to set their own on first sign-in.
         </p>
         <button class="btn btn-navy" onclick="createUser()">Create User</button>
       </div>
@@ -128,7 +128,11 @@
         <div class="form-group"><label>Store Name</label><input type="text" id="storeName" /></div>
         <div class="form-group"><label>Phone</label><input type="text" id="storePhone" /></div>
       </div>
-      <div class="form-group"><label>Address</label><input type="text" id="storeAddress" /></div>
+      <div class="form-group">
+        <label>Address</label>
+        <input type="text" id="storeAddress" disabled title="Set once by the owner in the Owner Console and synced down — not editable here" />
+        <div style="font-size:12px;color:#888;margin-top:4px">Set by the owner in the Owner Console during shop setup, and synced down automatically.</div>
+      </div>
       <div class="form-group"><label>Footer Message</label><input type="text" id="storeFooter" /></div>
       <div class="form-group"><label>Refund Policy (printed at the bottom of every receipt)</label><textarea id="refundPolicy" rows="3" style="width:100%;resize:vertical" placeholder="e.g. Tobacco & vapor are non-refundable. Gift-shop items returnable within 7 days with receipt…"></textarea></div>
       <div class="form-group">
@@ -136,6 +140,9 @@
         <div style="font-size:12px;color:#888;margin-top:4px">When on, the customer picks a tip on their screen before the card is charged. Turn OFF the tip prompt on the card terminal itself to avoid asking twice.</div>
       </div>
       <div class="form-group" style="max-width:260px"><label>Tip presets (% of subtotal)</label><input type="text" id="tipPresets" placeholder="15,18,20" /></div>
+      <div class="form-group">
+        <div style="font-size:12px;color:#888">Tip pool processing deduction is set by the owner in the Owner Console (your actual card-processing rate) — not editable here.</div>
+      </div>
       <div class="form-row">
         <div class="form-group" style="max-width:180px">
           <label>Tax Rate (%)</label>
@@ -320,18 +327,6 @@
       <button class="btn btn-navy" data-write-action="settings_change" onclick="saveZebraSettings()">Save Zebra Settings</button>
     </div>
 
-    <!-- Twilio Config -->
-    <div class="card settings-section">
-      <div class="card-title">Twilio SMS</div>
-      <div class="form-group"><label>Account SID</label><input type="text" id="twilioSid" /></div>
-      <div class="form-group">
-        <label>Auth Token</label>
-        <input type="password" id="twilioToken" placeholder="Leave blank to keep current" />
-      </div>
-      <div class="form-group"><label>From Phone Number</label><input type="text" id="twilioFrom" placeholder="+15550000000" /></div>
-      <button class="btn btn-navy" data-write-action="settings_change" onclick="saveTwilioSettings()">Save Twilio Settings</button>
-    </div>
-
     <!-- Owner Console — PIN-gated, hidden from store managers -->
     <div class="card settings-section" id="ownerCard">
       <div class="card-title">Owner Console 🔒</div>
@@ -404,28 +399,53 @@
           <span class="user-name">${esc(u.username)}</span>
           <span class="user-role-badge ${u.role}">${u.role}</span>
           ${u.must_change_password ? '<span class="must-change-badge">Must change password</span>' : ''}
+          <button class="btn-gray" style="padding:4px 10px;font-size:12px" onclick="editUser(${u.id}, '${esc(u.username)}')">Edit</button>
           <button class="btn-delete-user" onclick="deleteUser(${u.id}, '${esc(u.username)}')">Delete</button>
         </div>
       `).join('');
+    }
+
+    async function editUser(id, currentUsername) {
+      const name = prompt('New username/display name:', currentUsername);
+      if (name === null || !name.trim() || name.trim() === currentUsername) return;
+      const res = await window.api.updateUsername(id, name.trim());
+      if (res.success) { showToast('Updated', 'success'); loadUsers(); }
+      else showToast(res.error || 'Failed to update', 'error');
     }
 
     function esc(s) {
       return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
+    function onNewRoleChange() {
+      const isCashier = document.getElementById('newRole').value === 'cashier';
+      document.getElementById('newPasswordGroup').style.display = isCashier ? 'none' : '';
+      document.getElementById('newUserHint').textContent = isCashier
+        ? 'Cashiers sign in with a PIN only — one will be generated for you to hand over. They\'ll be asked to set their own on first sign-in.'
+        : 'The manager will be required to change their password on first login.';
+    }
+
     async function createUser() {
       const username = document.getElementById('newUsername').value.trim();
-      const password = document.getElementById('newPassword').value;
       const role = document.getElementById('newRole').value;
+      const isCashier = role === 'cashier';
+      const password = isCashier ? '' : document.getElementById('newPassword').value;
 
-      if (!username || !password) {
-        showToast('Username and password are required', 'warning');
+      if (!username || (!isCashier && !password)) {
+        showToast(isCashier ? 'Username is required' : 'Username and password are required', 'warning');
         return;
       }
 
       const res = await window.api.createUser(username, password, role);
       if (res.success) {
-        showToast(`User "${username}" created — they must change password on first login`, 'success');
+        // Cashiers sign in at the register with a PIN, not this password — it's
+        // generated here, so show it once (blocking, so it isn't missed) rather
+        // than a toast that auto-dismisses.
+        if (res.pin) {
+          alert(`Cashier "${username}" created.\nRegister PIN: ${res.pin}\n\nGive it to them — they'll be asked to change it on first sign-in.`);
+        } else {
+          showToast(`User "${username}" created — they must change password on first login`, 'success');
+        }
         document.getElementById('newUsername').value = '';
         document.getElementById('newPassword').value = '';
         document.getElementById('newRole').value = 'cashier';
@@ -455,6 +475,7 @@
         return;
       }
 
+      onNewRoleChange();
       loadUsers();
       ownerInitCard();
       loadOnboarding();
@@ -471,8 +492,6 @@
         window._savedPrinterIface = s.printer_interface || '';
         document.getElementById('printerInterface').value = /^tcp:\/\//i.test(window._savedPrinterIface) ? window._savedPrinterIface : '';
         loadPrinters();
-        document.getElementById('twilioSid').value = s.twilio_account_sid || '';
-        document.getElementById('twilioFrom').value = s.twilio_from_number || '';
         document.getElementById('zebraIp').value = s.zebra_ip || '';
         document.getElementById('zebraPort').value = s.zebra_port || '9100';
         document.getElementById('drawerType').value = s.drawer_type || 'serial';
@@ -671,7 +690,7 @@
       const data = {
         store_name: document.getElementById('storeName').value.trim(),
         phone: document.getElementById('storePhone').value.trim(),
-        address: document.getElementById('storeAddress').value.trim(),
+        // Address is owner-set and synced down (item 10) — not part of this form.
         footer_message: document.getElementById('storeFooter').value.trim(),
         refund_policy: document.getElementById('refundPolicy').value.trim(),
         tip_enabled: document.getElementById('tipEnabled').checked ? 1 : 0,
@@ -841,17 +860,6 @@
         window.api.updateSetting('zebra_port', document.getElementById('zebraPort').value.trim() || '9100'),
       ]);
       showToast('Zebra settings saved!', 'success');
-    }
-
-    async function saveTwilioSettings() {
-      const saves = [
-        window.api.updateSetting('twilio_account_sid', document.getElementById('twilioSid').value),
-        window.api.updateSetting('twilio_from_number', document.getElementById('twilioFrom').value),
-      ];
-      const token = document.getElementById('twilioToken').value;
-      if (token) saves.push(window.api.updateSetting('twilio_auth_token', token));
-      await Promise.all(saves);
-      showToast('Twilio settings saved!', 'success');
     }
   </script>
 </body>

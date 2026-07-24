@@ -63,7 +63,8 @@ async function renderBusinesses() {
       <div class="muted" data-locs="${b.tenant_id}" style="margin-top:12px;font-size:13px">Loading locations…</div>
     </div>`).join('');
   wrap.querySelectorAll('[data-add]').forEach((btn) => btn.addEventListener('click', () => {
-    $('lTenant').value = btn.dataset.add; $('lName').value = ''; $('locModal').style.display = 'flex'; $('lName').focus();
+    $('lTenant').value = btn.dataset.add; $('lName').value = ''; $('lAddress').value = ''; $('lZip').value = '';
+    $('locModal').style.display = 'flex'; $('lName').focus();
   }));
   for (const b of bizList) loadLocations(b.tenant_id);
 }
@@ -85,42 +86,6 @@ async function loadLocations(tenantId) {
     if (!name || name === btn.dataset.name) return;
     const r = await window.owner.renameLocation(btn.dataset.rename, name.trim());
     if (r.success) { toast('Location renamed'); loadLocations(tenantId); } else toast(r.error, true);
-  }));
-}
-
-// ── Kiosks ────────────────────────────────────────────────────────────────────
-async function renderKiosks() {
-  view.innerHTML = `<div class="sec-head"><div class="h2">Kiosks</div></div><div id="kWrap"><div class="spin">Loading…</div></div>`;
-  if (!currentTenant) { $('kWrap').innerHTML = '<div class="card muted">Pick a business.</div>'; return; }
-  const r = await window.owner.kiosks(currentTenant);
-  if (!r.success) { $('kWrap').innerHTML = `<div class="card muted">${esc(r.error)}</div>`; return; }
-  const ks = r.kiosks || [];
-  if (!ks.length) { $('kWrap').innerHTML = '<div class="card muted">No kiosks activated for this business yet.</div>'; return; }
-  $('kWrap').innerHTML = `<div class="card" style="padding:0;overflow:hidden"><table class="grid">
-    <thead><tr><th>Kiosk</th><th>Location</th><th>Last seen</th><th>Status</th><th></th></tr></thead>
-    <tbody>${ks.map((k) => {
-      const pc = k.pending_command;
-      const status = pc
-        ? `<span class="badge warn">${esc(pc.status)}${pc.note ? '' : ''}</span>${pc.note ? `<div class="muted" style="font-size:11px;margin-top:3px">${esc(pc.note)}</div>` : ''}`
-        : '<span class="badge on">active</span>';
-      return `<tr>
-        <td><span class="keycode">${esc((k.machine_id || '').slice(0, 8))}</span></td>
-        <td>${esc(k.location_name || '—')}</td>
-        <td class="muted">${ago(k.last_seen_at)}</td>
-        <td>${status}</td>
-        <td class="num" style="width:150px">${pc
-          ? `<button class="rowbtn" data-cancel="${esc(k.machine_id)}">Cancel reset</button>`
-          : `<button class="rowbtn" data-reset="${esc(k.machine_id)}" data-loc="${esc(k.location_name || '')}">Reset</button>`}</td>
-      </tr>`;
-    }).join('')}</tbody></table></div>`;
-  $('kWrap').querySelectorAll('[data-reset]').forEach((b) => b.addEventListener('click', () => {
-    $('rTenant').value = currentTenant; $('rMachine').value = b.dataset.reset;
-    $('rSub').textContent = `Kiosk ${b.dataset.reset.slice(0, 8)} at ${b.dataset.loc || 'its location'} will be unlocked and returned to setup.`;
-    $('resetModal').style.display = 'flex';
-  }));
-  $('kWrap').querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', async () => {
-    const r = await window.owner.cancelReset(currentTenant, b.dataset.cancel);
-    if (r.success) { toast('Reset cancelled'); renderKiosks(); } else toast(r.error, true);
   }));
 }
 
@@ -188,40 +153,283 @@ const PERM_LABELS = {
   open_drawer_no_sale: 'Open drawer (no sale)', clock_others: 'Clock others in/out',
 };
 const PERM_KEYS = Object.keys(PERM_LABELS);
-let staffList = [];
 
-async function renderStaff() {
-  view.innerHTML = `<div class="sec-head"><div class="h2">Staff &amp; permissions</div></div><div id="sWrap"><div class="spin">Loading…</div></div>`;
-  if (!currentTenant) { $('sWrap').innerHTML = '<div class="card muted">Pick a business.</div>'; return; }
-  const r = await window.owner.staff(currentTenant);
-  if (!r.success) { $('sWrap').innerHTML = `<div class="card muted">${esc(r.error)}</div>`; return; }
-  staffList = r.staff || [];
-  if (!staffList.length) { $('sWrap').innerHTML = '<div class="card muted">No staff yet. Staff are created on the POS / Manager Portal.</div>'; return; }
-  $('sWrap').innerHTML = staffList.map((e) => {
-    const isAdmin = e.role === 'admin';
-    const toggles = PERM_KEYS.map((k) => {
-      const on = isAdmin || !!(e.permissions[k] && e.permissions[k].is_granted);
-      return `<label class="permtog${isAdmin ? ' locked' : ''}">
-        <input type="checkbox" data-uid="${esc(e.uid)}" data-key="${k}" ${on ? 'checked' : ''} ${isAdmin ? 'disabled' : ''}/>
-        <span>${PERM_LABELS[k]}</span></label>`;
-    }).join('');
-    return `<div class="card" style="margin-bottom:12px">
-      <div class="rowflex" style="justify-content:space-between">
-        <div>
-          <div style="font-weight:700;font-size:15px">${esc(e.name || e.username || 'Staff')}
-            <span class="badge ${isAdmin ? 'warn' : 'dim'}" style="margin-left:6px">${esc(e.role || '')}</span>
-            ${e.is_active ? '' : '<span class="badge dim" style="margin-left:4px">inactive</span>'}</div>
-          <div class="muted" style="font-size:12px;margin-top:2px">${esc(e.username || '—')} · ${esc(e.location_name || '')}</div>
-        </div>
-        <button class="rowbtn" data-resetpw="${esc(e.uid)}" data-who="${esc(e.username || e.name || 'this user')}">Reset password</button>
+// Menu-tile access (item 3) — default ON (a cashier can open every POS tile
+// unless a grant row explicitly revokes one); opposite default from PERM_LABELS
+// above, which default OFF. Same employee_permissions storage either way.
+const MENU_LABELS = {
+  access_merchandise: 'Merchandise (inventory)', access_receipts: 'Receipts',
+  access_customer_lookup: 'Customer Lookup', access_pickups: 'Online Pickups',
+};
+const MENU_KEYS = Object.keys(MENU_LABELS);
+
+// Fixed feature registry (item 9) — matches the FEATURES list already used by
+// the legacy local admin panel (src/renderer/admin/index.html), so a feature
+// flag means the same thing everywhere rather than being a free-form string.
+const FEATURES = [
+  ['cloud_access', 'Cloud access'], ['ad_free', 'Ad-free'], ['inventory_management', 'Inventory management'],
+  ['rebate_reporting', 'Automated rebate reporting'], ['sms_marketing', 'SMS marketing'], ['loyalty', 'Loyalty & rewards'],
+  ['promotions', 'Promotions'], ['advanced_reports', 'Advanced reports'], ['reports_app', 'Phone reports app'],
+  ['web_store', 'Online store'],
+];
+
+function sectionHead(iconPath, title, right = '') {
+  return `<div class="section-head">
+    <div class="s-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconPath}</svg></div>
+    <div class="s-title">${title}</div>
+    ${right}
+  </div>`;
+}
+
+// ── Business (item 16: pick a business, see ALL of its settings in one place) ──
+async function renderBusinessDetail() {
+  view.innerHTML = '<div class="spin">Loading…</div>';
+  if (!currentTenant) { view.innerHTML = '<div class="card muted">No businesses yet — create one first.</div>'; return; }
+  const biz = bizList.find((b) => b.tenant_id === currentTenant);
+  const [locR, bizAllR, revR, kioskR, staffR] = await Promise.all([
+    window.owner.locations(currentTenant),
+    window.owner.businesses(), // re-read so contact_email/phone/features/display_config are fresh
+    window.owner.revenueByLocation(currentTenant),
+    window.owner.kiosks(currentTenant),
+    window.owner.staff(currentTenant),
+  ]);
+  const locs = locR.success ? (locR.locations || []) : [];
+  const bizLic = (bizAllR.success ? bizAllR.licenses || [] : []).find((l) => l.tenant_id === currentTenant && l.kind === 'business') || {};
+  const features = new Set(Array.isArray(bizLic.features) ? bizLic.features : []);
+  const dc = bizLic.display_config || {};
+  const ads = Array.isArray(dc.ads) ? dc.ads : [];
+  const revLocs = revR.success ? (revR.locations || []) : [];
+  const kiosks = kioskR.success ? (kioskR.kiosks || []) : [];
+  const staffList = staffR.success ? (staffR.staff || []) : [];
+
+  // ── Revenue (item 6: top of the page) ────────────────────────────────────
+  const totalRev = revLocs.reduce((s, l) => s + Number(l.revenue || 0), 0);
+  const totalTxn = revLocs.reduce((s, l) => s + Number(l.txn_count || 0), 0);
+  const revenueSection = `<div class="section">
+    ${sectionHead('<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>', 'Revenue', '<span class="s-sub">In-store POS sales · last 30 days</span>')}
+    <div class="section-body">
+      <div class="kpi-row">
+        <div class="kpi"><div class="lbl">Total POS revenue</div><div class="val">${fmt(totalRev)}</div></div>
+        <div class="kpi"><div class="lbl">Transactions</div><div class="val">${totalTxn}</div></div>
+        <div class="kpi"><div class="lbl">Locations</div><div class="val">${revLocs.filter((l) => l.location_id).length}</div></div>
       </div>
-      ${isAdmin
-        ? '<div class="muted" style="font-size:12px;margin-top:12px">Admins have every permission — nothing to toggle.</div>'
-        : `<div class="permgrid" style="margin-top:12px">${toggles}</div>`}
-    </div>`;
-  }).join('');
+      ${revLocs.length ? `<table class="grid"><thead><tr><th>Location</th><th class="num">Transactions</th><th class="num">Refunds</th><th class="num">Revenue</th></tr></thead>
+        <tbody>${revLocs.map((l) => `<tr>
+          <td>${esc(l.location_name)}</td>
+          <td class="num muted">${l.txn_count || 0}</td>
+          <td class="num muted">${l.refund_count || 0}</td>
+          <td class="num" style="font-weight:700">${fmt(l.revenue)}</td></tr>`).join('')}</tbody></table>`
+        : '<div class="muted">No sales in this window yet.</div>'}
+    </div>
+  </div>`;
 
-  $('sWrap').querySelectorAll('input[type=checkbox]').forEach((cb) => cb.addEventListener('change', async () => {
+  // ── Business Info ─────────────────────────────────────────────────────────
+  const businessInfoSection = `<div class="section">
+    ${sectionHead('<path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/>', 'Business Info')}
+    <div class="section-body">
+      <div class="rowflex" style="justify-content:space-between;margin-bottom:16px">
+        <div class="rowflex">
+          <span class="muted" style="font-size:12px">Business key</span>
+          <span class="keycode" id="bizKeyDisplay">${esc(biz?.businessKey || '—')}</span>
+          <button class="rowbtn" id="bizKeyCopy" ${biz?.businessKey ? '' : 'disabled'}>Copy</button>
+        </div>
+        <div class="rowflex">
+          <span class="muted" style="font-size:12px">Kiosk seats: <strong>${biz?.used ?? 0} /</strong></span>
+          <input id="bizMaxRegisters" type="number" min="1" step="1" value="${Number(biz?.max_registers ?? 1)}" style="width:64px" />
+          <button class="rowbtn" id="bizMaxRegistersSave">Save</button>
+        </div>
+      </div>
+      <div class="hgrid">
+        <div>
+          <div class="muted" style="font-size:11px;margin-bottom:6px">Owner contact</div>
+          <div class="fg" style="margin-bottom:6px"><input id="bizContactEmail" placeholder="owner@business.com" value="${esc(bizLic.contact_email || '')}" /></div>
+          <div class="fg" style="margin-bottom:6px"><input id="bizContactPhone" placeholder="Phone" value="${esc(bizLic.contact_phone || '')}" /></div>
+          <button class="rowbtn" id="bizContactSave">Save contact</button>
+        </div>
+        <div>
+          <div class="muted" style="font-size:11px;margin-bottom:6px">Features</div>
+          <div id="bizFeatureToggles">${FEATURES.map(([id, label]) => `
+            <div class="switch-row">
+              <span class="sw-label">${esc(label)}</span>
+              <label class="switch"><input type="checkbox" data-feat="${id}" ${features.has(id) ? 'checked' : ''} /><span class="slider"></span></label>
+            </div>`).join('')}</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // ── Twilio SMS (batch 5, item 2): owner-only — moved out of POS Settings
+  // entirely, same treatment as address/tax rate and contact info. The auth
+  // token is write-only (never read back), matching how POS Settings' old
+  // Twilio card never pre-filled it either.
+  const twilioSection = `<div class="section">
+    ${sectionHead('<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>', 'Twilio SMS', '<span class="s-sub">Owner-only — used to send text messages from the register</span>')}
+    <div class="section-body">
+      <div class="hgrid">
+        <div class="fg"><label>Account SID</label><input id="twSid" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" value="${esc(bizLic.twilio_account_sid || '')}" /></div>
+        <div class="fg"><label>Auth token</label><input id="twToken" type="password" placeholder="Leave blank to keep current" /></div>
+        <div class="fg"><label>From phone number</label><input id="twFrom" placeholder="+15550000000" value="${esc(bizLic.twilio_from_number || '')}" /></div>
+      </div>
+      <button class="rowbtn" id="twSave">Save Twilio settings</button>
+    </div>
+  </div>`;
+
+  // ── Ads (item 7: multiple ads) ────────────────────────────────────────────
+  const adsSection = `<div class="section">
+    ${sectionHead('<rect x="3" y="3" width="18" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>', 'Ads', '<span class="s-sub">Shown on the POS customer display</span>')}
+    <div class="section-body">
+      <div class="rowflex" style="margin-bottom:12px">
+        <label class="switch"><input type="checkbox" id="adsEnabled" ${dc.promo_enabled ? 'checked' : ''} /><span class="slider"></span></label>
+        <span class="sw-label">Show ads</span>
+        <span class="muted" style="font-size:12px;margin-left:16px">Rotate every</span>
+        <input id="adsInterval" type="number" min="2" value="${Number(dc.ads_interval) || 8}" style="width:64px" /><span class="muted" style="font-size:12px">sec</span>
+      </div>
+      <div id="adsListWrap"></div>
+      <button class="rowbtn" id="adsAddRow" style="margin-bottom:12px">+ Add ad</button>
+      <div><button class="btn btn-accent" id="adsSaveAll">Save ads</button></div>
+    </div>
+  </div>`;
+
+  // ── Users (items 11 & 12: New User + staff permissions, replacing seats-as-provisioning) ──
+  const usersSection = `<div class="section">
+    ${sectionHead('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', 'Users', `<button class="btn btn-accent" id="bizAddUser">+ New user</button>`)}
+    <div class="section-body" id="usersWrap">
+      ${!staffList.length ? '<div class="muted">No staff yet.</div>' : staffList.map((e) => {
+        const isAdmin = e.role === 'admin';
+        const isCashier = e.role === 'cashier';
+        const toggles = PERM_KEYS.map((k) => {
+          const on = isAdmin || !!(e.permissions[k] && e.permissions[k].is_granted);
+          return `<label class="permtog${isAdmin ? ' locked' : ''}">
+            <input type="checkbox" data-uid="${esc(e.uid)}" data-key="${k}" ${on ? 'checked' : ''} ${isAdmin ? 'disabled' : ''}/>
+            <span>${PERM_LABELS[k]}</span></label>`;
+        }).join('');
+        // Menu access only means anything for cashiers — managers/admins always
+        // see every POS tile regardless (main-menu.html only checks this for the
+        // cashier branch). Default ON: checked unless explicitly revoked.
+        const menuToggles = MENU_KEYS.map((k) => {
+          const p = e.permissions[k];
+          const on = p ? !!p.is_granted : true;
+          return `<label class="permtog">
+            <input type="checkbox" data-uid="${esc(e.uid)}" data-key="${k}" ${on ? 'checked' : ''}/>
+            <span>${MENU_LABELS[k]}</span></label>`;
+        }).join('');
+        return `<div class="card" style="margin-bottom:12px">
+          <div class="rowflex" style="justify-content:space-between">
+            <div>
+              <div style="font-weight:700;font-size:15px">${esc(e.name || e.username || 'Staff')}
+                <span class="badge ${isAdmin ? 'warn' : 'dim'}" style="margin-left:6px">${esc(e.role || '')}</span>
+                ${e.is_active ? '' : '<span class="badge dim" style="margin-left:4px">inactive</span>'}</div>
+              <div class="muted" style="font-size:12px;margin-top:2px">${isCashier ? 'register PIN sign-in' : esc(e.username || '—')} · ${esc(e.location_name || '')}</div>
+            </div>
+            ${isAdmin ? '' : isCashier
+              ? `<button class="rowbtn" data-resetpin="${esc(e.uid)}" data-who="${esc(e.name || 'this user')}">Reset PIN</button>`
+              : `<button class="rowbtn" data-resetpw="${esc(e.uid)}" data-who="${esc(e.username || e.name || 'this user')}">Reset password</button>`}
+          </div>
+          ${isAdmin
+            ? '<div class="muted" style="font-size:12px;margin-top:12px">Admins have every permission — nothing to toggle.</div>'
+            : `<div class="muted" style="font-size:11px;margin-top:12px">Actions</div><div class="permgrid" style="margin-top:6px">${toggles}</div>
+               ${isCashier ? `<div class="muted" style="font-size:11px;margin-top:12px">Menu access — on by default</div><div class="permgrid" style="margin-top:6px">${menuToggles}</div>` : ''}`}
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+
+  // ── Locations ──────────────────────────────────────────────────────────────
+  const locationsSection = `<div class="section">
+    ${sectionHead('<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>', 'Locations', '<button class="btn" id="bizAddLoc">+ Location</button>')}
+    <div class="section-body stack" id="bizLocWrap"></div>
+  </div>`;
+
+  // ── Kiosks (item 12) ─────────────────────────────────────────────────────
+  const kiosksSection = `<div class="section">
+    ${sectionHead('<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>', 'Kiosks')}
+    <div class="section-body">
+      ${!kiosks.length ? '<div class="muted">No kiosks activated for this business yet.</div>' : `<table class="grid">
+        <thead><tr><th>Kiosk</th><th>Location</th><th>Last seen</th><th>Status</th><th></th></tr></thead>
+        <tbody>${kiosks.map((k) => {
+          const pc = k.pending_command;
+          const status = pc
+            ? `<span class="badge warn">${esc(pc.status)}</span>${pc.note ? `<div class="muted" style="font-size:11px;margin-top:3px">${esc(pc.note)}</div>` : ''}`
+            : '<span class="badge on">active</span>';
+          return `<tr>
+            <td><span class="keycode">${esc((k.machine_id || '').slice(0, 8))}</span></td>
+            <td>${esc(k.location_name || '—')}</td>
+            <td class="muted">${ago(k.last_seen_at)}</td>
+            <td>${status}</td>
+            <td class="num" style="width:150px">${pc
+              ? `<button class="rowbtn" data-cancel="${esc(k.machine_id)}">Cancel reset</button>`
+              : `<button class="rowbtn" data-reset="${esc(k.machine_id)}" data-loc="${esc(k.location_name || '')}">Reset</button>`}</td>
+          </tr>`;
+        }).join('')}</tbody></table>`}
+    </div>
+  </div>`;
+
+  view.innerHTML = `
+    <div class="sec-head"><div class="h2" style="margin:0">${esc(biz?.name || 'Business')}</div></div>
+    ${revenueSection}${businessInfoSection}${twilioSection}${adsSection}${usersSection}${locationsSection}${kiosksSection}`;
+
+  // ── wire: Business Info ───────────────────────────────────────────────────
+  $('bizKeyCopy')?.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(biz?.businessKey || ''); toast('Business key copied'); }
+    catch { toast('Could not copy', true); }
+  });
+  $('bizContactSave').addEventListener('click', async () => {
+    const r = await window.owner.setBusinessContact(currentTenant, $('bizContactEmail').value.trim(), $('bizContactPhone').value.trim());
+    toast(r.success ? 'Contact info saved' : (r.error || 'Failed'), !r.success);
+  });
+  $('twSave').addEventListener('click', async () => {
+    const cfg = { twilio_account_sid: $('twSid').value.trim(), twilio_from_number: $('twFrom').value.trim() };
+    const token = $('twToken').value;
+    if (token) cfg.twilio_auth_token = token;
+    const r = await window.owner.setTwilioConfig(currentTenant, cfg);
+    if (r.success) { $('twToken').value = ''; toast('Twilio settings saved'); } else toast(r.error || 'Failed', true);
+  });
+  // Kiosk seat cap (item 1): business-wide, not per-location — there's no
+  // per-location kiosk limit in the data model, a kiosk just activates against
+  // the business's one license up to this many distinct machines total.
+  $('bizMaxRegistersSave').addEventListener('click', async () => {
+    const n = Math.max(1, Number($('bizMaxRegisters').value) || 1);
+    $('bizMaxRegisters').value = n;
+    const r = await window.owner.setMaxRegisters(biz?.businessKey, n);
+    if (r.success) { toast('Kiosk seat limit saved'); loadBusinesses(); } else toast(r.error || 'Failed', true);
+  });
+  $('bizFeatureToggles').querySelectorAll('input[type=checkbox]').forEach((cb) => cb.addEventListener('change', async () => {
+    cb.disabled = true;
+    const next = new Set(features);
+    if (cb.checked) next.add(cb.dataset.feat); else next.delete(cb.dataset.feat);
+    const r = await window.owner.setFeatures(currentTenant, [...next]);
+    cb.disabled = false;
+    if (r.success) { features.clear(); next.forEach((f) => features.add(f)); toast('Features saved'); }
+    else { cb.checked = !cb.checked; toast(r.error || 'Failed', true); }
+  }));
+
+  // ── wire: Ads ──────────────────────────────────────────────────────────────
+  function adRow(url) {
+    const row = document.createElement('div');
+    row.className = 'ad-row';
+    row.innerHTML = `<input type="text" class="ad-url" placeholder="Image or GIF URL — fills the customer display" value="${esc(url || '')}" />
+      <button type="button" class="rowbtn" data-rm-ad>Remove</button>`;
+    row.querySelector('[data-rm-ad]').addEventListener('click', () => row.remove());
+    return row;
+  }
+  const adsListWrap = $('adsListWrap');
+  (ads.length ? ads : [{}]).forEach((a) => adsListWrap.appendChild(adRow(a.image)));
+  $('adsAddRow').addEventListener('click', () => adsListWrap.appendChild(adRow('')));
+  $('adsSaveAll').addEventListener('click', async () => {
+    const newAds = Array.from(adsListWrap.querySelectorAll('.ad-url')).map((i) => ({ image: i.value.trim() })).filter((a) => a.image);
+    const displayConfig = { ...dc, promo_enabled: $('adsEnabled').checked, ads_interval: Math.max(2, Number($('adsInterval').value) || 8), ads: newAds };
+    const btn = $('adsSaveAll'); btn.disabled = true; btn.textContent = 'Saving…';
+    const r = await window.owner.setAds(biz?.businessKey, displayConfig);
+    btn.disabled = false; btn.textContent = 'Save ads';
+    toast(r.success ? 'Ads saved' : (r.error || 'Failed'), !r.success);
+  });
+
+  // ── wire: Users ────────────────────────────────────────────────────────────
+  $('bizAddUser').addEventListener('click', () => {
+    $('mgrTenant').value = currentTenant; $('mgrName').value = ''; $('mgrUsername').value = ''; $('mgrRole').value = 'manager';
+    updateUserModalRole(); $('mgrModal').style.display = 'flex'; $('mgrName').focus();
+  });
+  $('usersWrap').querySelectorAll('input[type=checkbox][data-key]').forEach((cb) => cb.addEventListener('change', async () => {
     cb.disabled = true;
     const r = await window.owner.setStaffPermission({
       tenant_id: currentTenant, employee_uid: cb.dataset.uid, permission_key: cb.dataset.key, is_granted: cb.checked,
@@ -230,59 +438,134 @@ async function renderStaff() {
     if (r.success) toast('Permission updated — applies on the register’s next sync');
     else { cb.checked = !cb.checked; toast(r.error || 'Failed', true); }
   }));
-  $('sWrap').querySelectorAll('[data-resetpw]').forEach((b) => b.addEventListener('click', async () => {
+  $('usersWrap').querySelectorAll('[data-resetpw]').forEach((b) => b.addEventListener('click', async () => {
     if (!confirm(`Reset the password for ${b.dataset.who}? They'll get a temporary password and must change it on next login.`)) return;
     b.disabled = true; b.textContent = 'Resetting…';
     const r = await window.owner.resetStaffPassword(currentTenant, b.dataset.resetpw);
     b.disabled = false; b.textContent = 'Reset password';
     if (!r.success) { toast(r.error || 'Failed', true); return; }
+    $('tpTitle').textContent = 'Password reset — deliver this';
+    $('tpKind').textContent = 'password'; $('tpLabel').textContent = 'Temporary password';
     $('tpWho').textContent = r.username || b.dataset.who;
     $('tpPass').textContent = r.temp_password || '—';
     $('tempPwModal').style.display = 'flex';
   }));
-}
+  $('usersWrap').querySelectorAll('[data-resetpin]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(`Reset the PIN for ${b.dataset.who}? They'll get a temporary PIN and must change it on next login.`)) return;
+    b.disabled = true; b.textContent = 'Resetting…';
+    const r = await window.owner.resetStaffPin(currentTenant, b.dataset.resetpin);
+    b.disabled = false; b.textContent = 'Reset PIN';
+    if (!r.success) { toast(r.error || 'Failed', true); return; }
+    $('tpTitle').textContent = 'PIN reset — deliver this';
+    $('tpKind').textContent = 'PIN'; $('tpLabel').textContent = 'Temporary PIN';
+    $('tpWho').textContent = r.name || b.dataset.who;
+    $('tpPass').textContent = r.temp_pin || '—';
+    $('tempPwModal').style.display = 'flex';
+  }));
 
-// ── Revenue (per location) ────────────────────────────────────────────────────
-async function renderRevenue() {
-  view.innerHTML = `<div class="sec-head"><div class="h2">Revenue by location</div><div class="muted" style="font-size:12px">In-store POS sales · last 30 days</div></div><div id="rvWrap"><div class="spin">Loading…</div></div>`;
-  if (!currentTenant) { $('rvWrap').innerHTML = '<div class="card muted">Pick a business.</div>'; return; }
-  const r = await window.owner.revenueByLocation(currentTenant);
-  if (!r.success) { $('rvWrap').innerHTML = `<div class="card muted">${esc(r.error)}</div>`; return; }
-  const locs = r.locations || [];
-  const total = locs.reduce((s, l) => s + Number(l.revenue || 0), 0);
-  const txns = locs.reduce((s, l) => s + Number(l.txn_count || 0), 0);
-  const kpis = `<div class="kpi-row">
-    <div class="kpi"><div class="lbl">Total POS revenue</div><div class="val">${fmt(total)}</div></div>
-    <div class="kpi"><div class="lbl">Transactions</div><div class="val">${txns}</div></div>
-    <div class="kpi"><div class="lbl">Locations</div><div class="val">${locs.filter((l) => l.location_id).length}</div></div>
-  </div>`;
-  $('rvWrap').innerHTML = kpis + (locs.length ? `<div class="card" style="padding:0;overflow:hidden"><table class="grid">
-    <thead><tr><th>Location</th><th class="num">Transactions</th><th class="num">Refunds</th><th class="num">Revenue</th></tr></thead>
-    <tbody>${locs.map((l) => `<tr>
-      <td>${esc(l.location_name)}</td>
-      <td class="num muted">${l.txn_count || 0}</td>
-      <td class="num muted">${l.refund_count || 0}</td>
-      <td class="num" style="font-weight:700">${fmt(l.revenue)}</td></tr>`).join('')}</tbody></table></div>`
-    : '<div class="card muted">No sales in this window yet.</div>');
+  // ── wire: Locations ────────────────────────────────────────────────────────
+  const locWrap = $('bizLocWrap');
+  locWrap.innerHTML = locs.length ? locs.map((l) => `
+    <div class="card">
+      <div class="rowflex" style="justify-content:space-between;margin-bottom:10px">
+        <div style="font-weight:700;font-size:15px">${esc(l.name)}
+          ${l.is_storefront_enabled ? '<span class="badge on" style="margin-left:6px">online</span>' : ''}</div>
+        <div class="muted" style="font-size:12px">${l.kiosk_count || 0} kiosk${l.kiosk_count === 1 ? '' : 's'}</div>
+      </div>
+      <div class="permgrid">
+        <div class="fg"><label>Address</label><input data-loc-addr="${esc(l.id)}" value="${esc(l.address || '')}" placeholder="123 Main St, City ST" /></div>
+        <div class="fg" style="max-width:110px"><label>ZIP</label><input data-loc-zip="${esc(l.id)}" value="${esc(l.zip || '')}" maxlength="10" /></div>
+        <div class="fg"><label>Phone</label><input data-loc-phone="${esc(l.id)}" value="${esc(l.phone || '')}" /></div>
+        <div class="fg"><label>Contact email</label><input data-loc-email="${esc(l.id)}" value="${esc(l.email || '')}" /></div>
+      </div>
+      <div class="rowflex" style="justify-content:space-between;margin-top:4px">
+        <div class="muted" style="font-size:12px">Online sales tax: <strong>${((l.tax_rate ?? 0) * 100).toFixed(2)}%</strong> (auto, from ZIP)</div>
+        <button class="rowbtn" data-save-loc="${esc(l.id)}">Save</button>
+      </div>
+      <div class="rowflex" style="justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft)">
+        <div class="fg" style="margin:0;max-width:160px">
+          <label>Merchant fee (%)</label>
+          <input data-loc-fee="${esc(l.id)}" type="number" min="0" max="100" step="0.01" placeholder="e.g. 2.9" />
+        </div>
+        <button class="rowbtn" data-save-fee="${esc(l.id)}">Save fee</button>
+      </div>
+      <div class="muted" style="font-size:11px;margin-top:4px">Your actual card-processing rate — used for the tip-pool deduction and the revenue report's processing-cost estimate. Not shown here after saving (re-enter to change); check the SQL editor or ask if you need to confirm the current value.</div>
+    </div>`).join('') : '<div class="muted">No locations yet.</div>';
+
+  // FIX (item 9, address partial-save bug): this used to be two independent
+  // buttons — "Save address" (address+zip) and "Save contact" (phone+email) —
+  // over what reads as one form. Clicking just one (the natural thing to do
+  // after filling in all four fields) silently dropped the other two. One
+  // button now fires both backend calls together.
+  locWrap.querySelectorAll('[data-save-loc]').forEach((btn) => btn.addEventListener('click', async () => {
+    const id = btn.dataset.saveLoc;
+    const address = document.querySelector(`[data-loc-addr="${id}"]`).value.trim();
+    const zip = document.querySelector(`[data-loc-zip="${id}"]`).value.trim();
+    const phone = document.querySelector(`[data-loc-phone="${id}"]`).value.trim();
+    const email = document.querySelector(`[data-loc-email="${id}"]`).value.trim();
+    btn.disabled = true; btn.textContent = 'Saving…';
+    const [ra, rc] = await Promise.all([
+      window.owner.setLocationAddress(id, address, zip),
+      window.owner.setLocationContact(id, phone, email),
+    ]);
+    if (ra.success && rc.success) {
+      toast('Saved — flows down to the POS and Manager Portal');
+      renderBusinessDetail();
+    } else {
+      toast([!ra.success && 'address', !rc.success && 'contact'].filter(Boolean).map((w) => `${w}: ${(w === 'address' ? ra.error : rc.error) || 'failed'}`).join(' · '), true);
+      btn.disabled = false; btn.textContent = 'Save';
+    }
+  }));
+  locWrap.querySelectorAll('[data-save-fee]').forEach((btn) => btn.addEventListener('click', async () => {
+    const id = btn.dataset.saveFee;
+    const raw = document.querySelector(`[data-loc-fee="${id}"]`).value;
+    if (raw === '') return toast('Enter a merchant fee percentage first', true);
+    const pct = Math.max(0, Math.min(100, Number(raw)));
+    btn.disabled = true; btn.textContent = 'Saving…';
+    const r = await window.owner.setLocationMerchantFee(id, pct);
+    btn.disabled = false; btn.textContent = 'Save fee';
+    if (!r.success) return toast(r.error || 'Failed — has migration 052 been applied yet?', true);
+    document.querySelector(`[data-loc-fee="${id}"]`).value = '';
+    toast('Merchant fee saved — flows down to the POS on its next sync');
+  }));
+  $('bizAddLoc').addEventListener('click', () => {
+    $('lTenant').value = currentTenant; $('lName').value = ''; $('lAddress').value = ''; $('lZip').value = '';
+    $('locModal').style.display = 'flex'; $('lName').focus();
+  });
+
+  // ── wire: Kiosks ───────────────────────────────────────────────────────────
+  view.querySelectorAll('[data-reset]').forEach((b) => b.addEventListener('click', () => {
+    $('rTenant').value = currentTenant; $('rMachine').value = b.dataset.reset;
+    $('rSub').textContent = `Kiosk ${b.dataset.reset.slice(0, 8)} at ${b.dataset.loc || 'its location'} will be unlocked and returned to setup.`;
+    $('resetModal').style.display = 'flex';
+  }));
+  view.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', async () => {
+    const r = await window.owner.cancelReset(currentTenant, b.dataset.cancel);
+    if (r.success) { toast('Reset cancelled'); renderBusinessDetail(); } else toast(r.error, true);
+  }));
 }
 
 // ── nav ───────────────────────────────────────────────────────────────────────
-const TABS = { businesses: renderBusinesses, kiosks: renderKiosks, orders: renderOrders, staff: renderStaff, revenue: renderRevenue, publish: renderPublish };
+const TABS = { business: renderBusinessDetail, businesses: renderBusinesses, orders: renderOrders, publish: renderPublish };
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.navbtn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
-  (TABS[tab] || renderBusinesses)();
+  (TABS[tab] || renderBusinessDetail)();
 }
 
 // ── modal actions ──────────────────────────────────────────────────────────────
 $('bCreate').addEventListener('click', async () => {
+  const btn = $('bCreate');
+  if (btn.disabled) return; // guards against a double-click firing two creates
   const name = $('bName').value.trim();
   const admin_username = $('bAdminUser').value.trim();
   const locations = $('bLocs').value.split('\n').map((s) => s.trim()).filter(Boolean);
   const max_registers = Math.max(1, Number($('bSeats').value) || 1);
   if (!name) { toast('Enter a business name', true); return; }
   if (!admin_username) { toast('Enter an admin username', true); return; }
+  btn.disabled = true; btn.textContent = 'Creating…';
   const r = await window.owner.createBusiness({ name, admin_username, locations, max_registers });
+  btn.disabled = false; btn.textContent = 'Create business';
   if (!r.success) { toast(r.error, true); return; }
   $('bizModal').style.display = 'none';
   // Show the delivered credentials once (business key + admin login).
@@ -290,30 +573,62 @@ $('bCreate').addEventListener('click', async () => {
   $('cUser').textContent = (r.admin && r.admin.username) || admin_username;
   $('cPass').textContent = (r.admin && r.admin.password) || '—';
   $('credsModal').style.display = 'flex';
-  await loadBusinesses(); switchTab('businesses');
+  await loadBusinesses(); switchTab('business');
 });
 $('lCreate').addEventListener('click', async () => {
+  const btn = $('lCreate');
+  if (btn.disabled) return; // guards against a double-click firing two adds
   const name = $('lName').value.trim();
+  const address = $('lAddress').value.trim();
+  const zip = $('lZip').value.trim();
   if (!name) { toast('Enter a location name', true); return; }
-  const r = await window.owner.addLocation($('lTenant').value, name);
+  btn.disabled = true; btn.textContent = 'Adding…';
+  const r = await window.owner.addLocation($('lTenant').value, name, address, zip);
+  btn.disabled = false; btn.textContent = 'Add';
   if (!r.success) { toast(r.error, true); return; }
   $('locModal').style.display = 'none'; toast('Location added');
-  loadLocations($('lTenant').value);
+  if (currentTab === 'business') renderBusinessDetail(); else loadLocations($('lTenant').value);
+});
+function updateUserModalRole() {
+  const isCashier = $('mgrRole').value === 'cashier';
+  $('mgrUsernameWrap').style.display = isCashier ? 'none' : '';
+  $('mgrCashierNote').style.display = isCashier ? '' : 'none';
+}
+$('mgrRole').addEventListener('change', updateUserModalRole);
+$('mgrCreate').addEventListener('click', async () => {
+  const btn = $('mgrCreate');
+  if (btn.disabled) return;
+  const role = $('mgrRole').value === 'cashier' ? 'cashier' : 'manager';
+  const name = $('mgrName').value.trim();
+  const username = $('mgrUsername').value.trim();
+  if (!name) { toast('Enter a name', true); return; }
+  if (role === 'manager' && !username) { toast('Enter a username', true); return; }
+  btn.disabled = true; btn.textContent = 'Creating…';
+  const r = await window.owner.createStaffUser($('mgrTenant').value, { role, username, name });
+  btn.disabled = false; btn.textContent = 'Create';
+  if (!r.success) { toast(r.error, true); return; }
+  $('mgrModal').style.display = 'none';
+  const isCashier = role === 'cashier';
+  $('mcUserWrap').style.display = isCashier ? 'none' : '';
+  $('mcUser').textContent = r.username || username;
+  $('mcPassLabel').textContent = isCashier ? 'PIN (one-time)' : 'Password (one-time)';
+  $('mcPass').textContent = (isCashier ? r.pin : r.password) || '—';
+  $('mgrCredsModal').style.display = 'flex';
+  if (currentTab === 'business') renderBusinessDetail();
 });
 $('rConfirm').addEventListener('click', async () => {
   const r = await window.owner.resetKiosk($('rTenant').value, $('rMachine').value);
   $('resetModal').style.display = 'none';
-  if (r.success) { toast('Reset queued'); renderKiosks(); } else toast(r.error, true);
+  if (r.success) { toast('Reset queued'); renderBusinessDetail(); } else toast(r.error, true);
 });
 
 // ── boot ───────────────────────────────────────────────────────────────────────
-$('logout').addEventListener('click', async () => { await window.owner.logout(); window.location.href = 'login.html'; });
-$('bizSelect').addEventListener('change', (e) => { currentTenant = e.target.value; if (['kiosks', 'orders', 'staff', 'revenue'].includes(currentTab)) switchTab(currentTab); });
+$('bizSelect').addEventListener('change', (e) => { currentTenant = e.target.value; if (['business', 'orders'].includes(currentTab)) switchTab(currentTab); });
 document.querySelectorAll('.navbtn').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
 (async () => {
   const s = await window.owner.status();
   if (!s.unlocked) { window.location.href = 'login.html'; return; }
   await loadBusinesses();
-  switchTab('businesses');
+  switchTab('business');
 })();

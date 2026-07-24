@@ -19,6 +19,37 @@
     .permtog { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
     .permtog input { width: 15px; height: 15px; accent-color: var(--accent, #b01d2e); cursor: pointer; }
     .permtog.locked { opacity: 0.65; cursor: default; }
+
+    /* Business page: each area (Revenue, Business Info, Ads, Users, Locations,
+       Kiosks) is its own visually distinct section — a bordered panel with an
+       icon + title bar, not a small stat card. */
+    .section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 22px; overflow: hidden; }
+    .section-head {
+      display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+      border-bottom: 1px solid var(--line); background: var(--panel-2);
+    }
+    .section-head .s-ic {
+      width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+      background: var(--accent-dim); color: var(--accent-bright); flex: 0 0 auto;
+    }
+    .section-head .s-ic svg { width: 17px; height: 17px; }
+    .section-head .s-title { font-family: var(--font-display); font-size: 15px; font-weight: 500; letter-spacing: 0.03em; color: var(--ink); flex: 1; }
+    .section-head .s-sub { font-size: 12px; color: var(--muted); }
+    .section-body { padding: 18px; }
+
+    /* Toggle switch (item 9: features as toggles, not comma text) */
+    .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line-soft); }
+    .switch-row:last-child { border-bottom: none; }
+    .switch-row .sw-label { font-size: 13.5px; color: var(--ink-2); }
+    .switch { position: relative; display: inline-block; width: 38px; height: 22px; flex: 0 0 auto; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch .slider { position: absolute; inset: 0; background: var(--panel-3); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; transition: background 0.15s; }
+    .switch .slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: var(--muted); border-radius: 50%; transition: transform 0.15s, background 0.15s; }
+    .switch input:checked + .slider { background: var(--accent-dim); border-color: var(--accent-line); }
+    .switch input:checked + .slider::before { transform: translateX(16px); background: var(--accent-bright); }
+
+    .ad-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .ad-row input { flex: 1; }
   </style>
 </head>
 <body>
@@ -31,31 +62,21 @@
       </div>
       <div class="spacer"></div>
       <select id="bizSelect" aria-label="Business"></select>
-      <button class="btn" id="logout">Sign out</button>
     </div>
 
     <div class="side">
       <div class="nav-label">Manage</div>
-      <button class="navbtn active" data-tab="businesses">
+      <button class="navbtn active" data-tab="business">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>
-        Businesses
+        Business
       </button>
-      <button class="navbtn" data-tab="kiosks">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-        Kiosks
+      <button class="navbtn" data-tab="businesses">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        All businesses
       </button>
       <button class="navbtn" data-tab="orders">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
         Web Orders
-      </button>
-      <div class="nav-label">Team</div>
-      <button class="navbtn" data-tab="staff">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        Staff &amp; permissions
-      </button>
-      <button class="navbtn" data-tab="revenue">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-        Revenue
       </button>
       <div class="nav-label">Release</div>
       <button class="navbtn" data-tab="publish">
@@ -104,13 +125,54 @@
 
   <!-- Add location modal -->
   <div class="overlay" id="locModal">
-    <div class="modal" style="width:400px">
+    <div class="modal" style="width:420px">
       <h3>Add location</h3>
       <input type="hidden" id="lTenant" />
       <div class="fg"><label>Location name</label><input id="lName" placeholder="e.g. Airport" /></div>
+      <div class="fg"><label>Address</label><input id="lAddress" placeholder="123 Main St, City ST" />
+        <div class="muted" style="font-size:11px;margin-top:4px">Set once here at setup — flows down to the POS and Manager Portal. Online sales tax is computed from the ZIP automatically.</div></div>
+      <div class="fg" style="max-width:140px"><label>ZIP</label><input id="lZip" placeholder="75751" maxlength="10" /></div>
       <div class="row" style="justify-content:flex-end">
         <button class="btn" onclick="document.getElementById('locModal').style.display='none'">Cancel</button>
         <button class="btn btn-accent" id="lCreate">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New user modal (item 11): manager (username+password) or cashier (name+PIN) -->
+  <div class="overlay" id="mgrModal">
+    <div class="modal" style="width:400px">
+      <h3>New user</h3>
+      <input type="hidden" id="mgrTenant" />
+      <div class="fg">
+        <label>Role</label>
+        <select id="mgrRole">
+          <option value="manager">Manager — Manager Portal + POS access</option>
+          <option value="cashier">Cashier — register sign-in only</option>
+        </select>
+      </div>
+      <div class="fg"><label>Name</label><input id="mgrName" placeholder="e.g. Alex Rivera" /></div>
+      <div class="fg" id="mgrUsernameWrap"><label>Username</label><input id="mgrUsername" placeholder="e.g. arivera" />
+        <div class="muted" style="font-size:11px;margin-top:4px">Same username + password works at every kiosk's start-of-day and the Manager Portal.</div></div>
+      <div class="muted" style="font-size:11px;margin-top:-6px;margin-bottom:13px" id="mgrCashierNote">A 4-digit PIN is generated for register sign-in — no Manager Portal access.</div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('mgrModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="mgrCreate">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delivered user credentials (shown once) -->
+  <div class="overlay" id="mgrCredsModal">
+    <div class="modal" style="width:440px">
+      <h3>User created — deliver these</h3>
+      <div class="muted" style="font-size:12.5px;margin-bottom:14px">Shown <strong>once</strong>; they must change it on first login.</div>
+      <div class="stack" style="gap:10px">
+        <div id="mcUserWrap"><div class="muted" style="font-size:11px">Username</div><div class="keycode" id="mcUser" style="font-size:14px;display:inline-block;margin-top:3px"></div></div>
+        <div id="mcPassWrap"><div class="muted" style="font-size:11px" id="mcPassLabel">Password (one-time)</div><div class="keycode" id="mcPass" style="font-size:14px;display:inline-block;margin-top:3px"></div></div>
+      </div>
+      <div class="row" style="justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-accent" onclick="document.getElementById('mgrCredsModal').style.display='none'">Done</button>
       </div>
     </div>
   </div>
@@ -129,12 +191,12 @@
     </div>
   </div>
 
-  <!-- Temporary password (shown once after a reset) -->
+  <!-- Temporary password/PIN (shown once after a reset) -->
   <div class="overlay" id="tempPwModal">
     <div class="modal" style="width:440px">
-      <h3>Password reset — deliver this</h3>
-      <div class="muted" style="font-size:12.5px;margin-bottom:14px">Give this temporary password to <strong id="tpWho"></strong>. It's shown <strong>once</strong>; they must change it on next login. This reset was recorded in the audit log.</div>
-      <div><div class="muted" style="font-size:11px">Temporary password</div><div class="keycode" id="tpPass" style="font-size:15px;display:inline-block;margin-top:3px"></div></div>
+      <h3 id="tpTitle">Password reset — deliver this</h3>
+      <div class="muted" style="font-size:12.5px;margin-bottom:14px">Give this temporary <span id="tpKind">password</span> to <strong id="tpWho"></strong>. It's shown <strong>once</strong>; they must change it on next login. This reset was recorded in the audit log.</div>
+      <div><div class="muted" style="font-size:11px" id="tpLabel">Temporary password</div><div class="keycode" id="tpPass" style="font-size:15px;display:inline-block;margin-top:3px"></div></div>
       <div class="row" style="justify-content:flex-end;margin-top:16px">
         <button class="btn btn-accent" onclick="document.getElementById('tempPwModal').style.display='none'">Done</button>
       </div>

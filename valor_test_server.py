@@ -1,56 +1,56 @@
 import asyncio
 import json
+from datetime import datetime
 
 PORT = 5000
-HOST = "11.11.20.78"
+HOST = "0.0.0.0"   # listen on ALL interfaces (this PC's IPv4 is 11.11.20.189)
+                   # NOTE: 11.11.20.78 (the engineer's value) is the TERMINAL's IP,
+                   # not this PC's — binding it fails with WinError 10049.
 
-# Handle each TCP client
+
+def log(msg):
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
 async def handle_client(reader, writer):
     addr = writer.get_extra_info('peername')
-    print(f"Connection from {addr}")
+    log(f"*** TERMINAL CONNECTED from {addr} ***")
 
-    # Prepare JSON message
     json_message = json.dumps({
         "TRAN_MODE": "1",
         "TRAN_CODE": "1",
-        "AMOUNT": "100"
-    }) + "\n"  # Add delimiter for message boundary
+        "AMOUNT": "100",
+    }) + "\n"
 
-    # Send message to client
     writer.write(json_message.encode())
     await writer.drain()
-    print(f"Sent: {json_message.strip()}")
+    log(f"Sent: {json_message.strip()}")
 
     try:
         while True:
-            # Read data (line-based for simplicity)
             data = await reader.readline()
             if not data:
                 break
-
-            message = data.decode().strip()
-            print(f"Received: {message}")
-
-            # Echo response
+            message = data.decode(errors='replace').strip()
+            log(f"Received: {message}")
             response = f"Server received your message: {message}\n"
             writer.write(response.encode())
             await writer.drain()
-            print(f"Sent: {response.strip()}")
-
+            log(f"Sent: {response.strip()}")
     except Exception as e:
-        print(f"Error: {e}")
-
+        log(f"Error: {e}")
     finally:
-        print(f"Connection closed: {addr}")
+        log(f"Connection closed: {addr}")
         writer.close()
         await writer.wait_closed()
 
 
-# Main server
 async def main():
     server = await asyncio.start_server(handle_client, HOST, PORT)
-    print(f"TCP server running on {HOST}:{PORT}")
-
+    for sock in server.sockets:
+        log(f"Listening on {sock.getsockname()}")
+    log(f"Point the VP100's Valor Connect at  11.11.20.189 : {PORT}  then Param-Download it.")
+    log("Waiting for the terminal to connect...")
     async with server:
         await server.serve_forever()
 

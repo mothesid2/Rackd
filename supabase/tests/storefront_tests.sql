@@ -20,20 +20,24 @@ do $$
 declare
   T1 uuid := '11111111-1111-1111-1111-111111111111';  -- business A
   T2 uuid := '22222222-2222-2222-2222-222222222222';  -- business B
-  L1 uuid := 'aaaaaaaa-0000-0000-0000-000000000001';  -- A's store (online)
+  L1 uuid := 'aaaaaaaa-0000-0000-0000-000000000001';  -- A's store (online), tax_rate 0
+  L2 uuid := 'aaaaaaaa-0000-0000-0000-000000000002';  -- A's 2nd store, tax_rate 8.25% — for the fee/tax compounding check
   C1 uuid := 'cccccccc-0000-0000-0000-000000000001';  -- verified customer
   C2 uuid := 'cccccccc-0000-0000-0000-000000000002';  -- unverified customer
   C3 uuid := 'cccccccc-0000-0000-0000-000000000003';  -- verified-but-expired
   C4 uuid := 'cccccccc-0000-0000-0000-000000000004';  -- fresh, for self-attest tests
 begin
   insert into public.locations (id, tenant_id, name, is_storefront_enabled, tax_rate)
-    values (L1, T1, 'Test Store', true, 0);
+    values (L1, T1, 'Test Store', true, 0),
+           (L2, T1, 'Test Store 2', true, 0.0825);
 
   insert into public.inventory_cloud (id, tenant_id, location_id, barcode, name, category, price, quantity, updated_at)
-    values (900001, T1, L1, 'BC1', 'Test Juice', 'eliquid', 10.00, 2, now());
+    values (900001, T1, L1, 'BC1', 'Test Juice', 'eliquid', 10.00, 2, now()),
+           (900002, T1, L2, 'BC2', 'Test Juice 2', 'eliquid', 10.00, 5, now());
 
   insert into public.storefront_products (tenant_id, location_id, barcode, is_visible)
-    values (T1, L1, 'BC1', true);
+    values (T1, L1, 'BC1', true),
+           (T1, L2, 'BC2', true);
 
   insert into public.storefront_customers (id, email, age_verified, age_verified_at)
     values (C1, 'c1@test.dev', true,  now()),
@@ -83,7 +87,7 @@ end $$;
 
 -- ── 3. Happy path + oversell: reserve all stock, then one more must fail ──────
 do $$
-declare v_order uuid; v_total numeric; v_avail integer; oversold boolean := false;
+declare v_order uuid; v_subtotal numeric; v_tax numeric; v_fee numeric; v_fee_tax numeric; v_total numeric; v_avail integer; oversold boolean := false;
 begin
   perform pg_temp.act_as(jsonb_build_object('sub', 'cccccccc-0000-0000-0000-000000000001', 'role', 'authenticated'));
 
@@ -91,13 +95,19 @@ begin
   v_order := public.reserve_online_order(
     '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000001',
     '[{"barcode":"BC1","qty":2}]'::jsonb);
-  select total into v_total from public.online_orders where id = v_order;
-  if v_total <> 20.00 then raise exception 'FAIL reserve: total was % (expected 20.00)', v_total; end if;
+  select subtotal, tax, online_fee, fee_tax, total into v_subtotal, v_tax, v_fee, v_fee_tax, v_total from public.online_orders where id = v_order;
+  -- L1's tax_rate is 0, so both tax lines are $0 here — this location can't tell
+  -- apart "tax applies to the fee" from "it doesn't"; see test 3b for that.
+  if v_subtotal <> 20.00 then raise exception 'FAIL reserve: subtotal was % (expected 20.00)', v_subtotal; end if;
+  if v_tax <> 0.00 then raise exception 'FAIL reserve: tax was % (expected 0.00 — tax_rate is 0 for this location)', v_tax; end if;
+  if v_fee <> 1.00 then raise exception 'FAIL reserve: online_fee was % (expected 1.00 — 5%% of $20 subtotal)', v_fee; end if;
+  if v_fee_tax <> 0.00 then raise exception 'FAIL reserve: fee_tax was % (expected 0.00 — tax_rate is 0 for this location)', v_fee_tax; end if;
+  if v_total <> 21.00 then raise exception 'FAIL reserve: total was % (expected 21.00 = subtotal + tax + fee + fee_tax)', v_total; end if;
 
   v_avail := public.storefront_available(
     '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000001', 'BC1');
   if v_avail <> 0 then raise exception 'FAIL reserve: available was % after reserving all (expected 0)', v_avail; end if;
-  raise notice 'PASS: reserve prices server-side (total $20.00) and consumes availability';
+  raise notice 'PASS: reserve prices server-side (subtotal $20 + tax $0 + fee $1 = total $21) and consumes availability';
 
   -- One more unit must be refused — this is the oversell guard.
   begin
@@ -110,6 +120,27 @@ begin
   end;
   if not oversold then raise exception 'FAIL oversell: sold beyond available stock'; end if;
   raise notice 'PASS: oversell prevented (insufficient_stock once availability is 0)';
+end $$;
+
+-- ── 3b. Four line items: subtotal, tax on subtotal, surcharge, tax on surcharge ─
+-- L2 has a non-zero tax_rate (8.25%), unlike L1 (0%) used above, so this is the
+-- one check that actually distinguishes the two tax lines from $0 — each is
+-- computed (and rounded) against its own base, not against a combined amount.
+do $$
+declare v_order uuid; v_subtotal numeric; v_tax numeric; v_fee numeric; v_fee_tax numeric; v_total numeric;
+begin
+  perform pg_temp.act_as(jsonb_build_object('sub', 'cccccccc-0000-0000-0000-000000000001', 'role', 'authenticated'));
+  v_order := public.reserve_online_order(
+    '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000002',
+    '[{"barcode":"BC2","qty":1}]'::jsonb);
+  select subtotal, tax, online_fee, fee_tax, total into v_subtotal, v_tax, v_fee, v_fee_tax, v_total from public.online_orders where id = v_order;
+  -- subtotal $10 * 8.25% = $0.83 tax on the subtotal.
+  if v_tax <> 0.83 then raise exception 'FAIL: tax was % (expected 0.83 = 8.25%% of the $10 subtotal)', v_tax; end if;
+  if v_fee <> 0.50 then raise exception 'FAIL: online_fee was % (expected 0.50 — 5%% of $10 subtotal)', v_fee; end if;
+  -- surcharge $0.50 * 8.25% = $0.04 tax on the surcharge (its own base, its own rounding).
+  if v_fee_tax <> 0.04 then raise exception 'FAIL: fee_tax was % (expected 0.04 = 8.25%% of the $0.50 surcharge)', v_fee_tax; end if;
+  if v_total <> 11.37 then raise exception 'FAIL: total was % (expected 11.37 = 10.00 + 0.83 tax + 0.50 fee + 0.04 fee_tax)', v_total; end if;
+  raise notice 'PASS: tax applies to both the subtotal ($0.83) and the surcharge ($0.04), itemized as four distinct lines';
 end $$;
 
 -- ── 4. RLS isolation: a customer cannot read another customer's orders ───────

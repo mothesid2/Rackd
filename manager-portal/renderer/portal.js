@@ -5,6 +5,7 @@ const view = document.getElementById('view');
 let nameOf = {};        // location_id -> name
 let curTab = 'dashboard';
 let orderTimer = null;  // auto-refresh handle for the online-orders queue
+let currentStoreId = null; // store picked in the top-right selector (item 9)
 
 function toast(msg, isErr) {
   const t = document.getElementById('toast');
@@ -15,18 +16,43 @@ function toast(msg, isErr) {
 function isoDate(d) { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 10); }
 function range() { return { start: document.getElementById('startDate').value, end: document.getElementById('endDate').value }; }
 
+// Item 6: business-level feature flags. Empty/unset list = no tier ever
+// curated for this business = unrestricted (every business before today, and
+// any new one until an owner explicitly picks features) — see the matching
+// note in src/renderer/shared.js. Only a non-empty list becomes a real allowlist.
+let sessionFeatures = [];
+function isFeatureEnabled(feature) {
+  return sessionFeatures.length === 0 || sessionFeatures.includes(feature);
+}
+
 // ── boot ──────────────────────────────────────────────────────────────────────
 (async function boot() {
   const s = await window.portal.session();
   if (!s.success || !s.session) { window.location.href = 'login.html'; return; }
   document.getElementById('bizLabel').textContent = 'Business · ' + (s.session.tenant_id || '').slice(0, 8);
+  // Item 10: the store is chosen on the login screen, not a topbar dropdown —
+  // portal.html just reads back what was picked there.
+  currentStoreId = s.currentLocationId || null;
+
+  // Item 6: hide nav tabs this business's feature list doesn't include.
+  sessionFeatures = s.session.features || [];
+  if (!isFeatureEnabled('rebate_reporting')) document.querySelector('.navbtn[data-tab="rebates"]')?.style.setProperty('display', 'none', 'important');
+  if (!isFeatureEnabled('web_store')) {
+    document.querySelector('.navbtn[data-tab="storefront"]')?.style.setProperty('display', 'none', 'important');
+    document.querySelector('.navbtn[data-tab="orders"]')?.style.setProperty('display', 'none', 'important');
+    document.querySelector('.navbtn[data-tab="storeSettings"]')?.style.setProperty('display', 'none', 'important');
+  }
 
   const today = new Date();
   document.getElementById('endDate').value = isoDate(today);
   document.getElementById('startDate').value = isoDate(today).slice(0, 8) + '01';
 
   const loc = await window.portal.locations();
-  if (loc.success) for (const l of loc.locations) nameOf[l.id] = l.name;
+  if (loc.success) {
+    for (const l of loc.locations) nameOf[l.id] = l.name;
+    document.getElementById('storeLabel').textContent = currentStoreId ? (nameOf[currentStoreId] || 'Store') : 'All stores';
+  }
+  document.getElementById('storeLabel').addEventListener('click', () => { window.location.href = 'login.html'; });
 
   document.querySelectorAll('.navbtn').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
   document.getElementById('applyRange').addEventListener('click', () => render());
@@ -40,6 +66,7 @@ function range() { return { start: document.getElementById('startDate').value, e
   document.getElementById('nSave').addEventListener('click', saveNewCustomer);
   document.getElementById('mSave').addEventListener('click', saveMenuItem);
   document.getElementById('xConfirm').addEventListener('click', confirmCancel);
+  document.getElementById('seSave').addEventListener('click', saveStaffEdit);
 
   render();
 })();
@@ -47,7 +74,7 @@ function range() { return { start: document.getElementById('startDate').value, e
 function switchTab(tab) {
   curTab = tab;
   document.querySelectorAll('.navbtn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
-  document.getElementById('rangeWrap').style.visibility = (tab === 'dashboard' || tab === 'rebates') ? 'visible' : 'hidden';
+  document.getElementById('rangeWrap').style.visibility = (tab === 'dashboard' || tab === 'rebates' || tab === 'timesheets') ? 'visible' : 'hidden';
   render();
 }
 
@@ -56,65 +83,257 @@ function render() {
   if (curTab === 'dashboard') return renderDashboard();
   if (curTab === 'inventory') return renderInventory();
   if (curTab === 'customers') return renderCustomers();
+  if (curTab === 'storeSettings') return renderStoreSettings();
   if (curTab === 'storefront') return renderStorefront();
   if (curTab === 'orders') return renderOrders();
   if (curTab === 'rebates') return renderRebates();
   if (curTab === 'staff') return renderStaff();
+  if (curTab === 'timesheets') return renderTimesheet();
 }
 
-// ── cashiers ────────────────────────────────────────────────────────────────
+// ── timesheets (item 8) ─────────────────────────────────────────────────────
+let tsPunches = []; // last-loaded raw punches, for the adjust modal
+async function renderTimesheet() {
+  view.innerHTML = '<div class="spin">Loading timesheet…</div>';
+  const { start, end } = range();
+  const r = await window.portal.timesheet({ start, end });
+  if (!r.success) { view.innerHTML = `<div class="card">Couldn't load: ${esc(r.error)}</div>`; return; }
+  // Item 9: scope to the selected store.
+  const punches = currentStoreId ? r.punches.filter((p) => p.location_id === currentStoreId) : r.punches;
+  tsPunches = punches;
+
+  // Aggregate per employee: total hours + shift count. An open punch (no
+  // clock_out yet) counts hours up to now and is flagged so it reads as "still
+  // clocked in" rather than a silently-truncated shift.
+  const byEmp = {};
+  const now = Date.now();
+  for (const p of punches) {
+    const key = p.employee_uid;
+    byEmp[key] = byEmp[key] || { uid: key, name: p.employee_name || 'Employee', shifts: 0, hours: 0, openSince: null };
+    const inMs = new Date(p.clock_in).getTime();
+    const outMs = p.clock_out ? new Date(p.clock_out).getTime() : now;
+    byEmp[key].shifts += 1;
+    byEmp[key].hours += Math.max(0, (outMs - inMs) / 3600000);
+    if (!p.clock_out) byEmp[key].openSince = p.clock_in;
+  }
+  const rows = Object.values(byEmp).sort((a, b) => b.hours - a.hours);
+  const totalHours = rows.reduce((s, e) => s + e.hours, 0);
+
+  view.innerHTML = `
+    <div class="h2">Timesheets <span class="muted" style="font-weight:400;font-size:13px">— ${currentStoreId ? esc(nameOf[currentStoreId] || 'this store') : 'all locations'}, clock-in/out punches for the selected range</span></div>
+    <div class="kpi-row">
+      <div class="kpi"><div class="lbl">Total hours</div><div class="val">${totalHours.toFixed(1)}</div></div>
+      <div class="kpi"><div class="lbl">Employees</div><div class="val">${rows.length}</div></div>
+      <div class="kpi"><div class="lbl">Shifts</div><div class="val">${punches.length}</div></div>
+    </div>
+    <table class="grid">
+      <thead><tr><th>Employee</th><th class="num">Shifts</th><th class="num">Hours</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${rows.length ? rows.map((e) => `<tr>
+          <td>${esc(e.name)}</td>
+          <td class="num muted">${e.shifts}</td>
+          <td class="num" style="font-weight:700">${e.hours.toFixed(1)}</td>
+          <td>${e.openSince ? `<span class="pill" style="background:#1f3a25;color:#7fdca0">Clocked in since ${new Date(e.openSince).toLocaleString()}</span>` : ''}</td>
+          <td class="num"><button class="rowbtn" data-adjust="${esc(e.uid)}" data-name="${esc(e.name)}">Adjust</button></td>
+        </tr>`).join('') : '<tr><td colspan="5" class="muted" style="padding:24px;text-align:center">No punches in this range.</td></tr>'}
+      </tbody>
+    </table>`;
+  view.querySelectorAll('[data-adjust]').forEach((b) => b.addEventListener('click', () => openTimesheetAdjust(b.dataset.adjust, b.dataset.name)));
+}
+
+// Local-datetime <-> ISO helpers for the <input type="datetime-local"> fields
+// (that input has no timezone; treat it as the manager's local wall-clock time).
+function isoToLocalInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
+function openTimesheetAdjust(employeeUid, name) {
+  document.getElementById('tsTitle').textContent = `Adjust punches — ${name}`;
+  const rows = tsPunches.filter((p) => p.employee_uid === employeeUid).sort((a, b) => new Date(b.clock_in) - new Date(a.clock_in));
+  const wrap = document.getElementById('tsRows');
+  wrap.innerHTML = rows.length ? rows.map((p) => `
+    <div class="card" style="padding:12px;margin-bottom:10px">
+      <div class="row">
+        <div class="fg" style="flex:1"><label>Clock in</label><input type="datetime-local" data-in="${esc(p.uid)}" value="${isoToLocalInput(p.clock_in)}" /></div>
+        <div class="fg" style="flex:1"><label>Clock out ${p.clock_out ? '' : '(blank = still clocked in)'}</label><input type="datetime-local" data-out="${esc(p.uid)}" value="${isoToLocalInput(p.clock_out)}" /></div>
+      </div>
+      <button class="rowbtn" data-save-punch="${esc(p.uid)}">Save</button>
+    </div>`).join('') : '<div class="muted">No punches for this employee in range.</div>';
+  wrap.querySelectorAll('[data-save-punch]').forEach((btn) => btn.addEventListener('click', async () => {
+    const uid = btn.dataset.savePunch;
+    const inVal = wrap.querySelector(`[data-in="${uid}"]`).value;
+    const outVal = wrap.querySelector(`[data-out="${uid}"]`).value;
+    if (!inVal) return toast('Clock-in time is required', true);
+    btn.disabled = true; btn.textContent = 'Saving…';
+    const r = await window.portal.adjustTimeClock({ uid, clock_in: new Date(inVal).toISOString(), clock_out: outVal ? new Date(outVal).toISOString() : null });
+    btn.disabled = false; btn.textContent = 'Save';
+    if (!r.success) return toast(r.error || 'Failed', true);
+    toast('Punch updated — applies on the register’s next sync');
+    render();
+  }));
+  document.getElementById('tsModal').style.display = 'flex';
+}
+
+// ── staff: cashiers + managers (item 2: create/delete both, from the portal) ──
+// The whole Manager Portal is already manager/admin-gated at login — staff-login
+// (supabase/functions/staff-login) rejects any account whose role isn't
+// 'manager' or 'admin', so a cashier can never even sign in here to reach this.
+//
+// Scoped to the selected store (item 4 — reverses the earlier tenant-wide
+// decision at the user's explicit request): portal:staff filters to the
+// current store, plus any row with no location_id (the admin account, and
+// legacy rows from before this change) so nothing already-assigned silently
+// disappears. New cashiers/managers created here are stamped with the
+// currently-selected store's location_id.
 async function renderStaff() {
   const view = document.getElementById('view');
   view.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <div class="h2" style="margin:0">Cashiers</div>
-      <button class="btn btn-accent" id="addCashier">+ Add cashier</button>
+      <div class="h2" style="margin:0">Staff</div>
+      <div class="rowflex">
+        <button class="btn" id="addManager">+ Add manager</button>
+        <button class="btn btn-accent" id="addCashier">+ Add cashier</button>
+      </div>
     </div>
-    <div class="muted" style="font-size:12px;margin-bottom:12px">Cashiers sign in on the register by PIN. Managers &amp; admins are set up on the POS by an admin.</div>
+    <div class="muted" style="font-size:12px;margin-bottom:12px">Cashiers sign in on the register by PIN. Managers sign in with a username + password (POS start-of-day and this portal).</div>
     <div id="staffWrap"><div class="spin">Loading…</div></div>`;
-  document.getElementById('addCashier').addEventListener('click', () => openCashier(null));
+  document.getElementById('addCashier').addEventListener('click', () => openCashier());
+  document.getElementById('addManager').addEventListener('click', () => openManager());
   const r = await window.portal.staff();
   const wrap = document.getElementById('staffWrap');
   if (!r.success) { wrap.innerHTML = `<div class="card muted">${esc(r.error || 'Could not load staff')}</div>`; return; }
-  const cashiers = (r.staff || []).filter((s) => s.role === 'cashier');
-  const others = (r.staff || []).filter((s) => s.role !== 'cashier');
+  const staffList = r.staff || [];
   wrap.innerHTML = `<div class="card" style="padding:0;overflow:hidden"><table class="grid"><tbody>${
-    cashiers.length ? cashiers.map((s) => `<tr>
-      <td>${esc(s.name || '—')}${s.is_active ? '' : ' <span style="font-size:10.5px;color:var(--muted);border:1px solid var(--line-soft);border-radius:999px;padding:1px 7px;margin-left:4px">inactive</span>'}${s.must_change_pin ? ' <span style="font-size:10.5px;color:#b8860b;background:rgba(224,161,58,.14);border-radius:999px;padding:1px 7px;margin-left:4px">temp PIN</span>' : ''}</td>
-      <td class="num" style="width:200px">
+    staffList.length ? staffList.map((s) => {
+      const isAdmin = s.role === 'admin';
+      const isCashier = s.role === 'cashier';
+      const tempBadge = (isCashier ? s.must_change_pin : s.must_change_password)
+        ? ` <span style="font-size:10.5px;color:#b8860b;background:rgba(224,161,58,.14);border-radius:999px;padding:1px 7px;margin-left:4px">temp ${isCashier ? 'PIN' : 'password'}</span>` : '';
+      return `<tr>
+      <td>${esc(s.name || s.username || '—')}
+        <span class="badge ${isAdmin ? 'warn' : 'dim'}" style="margin-left:6px">${esc(s.role)}</span>
+        ${s.is_active ? '' : ' <span style="font-size:10.5px;color:var(--muted);border:1px solid var(--line-soft);border-radius:999px;padding:1px 7px;margin-left:4px">inactive</span>'}${tempBadge}</td>
+      <td class="num" style="width:260px">${isAdmin ? '<span class="muted" style="font-size:12px">managed on the POS</span>' : `
         <button class="rowbtn" data-edit='${JSON.stringify(s).replace(/'/g, "&#39;")}'>Edit</button>
-        <button class="rowbtn" data-pin="${esc(s.uid)}" data-name="${esc(s.name || '')}">Reset PIN</button>
-      </td></tr>`).join('') : '<tr><td class="muted">No cashiers yet.</td></tr>'
-  }</tbody></table></div>${
-    others.length ? `<div class="muted" style="font-size:12px;margin-top:10px">${others.length} manager/admin account(s) — managed on the POS.</div>` : ''
-  }`;
-  wrap.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => openCashier(JSON.parse(b.dataset.edit))));
-  wrap.querySelectorAll('[data-pin]').forEach((b) => b.addEventListener('click', async () => {
-    const pin = prompt(`New 4-digit PIN for ${b.dataset.name} (blank = auto-generate):`, '');
-    if (pin === null) return;
-    const r = await window.portal.updateCashier({ uid: b.dataset.pin, pin: pin.trim() || genPin4() });
-    if (!r.success) return toast(r.error || 'Failed', true);
-    alert(`New PIN for ${b.dataset.name}: ${r.pin}\n\nGive it to them — they change it on next sign-in.`);
+        <button class="rowbtn" data-reset="${esc(s.uid)}" data-name="${esc(s.name || '')}" data-role="${esc(s.role)}">Reset ${isCashier ? 'PIN' : 'password'}</button>
+        <button class="rowbtn" style="color:#f2a9a5" data-delete="${esc(s.uid)}" data-name="${esc(s.name || '')}">Delete</button>
+      `}</td></tr>`;
+    }).join('') : '<tr><td class="muted">No staff yet.</td></tr>'
+  }</tbody></table></div>`;
+  wrap.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => openStaffEdit(JSON.parse(b.dataset.edit))));
+  wrap.querySelectorAll('[data-reset]').forEach((b) => b.addEventListener('click', async () => {
+    const isCashier = b.dataset.role === 'cashier';
+    if (isCashier) {
+      const pin = prompt(`New 4-digit PIN for ${b.dataset.name} (blank = auto-generate):`, '');
+      if (pin === null) return;
+      const r = await window.portal.updateCashier({ uid: b.dataset.reset, pin: pin.trim() || genPin4() });
+      if (!r.success) return toast(r.error || 'Failed', true);
+      alert(`New PIN for ${b.dataset.name}: ${r.pin}\n\nGive it to them — they change it on next sign-in.`);
+    } else {
+      const pw = prompt(`New password for ${b.dataset.name} (blank = auto-generate):`, '');
+      if (pw === null) return;
+      const r = await window.portal.updateCashier({ uid: b.dataset.reset, password: pw.trim() || genPassword() });
+      if (!r.success) return toast(r.error || 'Failed', true);
+      alert(`New password for ${b.dataset.name}: ${r.password}\n\nGive it to them — they change it on next sign-in.`);
+    }
     render();
+  }));
+  wrap.querySelectorAll('[data-delete]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(`Remove ${b.dataset.name || 'this user'}? They immediately lose register and portal access.`)) return;
+    const r = await window.portal.deleteStaff({ uid: b.dataset.delete });
+    if (!r.success) return toast(r.error || 'Failed', true);
+    toast('Removed'); render();
   }));
 }
 function genPin4() { return Array.from({ length: 4 }, () => Math.floor(Math.random() * 10)).join(''); }
-function openCashier(s) {
-  const name = prompt(s ? 'Rename cashier:' : 'New cashier name:', s ? (s.name || '') : '');
+function genPassword() {
+  const a = 'abcdefghjkmnpqrstuvwxyz', d = '23456789';
+  const pick = (s, n) => Array.from({ length: n }, () => s[Math.floor(Math.random() * s.length)]).join('');
+  return `${pick(a, 6)}-${pick(d, 4)}`;
+}
+// Same registry as Owner Console (owner-console/renderer/console.js) and the
+// POS's own Staff & Permissions screen (src/renderer/staff/permissions.html) —
+// all three read/write the same employee_permissions_cloud rows, so keeping
+// the key lists identical is what keeps them "in sync" (batch 5, item 5).
+const PERM_LABELS = {
+  apply_discount: 'Apply discount', process_refund: 'Process refund', override_price: 'Override price',
+  inventory_adjust: 'Adjust inventory', view_reports: 'View reports', manage_rebates: 'Manage rebates',
+  open_drawer_no_sale: 'Open drawer (no sale)', clock_others: 'Clock others in/out',
+};
+const MENU_LABELS = {
+  access_merchandise: 'Merchandise (inventory)', access_receipts: 'Receipts',
+  access_customer_lookup: 'Customer Lookup', access_pickups: 'Online Pickups',
+};
+
+function openStaffEdit(s) {
+  document.getElementById('seTitle').textContent = `Edit ${s.role === 'manager' ? 'manager' : 'cashier'} — ${s.name || s.username || ''}`;
+  document.getElementById('seUid').value = s.uid;
+  document.getElementById('seName').value = s.name || '';
+  document.getElementById('seActive').checked = !!s.is_active;
+  const perms = s.permissions || {};
+  const isCashier = s.role === 'cashier';
+  const permRows = Object.entries(PERM_LABELS).map(([k, label]) => `
+    <label class="permtog"><input type="checkbox" data-perm="${k}" ${perms[k]?.is_granted ? 'checked' : ''} /><span>${esc(label)}</span></label>`).join('');
+  const menuRows = isCashier ? Object.entries(MENU_LABELS).map(([k, label]) => {
+    const on = perms[k] ? !!perms[k].is_granted : true; // default ON (item 3)
+    return `<label class="permtog"><input type="checkbox" data-perm="${k}" ${on ? 'checked' : ''} /><span>${esc(label)}</span></label>`;
+  }).join('') : '';
+  document.getElementById('sePermsWrap').innerHTML = `
+    <div class="perm-sub">Permissions</div><div class="permgrid">${permRows}</div>
+    ${isCashier ? `<div class="perm-sub">Menu access — on by default</div><div class="permgrid">${menuRows}</div>` : ''}`;
+  document.getElementById('sePermsWrap').querySelectorAll('[data-perm]').forEach((cb) => cb.addEventListener('change', async () => {
+    cb.disabled = true;
+    const r = await window.portal.setStaffPermission({ employee_uid: s.uid, permission_key: cb.dataset.perm, is_granted: cb.checked });
+    cb.disabled = false;
+    if (r.success) toast('Permission updated — applies on the register’s next sync');
+    else { cb.checked = !cb.checked; toast(r.error || 'Failed', true); }
+  }));
+  openModal('staffEditModal');
+}
+async function saveStaffEdit() {
+  const uid = document.getElementById('seUid').value;
+  const name = document.getElementById('seName').value.trim();
+  const is_active = document.getElementById('seActive').checked;
+  if (!name) return toast('Name is required', true);
+  const r = await window.portal.updateCashier({ uid, name, is_active });
+  if (!r.success) return toast(r.error || 'Failed', true);
+  closeModal('staffEditModal');
+  toast('Saved'); render();
+}
+function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+function openManager() {
+  const name = prompt('New manager name:', '');
   if (name === null || !name.trim()) return;
-  if (s) {
-    window.portal.updateCashier({ uid: s.uid, name: name.trim() }).then((r) => { if (r.success) { toast('Saved'); render(); } else toast(r.error || 'Failed', true); });
-  } else {
-    const pin = prompt('4-digit PIN (blank = auto-generate):', '');
-    if (pin === null) return;
-    window.portal.createCashier({ name: name.trim(), pin: pin.trim() }).then((r) => {
-      if (!r.success) return toast(r.error || 'Failed', true);
-      alert(`Cashier "${name.trim()}" created.\nPIN: ${r.pin}\n\nGive it to them — they change it on next sign-in.`);
-      render();
-    });
-  }
+  const username = prompt('Username:', '');
+  if (username === null || !username.trim()) return;
+  const password = genPassword();
+  window.portal.createManager({ name: name.trim(), username: username.trim(), password }).then((r) => {
+    if (!r.success) return toast(r.error || 'Failed', true);
+    alert(`Manager "${name.trim()}" created.\nUsername: ${username.trim()}\nPassword: ${password}\n\nGive it to them — they change it on next sign-in.`);
+    render();
+  });
+}
+// Creation only now — editing an existing cashier goes through openStaffEdit.
+function openCashier() {
+  const name = prompt('New cashier name:', '');
+  if (name === null || !name.trim()) return;
+  const pin = prompt('4-digit PIN (blank = auto-generate):', '');
+  if (pin === null) return;
+  window.portal.createCashier({ name: name.trim(), pin: pin.trim() }).then((r) => {
+    if (!r.success) return toast(r.error || 'Failed', true);
+    alert(`Cashier "${name.trim()}" created.\nPIN: ${r.pin}\n\nGive it to them — they change it on next sign-in.`);
+    render();
+  });
 }
 
 // ── rebates ─────────────────────────────────────────────────────────────────
+// NOT scoped to the store picker (item 9): rebate contracts are negotiated with
+// manufacturers at the business level, not per-store, and tenant_rebate_summary
+// aggregates across every location by design.
 async function renderRebates() {
   view.innerHTML = '<div class="spin">Loading rebate summary…</div>';
   const { start, end } = range();
@@ -161,7 +380,9 @@ async function renderDashboard() {
   const { start, end } = range();
   const r = await window.portal.dashboard({ start, end });
   if (!r.success) { view.innerHTML = `<div class="card">Couldn't load: ${esc(r.error)}</div>`; return; }
-  const locs = r.locations;
+  // Item 9 (re-scope to the top-right store picker): the RPC returns every
+  // location's totals in one call; filter down to the selected store here.
+  const locs = currentStoreId ? r.locations.filter((l) => l.location_id === currentStoreId) : r.locations;
   const totRev = locs.reduce((s, l) => s + Number(l.revenue || 0), 0);
   const totTxn = locs.reduce((s, l) => s + Number(l.txn_count || 0), 0);
   const dayAgo = Date.now() - 86400000;
@@ -216,30 +437,58 @@ async function openLocation(id, name) {
     </tbody></table>`;
 }
 
-// ── inventory ───────────────────────────────────────────────────────────────
+// ── inventory (item 5: edit, not just view) ───────────────────────────────────
+let invCache = [];
 async function renderInventory() {
   view.innerHTML = '<div class="spin">Loading inventory…</div>';
   const r = await window.portal.inventory();
   if (!r.success) { view.innerHTML = `<div class="card">Couldn't load: ${esc(r.error)}</div>`; return; }
-  const items = r.items;
+  // Item 9: scope to the selected store.
+  invCache = currentStoreId ? r.items.filter((i) => i.location_id === currentStoreId) : r.items;
+  drawInventory();
+}
+function drawInventory() {
+  const items = invCache;
   view.innerHTML = `
-    <div class="h2">Inventory <span class="muted" style="font-weight:400;font-size:13px">— stock levels across all locations (reporting mirror)</span></div>
+    <div class="h2">Inventory <span class="muted" style="font-weight:400;font-size:13px">— ${currentStoreId ? esc(nameOf[currentStoreId] || 'this store') : 'all locations'} · adjustments sync to the register</span></div>
     <table class="grid">
-      <thead><tr><th>Product</th><th>Location</th><th>Category</th><th class="num">Price</th><th class="num">Qty</th><th class="num">Reorder</th></tr></thead>
+      <thead><tr><th>Product</th><th>Location</th><th>Category</th><th class="num">Price</th><th class="num">Qty</th><th class="num">Reorder</th><th class="num">Adjust</th></tr></thead>
       <tbody>
         ${items.length ? items.map((i) => {
           const low = i.reorder_point != null && Number(i.quantity) <= Number(i.reorder_point);
+          const canAdjust = !!i.barcode; // stock_movements match by barcode — nothing to sync against without one
           return `<tr>
             <td>${esc(i.name || '—')}</td>
             <td class="muted">${esc(nameOf[i.location_id] || '—')}</td>
             <td class="muted">${esc(i.category || '—')}</td>
             <td class="num">${fmt(i.price)}</td>
-            <td class="num ${low ? 'low' : ''}">${i.quantity ?? 0}</td>
+            <td class="num ${low ? 'low' : ''}" id="qty-${esc(i.id)}">${i.quantity ?? 0}</td>
             <td class="num muted">${i.reorder_point ?? '—'}</td>
+            <td class="num">
+              ${canAdjust ? `
+                <input type="number" data-delta="${esc(i.id)}" placeholder="±qty" style="width:64px;text-align:right" />
+                <button class="rowbtn" data-adjust="${esc(i.id)}">Apply</button>
+              ` : '<span class="muted" title="No barcode on this item — can\'t sync an adjustment">—</span>'}
+            </td>
           </tr>`;
-        }).join('') : '<tr><td colspan="6" class="muted" style="padding:24px;text-align:center">No inventory synced yet.</td></tr>'}
+        }).join('') : '<tr><td colspan="7" class="muted" style="padding:24px;text-align:center">No inventory synced yet.</td></tr>'}
       </tbody>
     </table>`;
+  view.querySelectorAll('[data-adjust]').forEach((btn) => btn.addEventListener('click', async () => {
+    const id = btn.dataset.adjust;
+    const item = items.find((x) => String(x.id) === id);
+    const input = view.querySelector(`[data-delta="${id}"]`);
+    const delta = Number(input.value);
+    if (!item || !delta) { toast('Enter a non-zero quantity change', true); return; }
+    btn.disabled = true; btn.textContent = '…';
+    const r = await window.portal.adjustStock({ location_id: item.location_id, barcode: item.barcode, delta });
+    btn.disabled = false; btn.textContent = 'Apply';
+    if (!r.success) { toast(r.error || 'Failed', true); return; }
+    item.quantity = r.quantity;
+    input.value = '';
+    document.getElementById(`qty-${id}`).textContent = r.quantity;
+    toast(`${delta > 0 ? '+' : ''}${delta} applied — syncs to the register on its next check-in`);
+  }));
 }
 
 // ── customers ───────────────────────────────────────────────────────────────
@@ -248,7 +497,8 @@ async function renderCustomers() {
   view.innerHTML = '<div class="spin">Loading customers…</div>';
   const r = await window.portal.customers();
   if (!r.success) { view.innerHTML = `<div class="card">Couldn't load: ${esc(r.error)}</div>`; return; }
-  custCache = r.customers;
+  // Item 9: scope to the selected store.
+  custCache = currentStoreId ? r.customers.filter((c) => c.location_id === currentStoreId) : r.customers;
   view.innerHTML = `
     <div class="h2">Customers <span class="muted" style="font-weight:400;font-size:13px">— add & edit; changes sync down to registers</span></div>
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
@@ -315,6 +565,45 @@ async function saveNewCustomer() {
   drawCustomers();
 }
 
+// ── store settings (item 9: top-right store picker → that store's full settings) ─
+async function renderStoreSettings() {
+  view.innerHTML = '<div class="spin">Loading store settings…</div>';
+  if (!currentStoreId) { view.innerHTML = '<div class="card muted">No stores on this business yet.</div>'; return; }
+  const r = await window.portal.storefrontLocations();
+  if (!r.success) { view.innerHTML = `<div class="card">Couldn't load: ${esc(r.error)}</div>`; return; }
+  const l = (r.locations || []).find((x) => x.id === currentStoreId);
+  if (!l) { view.innerHTML = '<div class="card muted">Store not found.</div>'; return; }
+  const onboarded = !!l.stripe_onboarding_complete;
+  view.innerHTML = `
+    <div class="h2">${esc(l.name)}</div>
+    <div class="hgrid">
+      <div class="card">
+        <div class="muted" style="font-size:11px;margin-bottom:4px">Address</div>
+        <div>${esc(l.address || 'Not set yet — set by the owner in the Owner Console')}</div>
+      </div>
+      <div class="card">
+        <div class="muted" style="font-size:11px;margin-bottom:4px">Online sales tax rate</div>
+        <div>${((l.tax_rate ?? 0) * 100).toFixed(2)}% <span class="muted" style="font-size:11px">(auto, from the store's address)</span></div>
+      </div>
+      <div class="card">
+        <div class="muted" style="font-size:11px;margin-bottom:4px">Online store</div>
+        <div>${l.is_storefront_enabled ? '<span class="pill" style="background:#1f3a25;color:#7fdca0">Live</span>' : '<span class="pill flag">Off</span>'}
+          <button class="rowbtn" ${onboarded ? '' : 'disabled title="Complete Stripe payouts setup first"'} onclick="toggleStore('${esc(l.id)}', ${l.is_storefront_enabled ? 'false' : 'true'})" style="margin-left:8px">${l.is_storefront_enabled ? 'Turn off' : 'Turn on'}</button></div>
+      </div>
+      <div class="card">
+        <div class="muted" style="font-size:11px;margin-bottom:4px">Stripe payouts</div>
+        <div>${onboarded ? '<span class="pill" style="background:#1f3a25;color:#7fdca0">Ready</span>' : (l.stripe_account_id ? '<span class="pill flag">Incomplete</span>' : '<span class="pill flag">Not set up</span>')}
+          <button class="rowbtn" onclick="stripeOnboard('${esc(l.id)}')" style="margin-left:8px">${onboarded ? 'Manage' : 'Set up'}</button></div>
+      </div>
+      <div class="card">
+        <div class="muted" style="font-size:11px;margin-bottom:4px">Listing logo</div>
+        <div>${l.logo_url ? `<img src="${esc(l.logo_url)}" alt="" style="width:28px;height:28px;border-radius:6px;object-fit:cover;vertical-align:middle;margin-right:6px" />` : '<span class="muted" style="margin-right:6px">bag icon</span>'}
+          <button class="rowbtn" onclick="uploadLogo('${esc(l.id)}')">${l.logo_url ? 'Change' : 'Upload'}</button></div>
+      </div>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:16px">Name and address are set by the owner in the Owner Console and flow down here automatically.</div>`;
+}
+
 // ── storefront (online store control) ────────────────────────────────────────
 let sfLocs = [];        // [{id,name,is_storefront_enabled,tax_rate}]
 let menuCache = [];     // current location's menu items
@@ -325,10 +614,12 @@ async function renderStorefront() {
   const r = await window.portal.storefrontLocations();
   if (!r.success) { view.innerHTML = `<div class="card">Couldn't load: ${esc(r.error)}</div>`; return; }
   sfLocs = r.locations;
-  if (menuLoc == null) menuLoc = (sfLocs.find((l) => l.is_storefront_enabled) || sfLocs[0])?.id || null;
+  // Default the online-menu picker to the currently selected store (item 9),
+  // falling back to the first storefront-enabled location.
+  if (menuLoc == null) menuLoc = (sfLocs.find((l) => l.id === currentStoreId) || sfLocs.find((l) => l.is_storefront_enabled) || sfLocs[0])?.id || null;
 
   view.innerHTML = `
-    <div class="h2">Storefront <span class="muted" style="font-weight:400;font-size:13px">— set up payouts, turn a store's online shop on, set its tax rate, and pick what it sells</span></div>
+    <div class="h2">Storefront</div>
     <table class="grid" style="margin-bottom:22px">
       <thead><tr><th>Location</th><th>Payouts (Stripe)</th><th>Online store</th><th class="num">Tax rate</th><th></th></tr></thead>
       <tbody>
@@ -345,26 +636,23 @@ async function renderStorefront() {
               <button class="rowbtn" onclick="stripeRefresh('${esc(l.id)}')">Refresh</button>
             </td>
             <td>${l.is_storefront_enabled ? '<span class="pill" style="background:#1f3a25;color:#7fdca0">Live</span>' : '<span class="pill flag">Off</span>'}</td>
-            <td class="num"><input data-tax="${esc(l.id)}" type="number" step="0.0001" value="${l.tax_rate ?? 0}" style="width:96px;text-align:right" /> <span class="muted" style="font-size:11px">(0.08 = 8%)</span></td>
+            <td class="num" title="Set automatically from the store's address — not manager-editable">${((l.tax_rate ?? 0) * 100).toFixed(2)}%</td>
             <td class="num">
               <button class="rowbtn" ${onboarded ? '' : 'disabled title="Complete Stripe payouts setup first"'} onclick="toggleStore('${esc(l.id)}', ${l.is_storefront_enabled ? 'false' : 'true'})">${l.is_storefront_enabled ? 'Turn off' : 'Turn on'}</button>
-              <button class="rowbtn" onclick="saveTax('${esc(l.id)}')">Save tax</button>
             </td>
           </tr>`;
         }).join('') : '<tr><td colspan="5" class="muted" style="padding:24px;text-align:center">No locations.</td></tr>'}
       </tbody>
     </table>
 
-    <div class="h2">Storefront listing <span class="muted" style="font-weight:400;font-size:13px">— the address and logo customers see when picking a store</span></div>
+    <div class="h2">Storefront listing</div>
     <table class="grid" style="margin-bottom:22px">
       <thead><tr><th>Location</th><th>Address</th><th>Logo</th></tr></thead>
       <tbody>
         ${sfLocs.map((l) => `
           <tr>
             <td><strong>${esc(l.name)}</strong></td>
-            <td><input data-addr="${esc(l.id)}" value="${esc(l.address || '')}" placeholder="123 Main St, City ST" style="width:190px" />
-              <input data-zip="${esc(l.id)}" value="${esc(l.zip || '')}" placeholder="ZIP" style="width:64px" maxlength="10" />
-              <button class="rowbtn" onclick="saveAddress('${esc(l.id)}')">Save</button></td>
+            <td class="muted" title="Set by the owner in the Owner Console — not manager-editable">${esc(l.address || 'Not set yet — set by the owner')}</td>
             <td>
               ${l.logo_url ? `<img src="${esc(l.logo_url)}" alt="" style="width:30px;height:30px;border-radius:6px;object-fit:cover;vertical-align:middle;margin-right:6px" />` : '<span class="muted" style="margin-right:6px">bag icon</span>'}
               <button class="rowbtn" onclick="uploadLogo('${esc(l.id)}')">${l.logo_url ? 'Change' : 'Upload'}</button>
@@ -417,14 +705,7 @@ async function stripeRefresh(id) {
   renderStorefront();
 }
 
-// ── storefront listing branding (address + logo) ──────────────────────────────
-async function saveAddress(id) {
-  const address = document.querySelector(`[data-addr="${id}"]`).value.trim();
-  const zip = document.querySelector(`[data-zip="${id}"]`).value.trim();
-  const r = await window.portal.setBranding({ location_id: id, address, zip });
-  if (r.success) { const l = sfLocs.find((x) => x.id === id); if (l) { l.address = address; l.zip = zip; } }
-  toast(r.success ? 'Address saved' : (r.error || 'Failed'), !r.success);
-}
+// ── storefront listing branding (logo only — address is owner-set, item 10) ───
 async function toggleLogo(id, show) {
   const r = await window.portal.setBranding({ location_id: id, show_logo: show });
   if (!r.success) { toast(r.error || 'Failed', true); renderStorefront(); return; }
@@ -449,14 +730,6 @@ function uploadLogo(id) {
   };
   input.click();
 }
-async function saveTax(id) {
-  const el = document.querySelector(`[data-tax="${id}"]`);
-  const rate = Number(el.value);
-  if (!(rate >= 0 && rate < 1)) { toast('Tax rate must be a fraction, e.g. 0.08', true); return; }
-  const r = await window.portal.setStorefront({ location_id: id, enabled: sfLocs.find((l) => l.id === id)?.is_storefront_enabled, tax_rate: rate });
-  toast(r.success ? 'Tax rate saved' : (r.error || 'Failed'), !r.success);
-}
-
 async function loadMenu() {
   if (!menuLoc) { document.getElementById('menuRows').innerHTML = '<tr><td colspan="7" class="muted">Pick a location.</td></tr>'; return; }
   const r = await window.portal.menu({ location_id: menuLoc });
@@ -549,11 +822,12 @@ async function renderOrders() {
   orderTimer = setInterval(() => { if (curTab === 'orders') drawOrders(); }, 20000);
 }
 async function drawOrders() {
-  const r = await window.portal.orders({});
+  // Item 9: scope to the selected store (the backend already supports this filter).
+  const r = await window.portal.orders({ location_id: currentStoreId || undefined });
   if (!r.success) { view.innerHTML = `<div class="card">Couldn't load: ${esc(r.error)}</div>`; return; }
   const orders = r.orders;
   view.innerHTML = `
-    <div class="h2">Online orders <span class="muted" style="font-weight:400;font-size:13px">— pickup queue across all locations · refreshes automatically</span></div>
+    <div class="h2">Online orders <span class="muted" style="font-weight:400;font-size:13px">— pickup queue at ${currentStoreId ? esc(nameOf[currentStoreId] || 'this store') : 'all locations'} · refreshes automatically</span></div>
     ${orders.length ? `<div class="hgrid">${orders.map(orderCard).join('')}</div>`
       : '<div class="card muted">No open online orders.</div>'}`;
 }

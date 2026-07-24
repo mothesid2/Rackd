@@ -778,23 +778,38 @@ registerPullSpec('manufacturers', { cloudTable: 'manufacturers_cloud', scope: 't
 registerPullSpec('rebate_rules', { cloudTable: 'rebate_rules_cloud', scope: 'tenant', apply: applyRebateRule });
 
 // ── Staff + permissions: pull DOWN (location config); override log pushes UP ───
-function applyEmployee(row: Record<string, unknown>, db: Database.Database = getDb()): void {
+export function applyEmployee(row: Record<string, unknown>, db: Database.Database = getDb()): void {
   const uid = String(row.uid ?? ''); if (!uid) return;
   const role = row.role === 'admin' ? 'admin' : row.role === 'manager' ? 'manager' : 'cashier';
   const username = (row.username as string) ?? null; // null for cashiers (PIN only)
-  const mcp = row.must_change_password ? 1 : 0;
+  const isCashier = role === 'cashier';
+  // Cashiers are PIN-only, full stop — never let an incoming row (or a stale
+  // local one from before this was enforced) leave a cashier with a password
+  // and a must_change_password that nothing ever clears, which forced the
+  // "set a new password AND PIN" prompt on every single login instead of just
+  // the first. This coercion self-heals every affected row on its next pull,
+  // regardless of what already synced to the cloud before the fix.
+  const mcp = isCashier ? 0 : row.must_change_password ? 1 : 0;
   const mcpin = row.must_change_pin ? 1 : 0;
+  const incomingPasswordHash = isCashier ? null : (row.password_hash as string) ?? null;
   const existing = db.prepare('SELECT id FROM users WHERE uid = ?').get(uid) as { id: number } | undefined;
+  const params = {
+    uid, username, name: (row.name as string) ?? null, role, pw: incomingPasswordHash,
+    pin: (row.pin_hash as string) ?? null, active: row.is_active ? 1 : 0, mcp, mcpin,
+    loc: (row.location_id as string) ?? null, isCashier: isCashier ? 1 : 0,
+  };
   if (existing) {
     // COALESCE the hashes so a payload that omits one (e.g. a cashier row with no
-    // password) never wipes a locally-set credential.
+    // password) never wipes a locally-set credential — except a cashier's
+    // password_hash, which is forced to NULL outright via the CASE (see above;
+    // @pw is already null for a cashier row, this also self-heals a row that
+    // was stuck with one from before that was enforced).
     db.prepare(
-      `UPDATE users SET username=?, name=?, role=?, password_hash=COALESCE(?, password_hash),
-         pin_hash=COALESCE(?, pin_hash), is_active=?, must_change_password=?, must_change_pin=?, location_id=? WHERE uid=?`
-    ).run(
-      username, (row.name as string) ?? null, role, (row.password_hash as string) ?? null,
-      (row.pin_hash as string) ?? null, row.is_active ? 1 : 0, mcp, mcpin, (row.location_id as string) ?? null, uid
-    );
+      `UPDATE users SET username=@username, name=@name, role=@role,
+         password_hash=CASE WHEN @isCashier=1 THEN NULL ELSE COALESCE(@pw, password_hash) END,
+         pin_hash=COALESCE(@pin, pin_hash), is_active=@active, must_change_password=@mcp,
+         must_change_pin=@mcpin, location_id=@loc WHERE uid=@uid`
+    ).run(params);
   } else {
     // Only guard against a username collision when this staff member has one.
     if (username) {
@@ -803,11 +818,8 @@ function applyEmployee(row: Record<string, unknown>, db: Database.Database = get
     }
     db.prepare(
       `INSERT INTO users (uid, username, name, role, password_hash, pin_hash, is_active, must_change_password, must_change_pin, location_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      uid, username, (row.name as string) ?? null, role, (row.password_hash as string) ?? null,
-      (row.pin_hash as string) ?? null, row.is_active ? 1 : 0, mcp, mcpin, (row.location_id as string) ?? null
-    );
+       VALUES (@uid, @username, @name, @role, @pw, @pin, @active, @mcp, @mcpin, @loc)`
+    ).run(params);
   }
 }
 function applyEmployeePermission(row: Record<string, unknown>, db: Database.Database = getDb()): void {
@@ -826,12 +838,16 @@ function applyEmployeePermission(row: Record<string, unknown>, db: Database.Data
 registerPullSpec('employees', { cloudTable: 'employees_cloud', scope: 'tenant', apply: applyEmployee });
 registerPullSpec('employee_permissions', { cloudTable: 'employee_permissions_cloud', scope: 'tenant', apply: applyEmployeePermission });
 
-function applyTimeClock(row: Record<string, unknown>, db: Database.Database = getDb()): void {
+export function applyTimeClock(row: Record<string, unknown>, db: Database.Database = getDb()): void {
   const uid = String(row.uid ?? ''); if (!uid) return;
+  // FIX (batch 5, item 8): the ON CONFLICT clause never updated clock_in, only
+  // clock_out — a manager's clock-IN correction (Manager Portal timesheet
+  // adjustment) would push to the cloud fine but never actually reach the
+  // kiosk on pull, silently. clock_in is now part of the upsert too.
   db.prepare(
     `INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out, register_id, updated_at)
      VALUES (@uid, @emp, @name, @in, @out, @reg, @upd)
-     ON CONFLICT(uid) DO UPDATE SET clock_out=excluded.clock_out, employee_name=excluded.employee_name, updated_at=excluded.updated_at`
+     ON CONFLICT(uid) DO UPDATE SET clock_in=excluded.clock_in, clock_out=excluded.clock_out, employee_name=excluded.employee_name, updated_at=excluded.updated_at`
   ).run({
     uid, emp: String(row.employee_uid ?? ''), name: (row.employee_name as string) ?? null,
     in: String(row.clock_in ?? ''), out: (row.clock_out as string) ?? null,
@@ -980,6 +996,51 @@ async function pullCycle(
   return lastError;
 }
 
+/**
+ * Pull this kiosk's own location address down from the cloud into the local
+ * receipt config. The address is set once by the owner (Owner Console, at shop
+ * setup) and flows down from there — POS Settings no longer has a manual address
+ * field (item 10), so this is the only way the printed receipt header learns it.
+ */
+async function pullLocationAddress(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  db: Database.Database
+): Promise<void> {
+  const locationId = getLocationId(db);
+  if (!locationId) return;
+  try {
+    const { data, error } = await supabase.from('locations').select('address').eq('id', locationId).maybeSingle();
+    if (error || !data) return;
+    db.prepare('UPDATE receipt_config SET address = ? WHERE id = 1').run(data.address ?? '');
+  } catch {
+    /* non-fatal — keep whatever address is cached locally */
+  }
+}
+
+/**
+ * Pull this kiosk's own location's merchant/card-processing fee rate
+ * (batch 5 tip-pool legal rework) — owner-only, set in the Owner Console.
+ * Deliberately its OWN query, never merged into pullLocationAddress's SELECT:
+ * `locations.merchant_fee_pct` only exists once migration 052 is applied, and
+ * this must be able to 42703 in isolation without taking the address pull
+ * down with it (see the 2026-07-24 admin-function outage for why this
+ * discipline matters now).
+ */
+async function pullMerchantFeeRate(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  db: Database.Database
+): Promise<void> {
+  const locationId = getLocationId(db);
+  if (!locationId) return;
+  try {
+    const { data, error } = await supabase.from('locations').select('merchant_fee_pct').eq('id', locationId).maybeSingle();
+    if (error || !data) return; // column may not exist yet (migration 052 pending) — non-fatal
+    writeSetting('merchant_fee_pct', String(data.merchant_fee_pct ?? 0), db);
+  } catch {
+    /* non-fatal — keep whatever rate is cached locally */
+  }
+}
+
 // ── the cycle ───────────────────────────────────────────────────────────────
 let cycleRunning = false;
 
@@ -1028,6 +1089,8 @@ async function runCycle(): Promise<void> {
     // movements). Non-fatal — a pull error is surfaced but doesn't block push.
     const pullError = await pullCycle(supabase, db);
     if (pullError && !lastError) lastError = pullError;
+    await pullLocationAddress(supabase, db);
+    await pullMerchantFeeRate(supabase, db);
 
     // Remote kiosk reset (item 5): apply any Owner-Console reset for this machine.
     // Runs AFTER push so flush-then-reset sees a freshly-drained outbox. Non-fatal;

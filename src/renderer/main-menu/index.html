@@ -14,6 +14,7 @@
     :root {
       --ink: #1c1f24; --charcoal-1: #2f343c; --charcoal-2: #23272d; --charcoal-3: #1c2026;
       --accent: #b01d2e; --accent-bright: #c8283a; --muted: #8a9099; --line: rgba(0,0,0,0.07);
+      --go: #1f7a3d; --go-bright: #279449;
     }
     body { overflow: hidden; }
 
@@ -48,8 +49,8 @@
       color: #fff; font-size: 21px; font-weight: 800; letter-spacing: 0.4px;
       background:
         repeating-linear-gradient(0deg, transparent 0 3px, rgba(255,255,255,0.05) 3px 4px, transparent 4px 9px, rgba(255,255,255,0.03) 9px 10px),
-        linear-gradient(180deg, var(--accent-bright) 0%, var(--accent) 52%, #8f1626 100%);
-      box-shadow: 0 4px 16px rgba(176,29,46,0.4), inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.22);
+        linear-gradient(180deg, var(--go-bright) 0%, var(--go) 52%, #14512a 100%);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.22);
       text-shadow: 0 1px 3px rgba(0,0,0,0.28); transition: filter 0.14s, transform 0.1s;
     }
     .new-sale svg { width: 27px; height: 27px; }
@@ -81,7 +82,7 @@
     .tile .t-ic {
       width: 88px; height: 88px; border-radius: 50%; display: grid; place-items: center; flex: 0 0 auto;
       background: radial-gradient(circle at 50% 34%, #86212f 0%, #591a24 56%, #431520 100%);
-      box-shadow: 0 0 0 7px rgba(176,29,46,0.10), 0 0 28px 4px rgba(176,29,46,0.38), inset 0 1px 2px rgba(255,255,255,0.16), inset 0 -2px 5px rgba(0,0,0,0.35);
+      box-shadow: inset 0 1px 2px rgba(255,255,255,0.16), inset 0 -2px 5px rgba(0,0,0,0.35);
     }
     .tile .t-ic svg { width: 42px; height: 42px; color: #e7cd92; }
     .tile .t-title { position: relative; display: inline-block; font-size: 21px; font-weight: 700; color: #fff; line-height: 1.15; padding-bottom: 9px; }
@@ -217,23 +218,42 @@
       const { session } = await window.api.getSession();
       currentRole = session?.role;
 
-      // Status bar: "Logged in: <Role>  |  <date>" on the left, live clock on the right.
-      const roleName = session?.role ? session.role.charAt(0).toUpperCase() + session.role.slice(1) : '';
-      const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' });
-      const who = session?.username ? `${session.username} · ${roleName}` : roleName;
-      document.getElementById('status-left').innerHTML =
-        `Logged in:&nbsp;<strong style="color:#e7cd92">${who}</strong>&nbsp;&nbsp;|&nbsp;&nbsp;${dateStr}`;
-      const tick = () => { document.getElementById('status-right').textContent = new Date().toLocaleTimeString('en-US'); };
-      tick(); setInterval(tick, 1000);
+      // Item 6: business-level feature flags actually gate something now — a
+      // business without the web_store feature (once an owner curates a list;
+      // see isFeatureEnabled's default-allow note in shared.js) doesn't get the
+      // Online Pickups tile at all, for anyone.
+      await loadFeatures();
+      if (!isFeatureEnabled('web_store')) {
+        document.querySelector('.tile[onclick="navigate(\'pickups\')"]')?.style.setProperty('display', 'none', 'important');
+      }
+
+      // Status bar (name + live clock) is owned by shared.js's updateStatusBar — no
+      // need to duplicate it here; a second interval just fought it for the DOM.
 
       if (session?.role === 'manager' || session?.role === 'admin') {
         document.getElementById('settingsBtn').style.display = '';
       } else {
-        // Cashier: no profit metric; X/Z Out only with the view_reports grant.
+        // Cashier: no profit metric; X/Z Out only with the view_reports grant;
+        // other tiles gated by per-menu access (item 3 — default-on, a manager
+        // can switch individual ones off per cashier in Staff & Permissions).
         document.getElementById('metricProfitChip').style.display = 'none';
         let canView = false;
-        try { const me = await window.api.permsMe(); canView = !!(me.success && me.permissions?.view_reports?.granted); } catch { /* deny */ }
+        let menuAccess = {};
+        try {
+          const me = await window.api.permsMe();
+          canView = !!(me.success && me.permissions?.view_reports?.granted);
+          menuAccess = (me.success && me.menuAccess) || {};
+        } catch { /* deny */ }
         if (!canView) document.querySelector('.xzout-btn')?.style.setProperty('display', 'none', 'important');
+        const MENU_TILES = {
+          access_merchandise: 'merchandise', access_receipts: 'receipts',
+          access_customer_lookup: 'customer-lookup', access_pickups: 'pickups',
+        };
+        for (const [key, target] of Object.entries(MENU_TILES)) {
+          if (menuAccess[key] === false) {
+            document.querySelector(`.tile[onclick="navigate('${target}')"]`)?.style.setProperty('display', 'none', 'important');
+          }
+        }
       }
 
       await loadOverview(session?.role);

@@ -89,7 +89,15 @@
       view_reports: 'View reports / analytics', manage_rebates: 'Apply / toggle rebates',
       open_drawer_no_sale: 'Open drawer (no sale)', clock_others: 'Clock others in / out',
     };
+    // Menu-tile access (item 3): opposite default from LABELS above — ON unless
+    // explicitly revoked, so this can only take AWAY tiles a cashier already sees
+    // today, never silently grant new ones.
+    const MENU_LABELS = {
+      access_merchandise: 'Merchandise (inventory)', access_receipts: 'Receipts',
+      access_customer_lookup: 'Customer Lookup', access_pickups: 'Online Pickups',
+    };
     let PERM_KEYS = Object.keys(LABELS);
+    let MENU_KEYS = Object.keys(MENU_LABELS);
     let employees = [];
     let selected = null;
 
@@ -110,7 +118,7 @@
     async function loadStaff() {
       const r = await window.api.permsListEmployees();
       if (!r.success) { document.getElementById('empList').innerHTML = `<div style="color:#b01d2e;padding:16px">${esc(r.error||'Failed')}</div>`; return; }
-      employees = r.employees; if (r.keys) PERM_KEYS = r.keys;
+      employees = r.employees; if (r.keys) PERM_KEYS = r.keys; if (r.menuKeys) MENU_KEYS = r.menuKeys;
       document.getElementById('empList').innerHTML = employees.map(e => `
         <div class="emp-row ${selected===e.uid?'sel':''}" onclick="selectEmp('${esc(e.uid)}')">
           <div><div style="font-weight:600">${esc(e.name||e.username)}</div><div class="role">${esc(e.username)}</div></div>
@@ -140,6 +148,7 @@
            <div style="font-weight:800">${esc(e.name||e.username)}</div>
            <button class="rowbtn" onclick='openEmp(${JSON.stringify(e).replace(/'/g,"&#39;")})'>Edit / reset PIN</button>
          </div>` +
+        `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#888;margin:4px 0 4px">Actions</div>` +
         PERM_KEYS.map(k => {
           const p = e.permissions[k] || { is_granted:false, value:null };
           const capInput = k === 'apply_discount'
@@ -148,6 +157,16 @@
           return `<div class="perm-row">
             <label class="switch" style="display:inline-flex"><input type="checkbox" ${p.is_granted?'checked':''} onchange="toggle('${esc(e.uid)}','${k}',this.checked)" /></label>
             <span class="lbl">${esc(LABELS[k]||k)}</span>${capInput}</div>`;
+        }).join('') +
+        `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#888;margin:14px 0 4px">Menu access <span style="text-transform:none;font-weight:400">— on by default; switch off to hide a tile for this cashier</span></div>` +
+        MENU_KEYS.map(k => {
+          // Default-allow (item 3): checked unless a row exists that explicitly
+          // revoked it (is_granted === false).
+          const p = e.permissions[k];
+          const on = p ? !!p.is_granted : true;
+          return `<div class="perm-row">
+            <label class="switch" style="display:inline-flex"><input type="checkbox" ${on?'checked':''} onchange="toggle('${esc(e.uid)}','${k}',this.checked)" /></label>
+            <span class="lbl">${esc(MENU_LABELS[k]||k)}</span></div>`;
         }).join('');
     }
 

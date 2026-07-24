@@ -54,6 +54,11 @@ function attachDemoBadge(win) {
 // In-memory session (never persisted to disk — a portal re-login is cheap).
 let token = null;
 let session = null; // { tenant_id, kind, exp }
+// Which store this session is focused on (item 10: chosen at login, like the
+// POS's own location picker at activation — not a topbar dropdown). Cleared on
+// logout/business change; "Change store" re-visits the picker without a full
+// re-login since the session token is still valid.
+let currentLocationId = null;
 
 // The business key binds this portal to a business ONCE (like installing it for
 // them). Managers then sign in with their username + password. Persisted so it's
@@ -118,7 +123,14 @@ app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(
 
 // ── auth ─────────────────────────────────────────────────────────────────────
 // First-run: is this portal bound to a business yet?
-ipcMain.handle('portal:status', () => ({ success: true, hasBusiness: !!portalStore.businessKey, session }));
+ipcMain.handle('portal:status', () => ({ success: true, hasBusiness: !!portalStore.businessKey, session, currentLocationId }));
+
+// Item 10: the store picker lives on the login flow, not the topbar. Set once
+// after choosing (or re-choosing via "Change store"); read back on portal.html boot.
+ipcMain.handle('portal:setCurrentLocation', (_e, locationId) => {
+  currentLocationId = locationId || null;
+  return { success: true };
+});
 
 // Bind the portal to a business (validate the key, then remember it).
 ipcMain.handle('portal:setBusiness', async (_e, key) => {
@@ -143,7 +155,10 @@ ipcMain.handle('portal:login', async (_e, { username, password } = {}) => {
     if (!data || !data.token) return { success: false, error: 'Sign-in failed.' };
     token = data.token;
     const claims = decode(token);
-    session = { tenant_id: claims.tenant_id, kind: claims.kind, exp: claims.exp, username: String(username || '').trim() };
+    // Item 6: staff-login already bakes the business's feature list into the JWT
+    // (supabase/functions/staff-login) — carry it through so the portal can gate
+    // its own nav on it (e.g. Rebates, Storefront) without another round trip.
+    session = { tenant_id: claims.tenant_id, kind: claims.kind, exp: claims.exp, username: String(username || '').trim(), features: claims.features || [] };
     return { success: true, session: { tenant_id: claims.tenant_id }, must_change_password: !!data.must_change_password, name: data.name };
   } catch (e) { return { success: false, error: String(e.message || e) }; }
 });
@@ -160,14 +175,14 @@ ipcMain.handle('portal:changePassword', async (_e, { username, oldPassword, newP
   } catch (e) { return { success: false, error: String(e.message || e) }; }
 });
 
-ipcMain.handle('portal:logout', () => { token = null; session = null; return { success: true }; });
+ipcMain.handle('portal:logout', () => { token = null; session = null; currentLocationId = null; return { success: true }; });
 // Disconnect from the current business so a new business key can be entered.
 ipcMain.handle('portal:clearBusiness', () => {
-  token = null; session = null;
+  token = null; session = null; currentLocationId = null;
   portalStore.businessKey = null; savePortalStore();
   return { success: true };
 });
-ipcMain.handle('portal:session', () => ({ success: true, session }));
+ipcMain.handle('portal:session', () => ({ success: true, session, currentLocationId }));
 
 // ── reporting ────────────────────────────────────────────────────────────────
 ipcMain.handle('portal:dashboard', async (_e, { start, end } = {}) => {
@@ -206,12 +221,45 @@ ipcMain.handle('portal:locations', async () => {
   } catch (e) { return { success: false, error: String(e.message || e) }; }
 });
 
-// ── inventory (read, tenant-wide) ─────────────────────────────────────────────
+// ── inventory (read + edit, item 5) ───────────────────────────────────────────
 ipcMain.handle('portal:inventory', async () => {
   try {
     requireAuth();
-    const rows = await sb('/rest/v1/inventory_cloud?select=id,location_id,name,category,price,quantity,reorder_point,updated_at&order=name');
+    const rows = await sb('/rest/v1/inventory_cloud?select=id,location_id,barcode,name,category,price,quantity,reorder_point,updated_at&order=name');
     return { success: true, items: rows || [] };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
+
+// Adjust stock for one item at one location. inventory_cloud is a reporting
+// MIRROR (the POS's local SQLite is the source of truth) with no pull path back
+// down — writing here directly would just get overwritten by the next POS-side
+// sale/snapshot. So this rides the same stock_movements_cloud delta log the POS
+// already peer-pulls and applies (src/main/supabase/sync.ts, applyStockMovement,
+// matched by barcode) — the exact mechanism registers use to share stock with
+// each other. No new POS code needed; it converges on its next 60s sync.
+ipcMain.handle('portal:adjustStock', async (_e, { location_id, barcode, delta, reason } = {}) => {
+  try {
+    requireAuth();
+    if (!location_id || !barcode) throw new Error('location_id + barcode required');
+    const d = Number(delta);
+    if (!d) throw new Error('delta must be a non-zero number');
+    await sb('/rest/v1/stock_movements_cloud', {
+      method: 'POST',
+      body: {
+        movement_uid: randomUUID(), tenant_id: session.tenant_id, location_id,
+        register_id: 'manager', barcode, delta: d, reason: (reason || 'manual'),
+      },
+    });
+    // Reflect the change in inventory_cloud immediately too, so the portal's own
+    // view doesn't wait on a round trip through the POS's next sync cycle.
+    const rows = await sb(`/rest/v1/inventory_cloud?location_id=eq.${encodeURIComponent(location_id)}&barcode=eq.${encodeURIComponent(barcode)}&select=id,quantity`);
+    const row = rows && rows[0];
+    let newQty = null;
+    if (row) {
+      newQty = Math.max(0, Number(row.quantity || 0) + d);
+      await sb(`/rest/v1/inventory_cloud?id=eq.${row.id}`, { method: 'PATCH', body: { quantity: newQty } });
+    }
+    return { success: true, quantity: newQty };
   } catch (e) { return { success: false, error: String(e.message || e) }; }
 });
 
@@ -265,11 +313,59 @@ ipcMain.handle('portal:updateCustomer', async (_e, { uid, fields } = {}) => {
 // POS by an admin.
 function genPin() { return Array.from({ length: 4 }, () => Math.floor(Math.random() * 10)).join(''); }
 
+// Item 4 (reverses the earlier "Staff stays tenant-wide" decision, explicitly
+// overridden by the user): scoped to the selected store, but a row with no
+// location_id (the admin account, and any staff created before this change)
+// stays visible under every store rather than silently disappearing.
+// Also returns each employee's permission grants (batch 5, item 5) — same
+// employee_permissions_cloud table Owner Console and the POS already read/
+// write, so all three stay in sync automatically; this just adds the missing
+// UI surface here.
 ipcMain.handle('portal:staff', async () => {
   try {
     requireAuth();
-    const rows = await sb('/rest/v1/employees_cloud?select=uid,name,username,role,is_active,must_change_pin,updated_at&order=role,name');
-    return { success: true, staff: rows || [] };
+    const filter = currentLocationId
+      ? `&or=(location_id.eq.${encodeURIComponent(currentLocationId)},location_id.is.null)`
+      : '';
+    const [rows, perms] = await Promise.all([
+      sb(`/rest/v1/employees_cloud?select=uid,name,username,role,is_active,must_change_pin,must_change_password,location_id,updated_at&order=role,name${filter}`),
+      sb('/rest/v1/employee_permissions_cloud?select=employee_uid,permission_key,is_granted,value'),
+    ]);
+    const byEmp = {};
+    for (const p of perms || []) {
+      (byEmp[p.employee_uid] ||= {})[p.permission_key] = { is_granted: !!p.is_granted, value: p.value ?? null };
+    }
+    const staff = (rows || []).map((r) => ({ ...r, permissions: byEmp[r.uid] || {} }));
+    return { success: true, staff };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
+
+// Grant/revoke a single permission or menu-access key for one employee —
+// check-then-branch (no natural upsert target on this table), same approach
+// the admin Edge Function's setStaffPermission action uses.
+ipcMain.handle('portal:setStaffPermission', async (_e, { employee_uid, permission_key, is_granted, value } = {}) => {
+  try {
+    requireAuth();
+    if (!employee_uid || !permission_key) throw new Error('missing employee_uid/permission_key');
+    const [emp] = await sb(`/rest/v1/employees_cloud?uid=eq.${encodeURIComponent(employee_uid)}&select=location_id,register_id`);
+    if (!emp) throw new Error('employee not found');
+    const [existing] = await sb(
+      `/rest/v1/employee_permissions_cloud?tenant_id=eq.${encodeURIComponent(session.tenant_id)}&employee_uid=eq.${encodeURIComponent(employee_uid)}&permission_key=eq.${encodeURIComponent(permission_key)}&select=uid`
+    );
+    const nowIso = new Date().toISOString();
+    if (existing?.uid) {
+      await sb(`/rest/v1/employee_permissions_cloud?uid=eq.${encodeURIComponent(existing.uid)}`, {
+        method: 'PATCH', body: { is_granted: !!is_granted, value: value ?? null, updated_at: nowIso },
+      });
+    } else {
+      await sb('/rest/v1/employee_permissions_cloud', {
+        method: 'POST', body: {
+          uid: randomUUID(), tenant_id: session.tenant_id, location_id: emp.location_id, register_id: emp.register_id,
+          employee_uid, permission_key, is_granted: !!is_granted, value: value ?? null, created_at: nowIso, updated_at: nowIso,
+        },
+      });
+    }
+    return { success: true };
   } catch (e) { return { success: false, error: String(e.message || e) }; }
 });
 
@@ -283,7 +379,7 @@ ipcMain.handle('portal:createCashier', async (_e, { name, pin } = {}) => {
     const p = String(pin || '').trim() || genPin();
     if (!/^\d{4}$/.test(p)) throw new Error('PIN must be exactly 4 digits');
     const row = {
-      uid: randomUUID(), tenant_id: session.tenant_id, register_id: 'manager',
+      uid: randomUUID(), tenant_id: session.tenant_id, register_id: 'manager', location_id: currentLocationId || null,
       name: nm, role: 'cashier', username: null,
       pin_hash: bcrypt.hashSync(p, 10), is_active: true,
       must_change_pin: !String(pin || '').trim(), // forced change only when auto-generated
@@ -295,8 +391,13 @@ ipcMain.handle('portal:createCashier', async (_e, { name, pin } = {}) => {
   } catch (e) { return { success: false, error: String(e.message || e) }; }
 });
 
-// Edit a cashier: rename / activate-deactivate, and optionally reset the PIN.
-ipcMain.handle('portal:updateCashier', async (_e, { uid, name, is_active, pin } = {}) => {
+// Edit a cashier or manager: rename / activate-deactivate, and optionally reset
+// the PIN (cashier) or password (manager). Cashiers are PIN-only, full stop —
+// guarded server-side (not just by the UI only offering a PIN reset for
+// cashier rows) so this can never hand one a password_hash/must_change_password,
+// which is exactly the shape of the bug that forced a credential-change prompt
+// on every single cashier login instead of just the first (see auth.ts).
+ipcMain.handle('portal:updateCashier', async (_e, { uid, name, is_active, pin, password } = {}) => {
   try {
     requireAuth();
     if (!uid) throw new Error('missing staff id');
@@ -311,10 +412,100 @@ ipcMain.handle('portal:updateCashier', async (_e, { uid, name, is_active, pin } 
       patch.must_change_pin = false;
       newPin = p;
     }
+    let newPassword = null;
+    if (password !== undefined && password !== null && String(password).trim() !== '') {
+      const [existing] = await sb(`/rest/v1/employees_cloud?uid=eq.${encodeURIComponent(uid)}&select=role`);
+      if (existing?.role === 'cashier') throw new Error('Cashiers sign in with a PIN only — reset their PIN instead.');
+      const pw = String(password).trim();
+      if (pw.length < 4) throw new Error('Password must be at least 4 characters');
+      patch.password_hash = bcrypt.hashSync(pw, 10);
+      patch.must_change_password = false;
+      newPassword = pw;
+    }
     const rows = await sb(`/rest/v1/employees_cloud?uid=eq.${encodeURIComponent(uid)}`, {
       method: 'PATCH', headers: { Prefer: 'return=representation' }, body: patch,
     });
-    return { success: true, staff: (rows && rows[0]) || null, pin: newPin };
+    return { success: true, staff: (rows && rows[0]) || null, pin: newPin, password: newPassword };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
+
+// Create a manager (item 2): username + password, same login the POS and this
+// portal both use. Always forces a password change on first sign-in.
+ipcMain.handle('portal:createManager', async (_e, { name, username, password } = {}) => {
+  try {
+    requireAuth();
+    const nm = String(name || '').trim();
+    const un = String(username || '').trim();
+    if (!nm) throw new Error('Enter the manager’s name');
+    if (!un) throw new Error('Enter a username');
+    const pw = String(password || '').trim();
+    if (pw.length < 4) throw new Error('Password must be at least 4 characters');
+    const row = {
+      uid: randomUUID(), tenant_id: session.tenant_id, register_id: 'manager', location_id: currentLocationId || null,
+      name: nm, role: 'manager', username: un,
+      password_hash: bcrypt.hashSync(pw, 10), is_active: true, must_change_password: true,
+    };
+    const rows = await sb('/rest/v1/employees_cloud', {
+      method: 'POST', headers: { Prefer: 'return=representation' }, body: row,
+    });
+    return { success: true, staff: (rows && rows[0]) || null };
+  } catch (e) {
+    const msg = String(e.message || e);
+    return { success: false, error: /duplicate|unique/i.test(msg) ? 'That username is already taken.' : msg };
+  }
+});
+
+// Delete = deactivate (item 2). employees_cloud has no pull-based delete
+// propagation to the POS (the peer-pull cursor only sees updated_at changes),
+// so a hard delete here would just orphan the local copy on every kiosk forever
+// instead of actually removing access — deactivating is the real "delete".
+ipcMain.handle('portal:deleteStaff', async (_e, { uid } = {}) => {
+  try {
+    requireAuth();
+    if (!uid) throw new Error('missing staff id');
+    await sb(`/rest/v1/employees_cloud?uid=eq.${encodeURIComponent(uid)}`, {
+      method: 'PATCH', body: { is_active: false, register_id: 'manager' },
+    });
+    return { success: true };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
+
+// ── timesheets (item 8) — aggregate time_clock_cloud punches per employee ─────
+// A manager token's select policy sees every punch tenant-wide (time_clock_cloud
+// RLS: is_manager() bypasses the location_id restriction), so this is a plain
+// range query + client-side aggregation, no new RPC needed.
+ipcMain.handle('portal:timesheet', async (_e, { start, end } = {}) => {
+  try {
+    requireAuth();
+    const startIso = new Date(`${start}T00:00:00`).toISOString();
+    const endIso = new Date(`${end}T23:59:59.999`).toISOString();
+    const rows = await sb(
+      `/rest/v1/time_clock_cloud?select=uid,location_id,employee_uid,employee_name,clock_in,clock_out` +
+      `&clock_in=gte.${encodeURIComponent(startIso)}&clock_in=lte.${encodeURIComponent(endIso)}&order=clock_in.asc`
+    );
+    return { success: true, punches: rows || [] };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
+
+// Correct a punch's clock-in/out (batch 5, item 8). clock_out may be null (still
+// clocked in). Flows back down to every register at that location via the same
+// peer-pull the POS's own punches use (src/main/supabase/sync.ts applyTimeClock,
+// upserted by uid), so the correction lands on the kiosk that owns the punch too.
+ipcMain.handle('portal:adjustTimeClock', async (_e, { uid, clock_in, clock_out } = {}) => {
+  try {
+    requireAuth();
+    if (!uid || !clock_in) throw new Error('missing uid/clock_in');
+    const inMs = new Date(clock_in).getTime();
+    if (Number.isNaN(inMs)) throw new Error('Invalid clock-in time');
+    if (clock_out) {
+      const outMs = new Date(clock_out).getTime();
+      if (Number.isNaN(outMs)) throw new Error('Invalid clock-out time');
+      if (outMs < inMs) throw new Error('Clock-out cannot be before clock-in');
+    }
+    await sb(`/rest/v1/time_clock_cloud?uid=eq.${encodeURIComponent(uid)}`, {
+      method: 'PATCH', body: { clock_in: new Date(clock_in).toISOString(), clock_out: clock_out ? new Date(clock_out).toISOString() : null },
+    });
+    return { success: true };
   } catch (e) { return { success: false, error: String(e.message || e) }; }
 });
 
@@ -345,13 +536,15 @@ ipcMain.handle('portal:openExternal', (_e, url) => { if (url) shell.openExternal
 
 // Storefront listing branding (item 2): address shown on the listing + optional
 // per-location logo (else a default shopping-bag icon).
-ipcMain.handle('portal:setBranding', async (_e, { location_id, address, logo_url, show_logo, zip } = {}) => {
+// Address/zip are owner-only (item 10) — this never forwards them, even if a
+// caller passes them; only logo fields are manager-settable.
+ipcMain.handle('portal:setBranding', async (_e, { location_id, logo_url, show_logo } = {}) => {
   try {
     requireAuth();
     if (!location_id) throw new Error('pick a location');
     const rows = await sb('/rest/v1/rpc/set_storefront_branding', {
       method: 'POST',
-      body: { p_location: location_id, p_address: address ?? null, p_logo_url: logo_url ?? null, p_show_logo: show_logo ?? null, p_zip: zip ?? null },
+      body: { p_location: location_id, p_address: null, p_logo_url: logo_url ?? null, p_show_logo: show_logo ?? null, p_zip: null },
     });
     return { success: true, location: Array.isArray(rows) ? rows[0] : rows };
   } catch (e) { return { success: false, error: String(e.message || e) }; }
@@ -405,13 +598,15 @@ ipcMain.handle('portal:uploadProductImage', async (_e, { barcode, base64, ext, c
     return { success: true, image_url: imageUrl };
   } catch (e) { return { success: false, error: String(e.message || e) }; }
 });
-ipcMain.handle('portal:setStorefront', async (_e, { location_id, enabled, tax_rate } = {}) => {
+// Tax rate is owner/address-derived only (item 11) — never forwarded from here,
+// even if a caller passes one; a manager may only toggle the store on/off.
+ipcMain.handle('portal:setStorefront', async (_e, { location_id, enabled } = {}) => {
   try {
     requireAuth();
     if (!location_id) throw new Error('pick a location');
     const rows = await sb('/rest/v1/rpc/set_storefront_settings', {
       method: 'POST',
-      body: { p_location: location_id, p_enabled: enabled, p_tax_rate: tax_rate ?? null },
+      body: { p_location: location_id, p_enabled: enabled, p_tax_rate: null },
     });
     return { success: true, location: Array.isArray(rows) ? rows[0] : rows };
   } catch (e) { return { success: false, error: String(e.message || e) }; }

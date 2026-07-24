@@ -229,6 +229,7 @@
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
+      if (!(await enforceMenuAccess('access_receipts'))) return;
       const session = (await window.api.getSession()).session;
       isManager = session?.role === 'manager';
 

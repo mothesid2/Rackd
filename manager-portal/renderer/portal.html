@@ -15,6 +15,7 @@
         <span class="biz">Management Portal</span>
       </div>
       <span class="biz-chip" id="bizLabel">Business</span>
+      <span class="biz-chip" id="storeLabel" style="cursor:pointer" title="Change store">Store</span>
       <div class="spacer"></div>
       <span id="rangeWrap">
         <input type="date" id="startDate" aria-label="Start date" />
@@ -22,7 +23,7 @@
         <input type="date" id="endDate" aria-label="End date" />
         <button class="rowbtn" id="applyRange">Apply</button>
       </span>
-      <button class="btn" id="changeBusiness" title="Disconnect from this business and enter a new key">Change store</button>
+      <button class="btn" id="changeBusiness" title="Disconnect from this business and enter a new key">Change business</button>
       <button class="btn" id="logout">Sign out</button>
     </div>
 
@@ -39,6 +40,10 @@
       <button class="navbtn" data-tab="customers">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Customers
+      </button>
+      <button class="navbtn" data-tab="storeSettings">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Store settings
       </button>
       <div class="nav-label">Online</div>
       <button class="navbtn" data-tab="storefront">
@@ -57,7 +62,11 @@
       <div class="nav-label">Team</div>
       <button class="navbtn" data-tab="staff">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        Cashiers
+        Staff
+      </button>
+      <button class="navbtn" data-tab="timesheets">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Timesheets
       </button>
     </div>
 
@@ -120,6 +129,37 @@
       <div class="row" style="justify-content:flex-end">
         <button class="btn" onclick="document.getElementById('menuModal').style.display='none'">Cancel</button>
         <button class="btn btn-accent" id="mSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit staff modal (batch 5, item 5): name/active + per-employee permission
+       and menu-access toggles, same employee_permissions_cloud data Owner
+       Console and the POS's own Staff & Permissions screen read/write. -->
+  <div class="overlay" id="staffEditModal">
+    <div class="modal" style="width:480px;max-height:85vh;overflow-y:auto">
+      <h3 id="seTitle">Edit staff</h3>
+      <input type="hidden" id="seUid" />
+      <div class="fg"><label>Name</label><input id="seName" /></div>
+      <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-weight:400;cursor:pointer;margin-bottom:13px">
+        <input type="checkbox" id="seActive" style="width:auto" /> Active
+      </label>
+      <div id="sePermsWrap"></div>
+      <div class="row" style="justify-content:flex-end;margin-top:8px">
+        <button class="btn" onclick="document.getElementById('staffEditModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="seSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Timesheet adjustment (batch 5, item 8): individual punches for one
+       employee in the selected range, each editable. -->
+  <div class="overlay" id="tsModal">
+    <div class="modal" style="width:520px;max-height:85vh;overflow-y:auto">
+      <h3 id="tsTitle">Adjust punches</h3>
+      <div id="tsRows"></div>
+      <div class="row" style="justify-content:flex-end;margin-top:8px">
+        <button class="btn" onclick="document.getElementById('tsModal').style.display='none'">Done</button>
       </div>
     </div>
   </div>

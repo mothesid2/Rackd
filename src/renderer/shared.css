@@ -93,6 +93,18 @@ html, body {
 
 .status-bar .status-right {
   font-size: 13px;
+  display: flex;
+  align-items: center;
+}
+
+.status-bar .status-time {
+  font-weight: 600;
+  color: #c0d4f0;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-bar .status-date {
+  color: rgba(255,255,255,0.7);
 }
 
 /* ========== WHITE CARD PANEL ========== */

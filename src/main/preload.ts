@@ -14,7 +14,8 @@ contextBridge.exposeInMainWorld('api', {
   reprintPickup: (orderId: string) => ipcRenderer.invoke('receipt:reprintPickup', orderId),
   sessionState: () => ipcRenderer.invoke('session:state'),
   sessionTouch: () => ipcRenderer.invoke('session:touch'),
-  sessionReauth: (pin: string) => ipcRenderer.invoke('session:reauth', pin),
+  sessionListUnlockUsers: () => ipcRenderer.invoke('session:listUnlockUsers'),
+  sessionReauth: (userId: number, pin: string) => ipcRenderer.invoke('session:reauth', userId, pin),
   sessionCloseDay: () => ipcRenderer.invoke('session:closeDay'),
   changePassword: (oldPass: string, newPass: string) =>
     ipcRenderer.invoke('auth:changePassword', oldPass, newPass),
@@ -22,6 +23,7 @@ contextBridge.exposeInMainWorld('api', {
   createUser: (username: string, password: string, role: string) =>
     ipcRenderer.invoke('auth:createUser', username, password, role),
   deleteUser: (id: number) => ipcRenderer.invoke('auth:deleteUser', id),
+  updateUsername: (id: number, username: string) => ipcRenderer.invoke('auth:updateUsername', id, username),
   verifyManager: (username: string, password: string) =>
     ipcRenderer.invoke('auth:verifyManager', username, password),
 

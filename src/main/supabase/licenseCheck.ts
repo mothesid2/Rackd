@@ -34,6 +34,12 @@ export interface LicenseRecord {
   license_key: string | null;
   // Owner-managed customer-display / ads config, set centrally in the admin console.
   display_config?: { promo_enabled?: boolean; ads?: unknown[]; ads_interval?: number } | null;
+  // Owner-managed Twilio SMS credentials (Owner Console only — no POS Settings
+  // field anymore). Flows down through this same cache so src/main/services/
+  // twilio.ts keeps reading plain `settings` rows without any change.
+  twilio_account_sid?: string | null;
+  twilio_auth_token?: string | null;
+  twilio_from_number?: string | null;
 }
 
 export type LicenseMode = 'full' | 'read_only';
@@ -200,6 +206,9 @@ function normalize(row: Record<string, unknown>): LicenseRecord {
     location_id: (row.location_id as string) ?? null,
     license_key: (row.license_key as string) ?? null,
     display_config: (row.display_config as LicenseRecord['display_config']) ?? null,
+    twilio_account_sid: (row.twilio_account_sid as string) ?? null,
+    twilio_auth_token: (row.twilio_auth_token as string) ?? null,
+    twilio_from_number: (row.twilio_from_number as string) ?? null,
   };
 }
 
@@ -242,6 +251,12 @@ export async function refreshLicense(): Promise<LicenseStatus> {
     if (lock && !rec.location_id) rec.location_id = lock;
     writeSetting(KEY_LICENSE, JSON.stringify(rec));
     writeSetting(KEY_LAST_CHECK, new Date().toISOString());
+    // Twilio config is owner-managed only (Owner Console) — mirror it into the
+    // plain settings rows src/main/services/twilio.ts reads, exactly as it
+    // arrived (including blank, if the owner hasn't set it up yet).
+    writeSetting('twilio_account_sid', rec.twilio_account_sid ?? '');
+    writeSetting('twilio_auth_token', rec.twilio_auth_token ?? '');
+    writeSetting('twilio_from_number', rec.twilio_from_number ?? '');
     console.log('[license] verified with Supabase — grace clock reset.');
   } else if (isSupabaseConfigured()) {
     console.warn('[license] could not verify with Supabase — using cached license within grace window.');

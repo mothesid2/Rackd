@@ -21,6 +21,23 @@ export const PERMISSION_KEYS = [
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 
+/**
+ * Menu-access grants (item 3): which main-menu tiles a cashier can open, set per
+ * employee. Stored in the SAME employee_permissions table as the action
+ * PERMISSION_KEYS above (it's just a permission_key + is_granted row either
+ * way), but with OPPOSITE default semantics on purpose: action permissions
+ * default-DENY (a cashier gets nothing until granted) because they gate
+ * money-moving actions; these default-ALLOW (a cashier can open every tile
+ * unless a manager explicitly revokes one) because that's the behavior every
+ * existing install already has today — flipping the default to deny would
+ * silently lock every current cashier out of screens they already use the
+ * moment this ships. A manager revokes one by granting is_granted=false.
+ */
+export const MENU_KEYS = [
+  'access_merchandise', 'access_receipts', 'access_customer_lookup', 'access_pickups',
+] as const;
+export type MenuKey = (typeof MENU_KEYS)[number];
+
 const MAX_PIN_FAILS = 5;
 const LOCKOUT_MINUTES = 5;
 
@@ -55,6 +72,23 @@ export function userHasPermission(db: Database.Database, userId: number, key: Pe
 export function permissionsForUser(db: Database.Database, userId: number): Record<string, { granted: boolean; value: number | null }> {
   const out: Record<string, { granted: boolean; value: number | null }> = {};
   for (const k of PERMISSION_KEYS) out[k] = userHasPermission(db, userId, k);
+  return out;
+}
+
+/** Default-allow menu-tile access (item 3): true unless explicitly revoked. */
+export function menuAccessForUser(db: Database.Database, userId: number, key: MenuKey): boolean {
+  const u = db.prepare('SELECT uid, role FROM users WHERE id = ?').get(userId) as { uid: string; role: string } | undefined;
+  if (!u) return false;
+  if (u.role === 'manager' || u.role === 'admin') return true;
+  const p = db.prepare('SELECT is_granted FROM employee_permissions WHERE employee_uid = ? AND permission_key = ?')
+    .get(u.uid, key) as { is_granted: number } | undefined;
+  return p === undefined ? true : !!p.is_granted;
+}
+
+/** All effective menu grants for a user (for the renderer to gate its tiles). */
+export function menuAccessForUserAll(db: Database.Database, userId: number): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const k of MENU_KEYS) out[k] = menuAccessForUser(db, userId, k);
   return out;
 }
 

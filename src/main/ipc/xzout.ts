@@ -42,6 +42,14 @@ interface FullReport {
   top_products: { name: string; qty: number; revenue: number }[];
   // Hourly breakdown
   by_hour: { hour: number; label: string; count: number; revenue: number }[];
+  // Tip pool (batch 5, item 7 + item 9: shows up in X/Z reporting)
+  tip_pool: TipPool;
+  // Estimated card-processing cost on product sales (batch 5 legal rework,
+  // item 3) — same merchant_fee_pct as the tip deduction, since card fees eat
+  // into sale revenue too, not just tips. Informational only: does NOT alter
+  // gross_sales/net_sales above, which keep their existing established meaning.
+  card_processing_fee_pct: number;
+  card_processing_fee_amount: number;
 }
 
 function buildFullReport(db: ReturnType<typeof import('../db/schema').getDb>, shiftOpenedAt: string, cashierName: string): FullReport {
@@ -49,6 +57,7 @@ function buildFullReport(db: ReturnType<typeof import('../db/schema').getDb>, sh
   // created_at is stored as ISO 8601 (e.g. "2026-04-12T14:30:00.000-05:00"),
   // so substr(created_at,1,10) reliably gives the local date.
   const openDate = shiftOpenedAt.substring(0, 10); // 'YYYY-MM-DD'
+  const feePct = merchantFeePct(db);
 
   const summary = db.prepare(`
     SELECT
@@ -131,7 +140,172 @@ function buildFullReport(db: ReturnType<typeof import('../db/schema').getDb>, sh
     by_category: byCategory,
     top_products: topProducts,
     by_hour: byHour,
+    tip_pool: computeTipPool(db, openDate, openDate),
+    card_processing_fee_pct: feePct,
+    card_processing_fee_amount: Math.round((summary.card_total + summary.split_total) * (feePct / 100) * 100) / 100,
   };
+}
+
+/** Owner-set merchant/card-processing rate for this location (0 until configured). */
+function merchantFeePct(db: ReturnType<typeof import('../db/schema').getDb>): number {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'merchant_fee_pct'").get() as { value: string } | undefined;
+  return Math.max(0, Math.min(100, Number(row?.value) || 0));
+}
+
+interface TipPoolShare { employee_uid: string; name: string; role: string; hours: number; share: number }
+interface TipPool {
+  total_tips: number;
+  card_tip_total: number;
+  merchant_fee_pct: number;
+  deduction_amount: number;
+  pool_amount: number;
+  total_hours: number;
+  pooled: boolean;
+  skip_reason: string | null;
+  by_employee: TipPoolShare[];
+}
+
+/** Roles that can NEVER receive a tip-pool distribution — FLSA 2018 amendment,
+ * 29 U.S.C. §203(m)(2)(B): employers/managers/supervisors are excluded from
+ * tip pools entirely, not just from taking a cut. Written as an explicit
+ * denylist (not "role === 'cashier'") so a future non-management tipped role
+ * is eligible by default rather than silently excluded. */
+const MANAGEMENT_ROLES = new Set(['admin', 'manager']);
+
+/** Split `poolCents` proportional to each entry's weight, largest-remainder
+ * method so the parts always sum to exactly poolCents (money-safe rounding). */
+function allocateCents<T extends { weight: number }>(entries: T[], poolCents: number): (T & { cents: number })[] {
+  const totalWeight = entries.reduce((s, e) => s + e.weight, 0);
+  if (totalWeight <= 0 || poolCents <= 0) return entries.map((e) => ({ ...e, cents: 0 }));
+  let allocated = 0;
+  const raw = entries.map((e) => {
+    const exact = poolCents * (e.weight / totalWeight);
+    const cents = Math.floor(exact);
+    allocated += cents;
+    return { ...e, cents, remainder: exact - cents };
+  });
+  let leftover = poolCents - allocated;
+  raw.sort((a, b) => b.remainder - a.remainder);
+  for (let i = 0; i < raw.length && leftover > 0; i++, leftover--) raw[i].cents += 1;
+  return raw;
+}
+
+/**
+ * Tip pool for a date range (batch 5, rebuilt to the user's legal spec after
+ * their own research — see their instructions for the full citations):
+ *
+ *  - Deduction is the ACTUAL card-processing cost (location.merchant_fee_pct,
+ *    owner-set in the Owner Console, synced down — never a guessed/flat %),
+ *    applied only to the CARD-tendered portion of tips (cash tips carry no
+ *    processing cost). NOT hardcoded.
+ *  - Only role='cashier' employees are eligible to receive a share, and only
+ *    their hours count toward the weighting — admin/manager are excluded from
+ *    the calculation entirely (29 U.S.C. §203(m)(2)(B)), not merely from the
+ *    fee cut.
+ *  - Sole-service exception (29 CFR §531.52): if NO eligible (cashier) hours
+ *    were logged in the range, pooling is skipped entirely — tips post
+ *    directly to whoever rang each sale (by_employee reflects DIRECT
+ *    per-transaction totals here, not a pooled split), with no deduction
+ *    applied. This also correctly covers "multiple managers, no cashiers":
+ *    each manager's own directly-rung tips stay individual, never pooled
+ *    with each other.
+ */
+export function computeTipPool(db: ReturnType<typeof import('../db/schema').getDb>, startDate: string, endDate: string): TipPool {
+  const tipRow = db.prepare(
+    `SELECT COALESCE(SUM(tip_amount), 0) AS total,
+            COALESCE(SUM(CASE WHEN payment_method IN ('card','split') THEN tip_amount ELSE 0 END), 0) AS card_total
+     FROM transactions WHERE substr(created_at, 1, 10) BETWEEN ? AND ? AND payment_status = 'completed'`
+  ).get(startDate, endDate) as { total: number; card_total: number };
+  const totalTips = Math.round((tipRow.total || 0) * 100) / 100;
+  const cardTipTotal = Math.round((tipRow.card_total || 0) * 100) / 100;
+
+  const feePct = merchantFeePct(db);
+
+  // Role lookup — the whole point of this rebuild is that this can never be
+  // skipped or bypassed for a given employee_uid.
+  const roleByUid = new Map<string, string>();
+  for (const u of db.prepare('SELECT uid, role FROM users WHERE uid IS NOT NULL').all() as { uid: string; role: string }[]) {
+    roleByUid.set(u.uid, u.role);
+  }
+
+  const punches = db.prepare(
+    `SELECT employee_uid, employee_name, clock_in, clock_out FROM time_clock
+     WHERE substr(clock_in, 1, 10) BETWEEN ? AND ?`
+  ).all(startDate, endDate) as { employee_uid: string; employee_name: string | null; clock_in: string; clock_out: string | null }[];
+
+  const nowMs = Date.now();
+  const eligibleHours = new Map<string, { name: string; hours: number }>();
+  for (const p of punches) {
+    const role = roleByUid.get(p.employee_uid);
+    if (!role || MANAGEMENT_ROLES.has(role)) continue; // never counted toward the pool, at all
+    const inMs = new Date(p.clock_in).getTime();
+    const outMs = p.clock_out ? new Date(p.clock_out).getTime() : nowMs;
+    const hrs = Math.max(0, (outMs - inMs) / 3_600_000);
+    const cur = eligibleHours.get(p.employee_uid) || { name: p.employee_name || 'Employee', hours: 0 };
+    cur.hours += hrs;
+    eligibleHours.set(p.employee_uid, cur);
+  }
+  const totalHours = [...eligibleHours.values()].reduce((s, e) => s + e.hours, 0);
+
+  if (totalHours <= 0) {
+    // Sole-service exception: nobody eligible worked (or only management did —
+    // including the "multiple managers, no cashiers" case). Do not pool. Tips
+    // stay exactly where they were rung, no fee deducted.
+    const direct = db.prepare(
+      `SELECT t.cashier_id AS uid, COALESCE(SUM(t.tip_amount), 0) AS total
+       FROM transactions t
+       WHERE substr(t.created_at, 1, 10) BETWEEN ? AND ? AND t.payment_status = 'completed' AND t.tip_amount > 0
+       GROUP BY t.cashier_id`
+    ).all(startDate, endDate) as { uid: number | null; total: number }[];
+    const byEmployee: TipPoolShare[] = [];
+    for (const d of direct) {
+      if (d.uid == null) continue;
+      const u = db.prepare('SELECT uid, name, username, role FROM users WHERE id = ?').get(d.uid) as { uid: string | null; name: string | null; username: string | null; role: string } | undefined;
+      if (!u) continue;
+      byEmployee.push({ employee_uid: u.uid || String(d.uid), name: u.name || u.username || 'Employee', role: u.role, hours: 0, share: Math.round(d.total * 100) / 100 });
+    }
+    byEmployee.sort((a, b) => b.share - a.share);
+    return {
+      total_tips: totalTips, card_tip_total: cardTipTotal, merchant_fee_pct: feePct,
+      deduction_amount: 0, pool_amount: 0, total_hours: 0, pooled: false,
+      skip_reason: 'No eligible (non-management) employee clocked in — tips post directly to whoever rang the sale, not pooled (29 CFR §531.52).',
+      by_employee: byEmployee,
+    };
+  }
+
+  const deductionAmount = Math.round(cardTipTotal * (feePct / 100) * 100) / 100;
+  const poolAmount = Math.round((totalTips - deductionAmount) * 100) / 100;
+
+  const shares = allocateCents(
+    [...eligibleHours.entries()].map(([uid, e]) => ({ uid, name: e.name, weight: e.hours, hours: e.hours })),
+    Math.round(poolAmount * 100)
+  );
+  const byEmployee: TipPoolShare[] = shares
+    .map((s) => ({ employee_uid: s.uid, name: s.name, role: 'cashier', hours: Math.round(s.hours * 100) / 100, share: s.cents / 100 }))
+    .sort((a, b) => b.share - a.share);
+
+  return {
+    total_tips: totalTips, card_tip_total: cardTipTotal, merchant_fee_pct: feePct,
+    deduction_amount: deductionAmount, pool_amount: poolAmount,
+    total_hours: Math.round(totalHours * 100) / 100, pooled: true, skip_reason: null,
+    by_employee: byEmployee,
+  };
+}
+
+/** Persist a computed tip pool to the audit trail (batch 5) — called once per
+ * business day at Z-report close, not on every X-report preview. Keeps the
+ * fee rate and deduction actually used on record, not just the final shares. */
+export function saveTipPoolLedger(db: ReturnType<typeof import('../db/schema').getDb>, reportDate: string, zReportId: number | null, tp: TipPool): void {
+  const generatedAt = nowCT();
+  const res = db.prepare(
+    `INSERT INTO tip_pool_ledger (report_date, z_report_id, total_tips, card_tip_total, merchant_fee_pct, deduction_amount, pool_amount, pooled, skip_reason, total_hours, generated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(reportDate, zReportId, tp.total_tips, tp.card_tip_total, tp.merchant_fee_pct, tp.deduction_amount, tp.pool_amount, tp.pooled ? 1 : 0, tp.skip_reason, tp.total_hours, generatedAt);
+  const ledgerId = Number(res.lastInsertRowid);
+  const insertShare = db.prepare(
+    `INSERT INTO tip_pool_shares (ledger_id, employee_uid, employee_name, role, hours, share_amount) VALUES (?, ?, ?, ?, ?, ?)`
+  );
+  for (const e of tp.by_employee) insertShare.run(ledgerId, e.employee_uid, e.name, e.role, e.hours, e.share);
 }
 
 function normalizeBrand(cardType: string | null): string {
@@ -148,6 +322,7 @@ function normalizeBrand(cardType: string | null): string {
 // monthly / MTD / YTD audit report. Breaks payments out by card brand + cash,
 // and sales out by department (product category).
 function buildPeriodReport(db: ReturnType<typeof import('../db/schema').getDb>, startDate: string, endDate: string) {
+  const feePct = merchantFeePct(db);
   const summary = db.prepare(`
     SELECT
       COALESCE(SUM(subtotal + discount_amount), 0) AS gross,
@@ -239,6 +414,9 @@ function buildPeriodReport(db: ReturnType<typeof import('../db/schema').getDb>, 
     by_category: byCategory,
     top_products: topProducts,
     refunds: { count: refundRow.count, total: refundRow.total },
+    tip_pool: computeTipPool(db, startDate, endDate),
+    card_processing_fee_pct: feePct,
+    card_processing_fee_amount: Math.round(cardTotal * (feePct / 100) * 100) / 100,
   };
 }
 
@@ -387,7 +565,7 @@ export function registerXZOutHandlers(): void {
       closeDay(db);
 
       // Save Z report to database
-      db.prepare(`
+      const zRes = db.prepare(`
         INSERT INTO z_reports
           (generated_at, generated_by, shift_opened_at, cash_total, card_total, split_total,
            sale_count, tax_total, discount_total, gross_sales, net_sales, report_json)
@@ -406,6 +584,12 @@ export function registerXZOutHandlers(): void {
         report.net_sales,
         JSON.stringify(report)
       );
+
+      // Tip-pool audit trail (batch 5): one ledger row per business day, at
+      // close — the durable record of the fee rate + deduction actually used,
+      // not just the report_json snapshot above.
+      try { saveTipPoolLedger(db, report.shift_opened_at.substring(0, 10), Number(zRes.lastInsertRowid), report.tip_pool); }
+      catch (e) { console.error('[tip pool] failed to save audit ledger:', e); }
 
       return { success: true, report };
     } catch (err) {

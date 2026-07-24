@@ -37,6 +37,14 @@ function genKey(): string {
   return `RACKD-${segment(4)}-${segment(4)}-${segment(4)}`;
 }
 
+// 4-digit PIN for a cashier's register sign-in (duplicates allowed — the
+// register picks the person by name first, then the PIN — mirrors genUniquePin
+// in src/main/ipc/permissions.ts).
+function genPin4(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(4));
+  return Array.from(bytes, (b) => String(b % 10)).join('');
+}
+
 const UPDATE_BUCKET = 'app-updates';
 // Electron apps that publish via the update bucket. Layout: <app>/<channel>/…
 const PUBLISHABLE_APPS = ['pos', 'manager', 'owner'] as const;
@@ -75,7 +83,15 @@ Deno.serve(async (req: Request) => {
       case 'list': {
         const { data: licenses, error } = await admin
           .from('licenses')
-          .select('id, name, license_key, tenant_id, location_id, kind, active, tier, features, max_registers, expires_at, display_config, created_at')
+          // NOTE: do NOT select twilio_account_sid/twilio_from_number here — this
+          // is the core business-list fetch every Owner Console screen depends on,
+          // and those columns only exist once migration 051 is applied (deploy-051.sql,
+          // still pending as of 2026-07-24). Selecting them before the migration runs
+          // 500s this ENTIRE action, which is why the Owner Console showed no
+          // businesses at all — a real incident, root-caused live 2026-07-24. The
+          // Twilio section's Save action can 42703 safely (contained, one field) but
+          // the list must never depend on a column that might not exist yet.
+          .select('id, name, license_key, tenant_id, location_id, kind, active, tier, features, max_registers, expires_at, display_config, contact_email, contact_phone, created_at')
           .order('created_at', { ascending: false });
         if (error) throw error;
         const { data: regs } = await admin.from('license_registrations').select('license_key');
@@ -199,12 +215,14 @@ Deno.serve(async (req: Request) => {
       }
 
       // List a business's locations with seat usage (owner console location manager).
+      // Full detail (address/zip/tax/contact) so the "Business" view (item 16) can
+      // show + edit everything about a location in one place.
       case 'locations': {
         const tenantId = (body.tenant_id as string)?.trim();
         if (!tenantId) return json({ error: 'tenant_id required' }, 400);
         const { data: locs, error } = await admin
           .from('locations')
-          .select('id, name, is_storefront_enabled, created_at')
+          .select('id, name, is_storefront_enabled, address, zip, tax_rate, phone, email, logo_url, show_logo, created_at')
           .eq('tenant_id', tenantId)
           .order('name', { ascending: true });
         if (error) throw error;
@@ -227,6 +245,12 @@ Deno.serve(async (req: Request) => {
           .select('id, name')
           .single();
         if (error) throw error;
+        // Address (item 10) can be supplied right away at initial shop setup.
+        if (body.address || body.zip) {
+          await admin.rpc('set_location_address', {
+            p_location: data.id, p_address: (body.address as string) || null, p_zip: (body.zip as string) || null,
+          });
+        }
         return json({ location: data });
       }
 
@@ -242,6 +266,145 @@ Deno.serve(async (req: Request) => {
           .single();
         if (error) throw error;
         return json({ location: data });
+      }
+
+      // Owner-only: set (or correct) a location's address — tax_rate is recomputed
+      // from the ZIP in the same call (item 10 + item 11). Flows down to the POS
+      // and the Manager Portal automatically from here; neither can edit it.
+      case 'setLocationAddress': {
+        const locationId = (body.location_id as string)?.trim();
+        if (!locationId) return json({ error: 'location_id required' }, 400);
+        const { data, error } = await admin.rpc('set_location_address', {
+          p_location: locationId, p_address: (body.address as string) ?? null, p_zip: (body.zip as string) ?? null,
+        });
+        if (error) throw error;
+        return json({ location: data });
+      }
+
+      // Owner-only: real merchant/card-processing rate for this location
+      // (batch 5 legal rework) — used both to compute the actual tip-pool
+      // deduction and an estimated processing-cost line on revenue reports.
+      // Isolated on purpose: never added to the `list`/`locations` SELECTs
+      // that every other screen depends on, so a save here can 42703 safely
+      // (contained) before migration 052 is applied, instead of repeating the
+      // 2026-07-24 outage where a premature column reference broke the whole
+      // business list.
+      case 'setLocationMerchantFee': {
+        const locationId = (body.location_id as string)?.trim();
+        if (!locationId) return json({ error: 'location_id required' }, 400);
+        const pct = Math.max(0, Math.min(100, Number(body.merchant_fee_pct)));
+        if (!Number.isFinite(pct)) return json({ error: 'merchant_fee_pct must be a number' }, 400);
+        const { data, error } = await admin
+          .from('locations').update({ merchant_fee_pct: pct }).eq('id', locationId)
+          .select('id, merchant_fee_pct').single();
+        if (error) throw error;
+        return json({ location: data });
+      }
+
+      // Owner-only: store-level contact info (item 17).
+      case 'setLocationContact': {
+        const locationId = (body.location_id as string)?.trim();
+        if (!locationId) return json({ error: 'location_id required' }, 400);
+        const { data, error } = await admin.rpc('set_location_contact', {
+          p_location: locationId, p_phone: (body.phone as string) ?? null, p_email: (body.email as string) ?? null,
+        });
+        if (error) throw error;
+        return json({ location: data });
+      }
+
+      // Owner-only: business/owner-level contact info, stored on the business's
+      // own license row (kind='business') (item 17).
+      case 'setBusinessContact': {
+        const tenantId = (body.tenant_id as string)?.trim();
+        if (!tenantId) return json({ error: 'tenant_id required' }, 400);
+        const patch: Record<string, unknown> = {};
+        if (body.contact_email !== undefined) patch.contact_email = body.contact_email;
+        if (body.contact_phone !== undefined) patch.contact_phone = body.contact_phone;
+        const { data, error } = await admin
+          .from('licenses').update(patch).eq('tenant_id', tenantId).eq('kind', 'business')
+          .select('tenant_id, contact_email, contact_phone').maybeSingle();
+        if (error) throw error;
+        return json({ business: data });
+      }
+
+      // Owner-only: Twilio SMS config, moved out of POS Settings entirely — same
+      // owner-only treatment as address/tax rate and contact info above.
+      case 'setTwilioConfig': {
+        const tenantId = (body.tenant_id as string)?.trim();
+        if (!tenantId) return json({ error: 'tenant_id required' }, 400);
+        const patch: Record<string, unknown> = {};
+        if (body.twilio_account_sid !== undefined) patch.twilio_account_sid = body.twilio_account_sid || null;
+        if (body.twilio_auth_token !== undefined) patch.twilio_auth_token = body.twilio_auth_token || null;
+        if (body.twilio_from_number !== undefined) patch.twilio_from_number = body.twilio_from_number || null;
+        const { data, error } = await admin
+          .from('licenses').update(patch).eq('tenant_id', tenantId).eq('kind', 'business')
+          .select('tenant_id, twilio_account_sid, twilio_from_number').maybeSingle();
+        if (error) throw error;
+        return json({ business: data });
+      }
+
+      // Owner-only: edit a business's enabled feature flags (item 17).
+      case 'setFeatures': {
+        const tenantId = (body.tenant_id as string)?.trim();
+        const features = Array.isArray(body.features) ? body.features : null;
+        if (!tenantId || !features) return json({ error: 'tenant_id + features[] required' }, 400);
+        const { data, error } = await admin
+          .from('licenses').update({ features }).eq('tenant_id', tenantId).eq('kind', 'business')
+          .select('tenant_id, features').maybeSingle();
+        if (error) throw error;
+        return json({ business: data });
+      }
+
+      // Owner-only: create a manager account directly (bypasses the POS's 60s
+      // sync entirely, so it's usable in the Manager Portal immediately — a second,
+      // more reliable provisioning path alongside POS-side creation, item 1 + 17).
+      // Owner-only: create a staff account directly (bypasses the POS's 60s sync
+      // entirely, so it's usable immediately — a second, more reliable
+      // provisioning path alongside POS-side creation, item 1 + item 11). Covers
+      // both roles: a manager (username+password, for the Manager Portal + POS
+      // start-of-day) and a cashier (name+PIN, for register sign-in only — no
+      // portal access). 'createManager' kept as an alias for the pre-existing
+      // manager-only call sites.
+      case 'createManager':
+      case 'createStaffUser': {
+        const tenantId = (body.tenant_id as string)?.trim();
+        const isCashier = (body.role as string) === 'cashier';
+        const name = (body.name as string)?.trim();
+        if (!tenantId) return json({ error: 'tenant_id required' }, 400);
+        const uid = crypto.randomUUID();
+
+        if (isCashier) {
+          if (!name) return json({ error: 'name required' }, 400);
+          const pin = genPin4();
+          const pinHash = bcrypt.hashSync(pin, 10);
+          const { error } = await admin.from('employees_cloud').insert({
+            uid, tenant_id: tenantId, location_id: null, username: null, name, role: 'cashier',
+            pin_hash: pinHash, is_active: true, must_change_password: false, must_change_pin: true,
+          });
+          if (error) throw error;
+          await admin.from('owner_audit_log').insert({
+            tenant_id: tenantId, action: 'create_cashier', target_uid: uid, target_label: name, detail: {},
+          });
+          return json({ uid, name, role: 'cashier', pin });
+        }
+
+        const username = (body.username as string)?.trim();
+        const managerName = name || username;
+        if (!username) return json({ error: 'tenant_id + username required' }, 400);
+        const { data: existing } = await admin.from('employees_cloud')
+          .select('uid').eq('tenant_id', tenantId).eq('username', username).maybeSingle();
+        if (existing) return json({ error: 'That username is already taken on this business.' }, 400);
+        const password = genPassword();
+        const passwordHash = bcrypt.hashSync(password, 10);
+        const { error } = await admin.from('employees_cloud').insert({
+          uid, tenant_id: tenantId, location_id: null, username, name: managerName, role: 'manager',
+          password_hash: passwordHash, is_active: true, must_change_password: true, must_change_pin: false,
+        });
+        if (error) throw error;
+        await admin.from('owner_audit_log').insert({
+          tenant_id: tenantId, action: 'create_manager', target_uid: uid, target_label: username, detail: {},
+        });
+        return json({ uid, username, name: managerName, role: 'manager', password });
       }
 
       // List a business's kiosks (registered machines) with their location + any
@@ -556,8 +719,13 @@ Deno.serve(async (req: Request) => {
         return json({ ok: true });
       }
 
-      // Reset ANY employee's password to a new temporary one (shown once), forcing
-      // a change on next login. Never silent — always audited.
+      // Reset a MANAGER's password to a new temporary one (shown once), forcing a
+      // change on next login. Never silent — always audited. Cashiers are
+      // PIN-only, full stop — rejected here (use resetStaffPin instead) so this
+      // can never hand one a password_hash/must_change_password, which is
+      // exactly the shape of the bug that forced a credential-change prompt on
+      // every single cashier login instead of just the first (see the POS's
+      // auth.ts and sync.ts for the full story).
       case 'resetStaffPassword': {
         const tenantId = body.tenant_id as string;
         const employeeUid = body.employee_uid as string;
@@ -565,13 +733,11 @@ Deno.serve(async (req: Request) => {
         const { data: emp } = await admin.from('employees_cloud')
           .select('username, name, role').eq('tenant_id', tenantId).eq('uid', employeeUid).maybeSingle();
         if (!emp) return json({ error: 'employee not found' }, 404);
+        if (emp.role === 'cashier') return json({ error: 'Cashiers sign in with a PIN only — reset their PIN instead.' }, 400);
         const temp = genPassword();
         const hash = bcrypt.hashSync(temp, 10);
         const { error } = await admin.from('employees_cloud')
-          // Full credential reset: force a new password AND a new PIN on next login.
-          // The POS daily login is PIN-based, so resetting the password alone would
-          // leave the user unable to sign in with their (unchanged) PIN.
-          .update({ password_hash: hash, must_change_password: true, must_change_pin: true, updated_at: new Date().toISOString() })
+          .update({ password_hash: hash, must_change_password: true, updated_at: new Date().toISOString() })
           .eq('tenant_id', tenantId).eq('uid', employeeUid);
         if (error) throw error;
         await admin.from('owner_audit_log').insert({
@@ -579,6 +745,30 @@ Deno.serve(async (req: Request) => {
           target_label: emp.username || emp.name, detail: { role: emp.role },
         });
         return json({ ok: true, username: emp.username, temp_password: temp });
+      }
+
+      // Reset a CASHIER's PIN to a new temporary one (shown once), forcing a
+      // change on next login. The manager-portal/owner-console equivalent of the
+      // POS's own PIN reset — same must_change_pin-only shape, no password field.
+      case 'resetStaffPin': {
+        const tenantId = body.tenant_id as string;
+        const employeeUid = body.employee_uid as string;
+        if (!tenantId || !employeeUid) return json({ error: 'tenant_id + employee_uid required' }, 400);
+        const { data: emp } = await admin.from('employees_cloud')
+          .select('username, name, role').eq('tenant_id', tenantId).eq('uid', employeeUid).maybeSingle();
+        if (!emp) return json({ error: 'employee not found' }, 404);
+        if (emp.role !== 'cashier') return json({ error: 'Only cashiers use a PIN — reset their password instead.' }, 400);
+        const temp = genPin4();
+        const hash = bcrypt.hashSync(temp, 10);
+        const { error } = await admin.from('employees_cloud')
+          .update({ pin_hash: hash, must_change_pin: true, updated_at: new Date().toISOString() })
+          .eq('tenant_id', tenantId).eq('uid', employeeUid);
+        if (error) throw error;
+        await admin.from('owner_audit_log').insert({
+          tenant_id: tenantId, action: 'reset_pin', target_uid: employeeUid,
+          target_label: emp.username || emp.name, detail: { role: emp.role },
+        });
+        return json({ ok: true, name: emp.name, temp_pin: temp });
       }
 
       // Per-location POS revenue for the "Revenue" tab.

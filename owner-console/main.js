@@ -1,17 +1,17 @@
 // Rackd Owner Console — Electron main process.
 //
 // A PRIVATE cockpit for the platform owner (never shipped to clients). It holds
-// the master ADMIN_SECRET (the "owner key") entered once at activation, gated
-// behind a local username/password. Everything it does — provisioning businesses
-// & locations, listing/resetting kiosks, viewing online orders, and PUBLISHING
-// app updates (staging → production) — goes through the service-role `admin` Edge
-// Function, authorized by that secret. No client build ever contains it.
+// the master ADMIN_SECRET (the "owner key") entered once at activation — no
+// login gate on top of it (item 5): once activated, the console opens straight
+// in on every launch. Everything it does — provisioning businesses & locations,
+// listing/resetting kiosks, viewing online orders, and PUBLISHING app updates
+// (staging → production) — goes through the service-role `admin` Edge Function,
+// authorized by that secret. No client build ever contains it.
 
 const { app, BrowserWindow, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
-const crypto = require('crypto');
 const cfg = require('./config');
 
 // Auto-update from the per-app channel (app-updates/owner/<channel>). Ship a build
@@ -53,8 +53,8 @@ function attachDemoBadge(win) {
 
 // ── local credential store (OS userData, never in the build) ─────────────────
 const STORE_PATH = () => path.join(app.getPath('userData'), 'owner.json');
-let store = { admin_secret: null, owner_user: null, owner_pass: null }; // owner_pass = "salt:hash"
-let unlocked = false; // set true after a successful login/activation this session
+let store = { admin_secret: null };
+let unlocked = false; // set true once activated (no separate login step anymore)
 
 function loadStore() {
   try { store = { ...store, ...JSON.parse(fs.readFileSync(STORE_PATH(), 'utf8')) }; } catch { /* first run */ }
@@ -62,16 +62,10 @@ function loadStore() {
 function saveStore() {
   try { fs.writeFileSync(STORE_PATH(), JSON.stringify(store), { mode: 0o600 }); } catch (e) { console.error('save failed', e); }
 }
-function hashPw(pw, salt = crypto.randomBytes(16).toString('hex')) {
-  return `${salt}:${crypto.scryptSync(String(pw), salt, 32).toString('hex')}`;
-}
-function verifyPw(pw, stored) {
-  const [salt, h] = String(stored || '').split(':');
-  if (!salt || !h) return false;
-  const test = crypto.scryptSync(String(pw), salt, 32).toString('hex');
-  try { return crypto.timingSafeEqual(Buffer.from(h, 'hex'), Buffer.from(test, 'hex')); } catch { return false; }
-}
-const isActivated = () => !!store.admin_secret && !!store.owner_pass;
+// No login gate (explicit request — the owner key from first-run activation is
+// the only thing needed to use this console; there's no separate username/
+// password check on top of it anymore).
+const isActivated = () => !!store.admin_secret;
 
 // ── thin Supabase caller ─────────────────────────────────────────────────────
 async function sb(pathname, { method = 'GET', headers = {}, body } = {}) {
@@ -101,51 +95,61 @@ function createWindow() {
     title: 'Rackd — Owner Console',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
-  win.loadFile(path.join(__dirname, 'renderer', 'login.html'));
+  // No login gate (explicit request): once activated, go straight to the
+  // console on every launch — activation only appears on a genuinely fresh
+  // install with no owner key stored yet.
+  win.loadFile(path.join(__dirname, 'renderer', isActivated() ? 'console.html' : 'login.html'));
   attachDemoBadge(win);
   return win;
 }
-app.whenReady().then(() => { loadStore(); createWindow(); startUpdater(); app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); }); });
+app.whenReady().then(() => {
+  loadStore();
+  if (isActivated()) unlocked = true;
+  createWindow(); startUpdater();
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+});
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
 // ── auth ─────────────────────────────────────────────────────────────────────
 ipcMain.handle('owner:status', () => ({ success: true, activated: isActivated(), unlocked }));
 
 // First-run activation: verify the owner key (ADMIN_SECRET) actually works, then
-// store it behind a username/password of the owner's choosing.
-ipcMain.handle('owner:activate', async (_e, { secret, username, password } = {}) => {
+// store it. No username/password on top of it — the key alone is what this
+// console runs on from here on (item 5: no login gate to open it).
+ipcMain.handle('owner:activate', async (_e, { secret } = {}) => {
   try {
     const s = String(secret || '').trim();
     if (!s) return { success: false, error: 'Enter your owner key.' };
-    if (!username || !password || String(password).length < 6) return { success: false, error: 'Choose a username and a password (6+ characters).' };
     // Prove the secret is valid by calling a harmless admin action.
     try { await sb('/functions/v1/admin', { method: 'POST', body: { admin_secret: s, action: 'list' } }); }
     catch (e) { return { success: false, error: /unauthorized|401/i.test(String(e)) ? 'That owner key was rejected.' : `Could not verify: ${String(e.message || e)}` }; }
     store.admin_secret = s;
-    store.owner_user = String(username).trim();
-    store.owner_pass = hashPw(password);
     saveStore();
     unlocked = true;
     return { success: true };
   } catch (e) { return { success: false, error: String(e.message || e) }; }
 });
 
-ipcMain.handle('owner:login', (_e, { username, password } = {}) => {
-  if (!isActivated()) return { success: false, error: 'Not activated yet.' };
-  if (String(username || '').trim() !== store.owner_user || !verifyPw(password, store.owner_pass)) {
-    return { success: false, error: 'Wrong username or password.' };
-  }
-  unlocked = true;
-  return { success: true };
-});
-ipcMain.handle('owner:logout', () => { unlocked = false; return { success: true }; });
-
 // ── provisioning ──────────────────────────────────────────────────────────────
 ipcMain.handle('owner:businesses', async () => wrap(() => callAdmin('list')));
 ipcMain.handle('owner:createBusiness', async (_e, payload) => wrap(() => callAdmin('createBusiness', payload || {})));
 ipcMain.handle('owner:locations', async (_e, tenantId) => wrap(() => callAdmin('locations', { tenant_id: tenantId })));
-ipcMain.handle('owner:addLocation', async (_e, tenantId, name) => wrap(() => callAdmin('addLocation', { tenant_id: tenantId, name })));
+ipcMain.handle('owner:addLocation', async (_e, tenantId, name, address, zip) => wrap(() => callAdmin('addLocation', { tenant_id: tenantId, name, address, zip })));
 ipcMain.handle('owner:renameLocation', async (_e, locationId, name) => wrap(() => callAdmin('renameLocation', { location_id: locationId, name })));
+
+// ── full business control (items 16 & 17: address/tax, contact, features, ads, managers) ──
+ipcMain.handle('owner:setLocationAddress', async (_e, locationId, address, zip) => wrap(() => callAdmin('setLocationAddress', { location_id: locationId, address, zip })));
+ipcMain.handle('owner:setLocationMerchantFee', async (_e, locationId, pct) => wrap(() => callAdmin('setLocationMerchantFee', { location_id: locationId, merchant_fee_pct: pct })));
+ipcMain.handle('owner:setLocationContact', async (_e, locationId, phone, email) => wrap(() => callAdmin('setLocationContact', { location_id: locationId, phone, email })));
+ipcMain.handle('owner:setBusinessContact', async (_e, tenantId, contact_email, contact_phone) => wrap(() => callAdmin('setBusinessContact', { tenant_id: tenantId, contact_email, contact_phone })));
+ipcMain.handle('owner:setFeatures', async (_e, tenantId, features) => wrap(() => callAdmin('setFeatures', { tenant_id: tenantId, features })));
+ipcMain.handle('owner:setTwilioConfig', async (_e, tenantId, cfg) => wrap(() => callAdmin('setTwilioConfig', { tenant_id: tenantId, ...cfg })));
+// Kiosk seat cap (item 1) — business-wide (licenses.max_registers), not
+// per-location; there's no per-location kiosk limit in the data model.
+ipcMain.handle('owner:setMaxRegisters', async (_e, licenseKey, maxRegisters) => wrap(() => callAdmin('update', { license_key: licenseKey, max_registers: maxRegisters })));
+ipcMain.handle('owner:setAds', async (_e, licenseKey, displayConfig) => wrap(() => callAdmin('setAds', { license_key: licenseKey, display_config: displayConfig })));
+ipcMain.handle('owner:createManager', async (_e, tenantId, username, name) => wrap(() => callAdmin('createManager', { tenant_id: tenantId, username, name })));
+ipcMain.handle('owner:createStaffUser', async (_e, tenantId, payload) => wrap(() => callAdmin('createStaffUser', { tenant_id: tenantId, ...(payload || {}) })));
 
 // ── kiosks (remote reset, item 5) ──────────────────────────────────────────────
 ipcMain.handle('owner:kiosks', async (_e, tenantId) => wrap(() => callAdmin('kiosks', { tenant_id: tenantId })));
@@ -159,6 +163,7 @@ ipcMain.handle('owner:onlineOrders', async (_e, tenantId) => wrap(() => callAdmi
 ipcMain.handle('owner:staff', async (_e, tenantId) => wrap(() => callAdmin('staff', { tenant_id: tenantId })));
 ipcMain.handle('owner:setStaffPermission', async (_e, payload) => wrap(() => callAdmin('setStaffPermission', payload || {})));
 ipcMain.handle('owner:resetStaffPassword', async (_e, tenantId, employeeUid) => wrap(() => callAdmin('resetStaffPassword', { tenant_id: tenantId, employee_uid: employeeUid })));
+ipcMain.handle('owner:resetStaffPin', async (_e, tenantId, employeeUid) => wrap(() => callAdmin('resetStaffPin', { tenant_id: tenantId, employee_uid: employeeUid })));
 ipcMain.handle('owner:revenueByLocation', async (_e, tenantId) => wrap(() => callAdmin('revenueByLocation', { tenant_id: tenantId })));
 ipcMain.handle('owner:auditLog', async (_e, tenantId) => wrap(() => callAdmin('auditLog', { tenant_id: tenantId })));
 

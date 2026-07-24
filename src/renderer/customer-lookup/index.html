@@ -426,6 +426,7 @@
     let selectedCustomerDetail = null;
 
     document.addEventListener('DOMContentLoaded', async () => {
+      if (!(await enforceMenuAccess('access_customer_lookup'))) return;
       loadCustomers();
 
       // Check manager access for SMS blast

@@ -17,33 +17,14 @@
         </div>
       </div>
 
-      <!-- First-run activation -->
-      <div id="activatePane" style="display:none">
+      <!-- First-run activation only — no login gate after this (item 5). -->
+      <div id="activatePane">
         <h1>Set up this console</h1>
-        <div class="sub">Enter your owner key once. It's stored on this machine behind a username &amp; password you choose — you'll sign in with those from now on.</div>
+        <div class="sub">Enter your owner key once. From then on this console opens straight in — no sign-in required.</div>
         <label for="secret">Owner key</label>
-        <input id="secret" placeholder="Owner / admin key" autocomplete="off" spellcheck="false" />
-        <div style="height:12px"></div>
-        <label for="aUser">Choose a username</label>
-        <input id="aUser" autocomplete="off" spellcheck="false" />
-        <div style="height:12px"></div>
-        <label for="aPass">Choose a password</label>
-        <input id="aPass" type="password" autocomplete="new-password" placeholder="At least 6 characters" />
+        <input id="secret" placeholder="Owner / admin key" autocomplete="off" spellcheck="false" autofocus />
         <button class="btn btn-accent" id="activateBtn" style="width:100%;margin-top:16px">Activate console</button>
         <div class="err" id="aErr"></div>
-      </div>
-
-      <!-- Returning sign-in -->
-      <div id="loginPane" style="display:none">
-        <h1>Sign in</h1>
-        <div class="sub">Welcome back. Sign in to manage businesses, kiosks, online orders, and publishing.</div>
-        <label for="lUser">Username</label>
-        <input id="lUser" autocomplete="username" spellcheck="false" autofocus />
-        <div style="height:12px"></div>
-        <label for="lPass">Password</label>
-        <input id="lPass" type="password" autocomplete="current-password" />
-        <button class="btn btn-accent" id="loginBtn" style="width:100%;margin-top:16px">Sign in</button>
-        <div class="err" id="lErr"></div>
       </div>
     </div>
   </div>
@@ -52,29 +33,21 @@
     const $ = (id) => document.getElementById(id);
     async function init() {
       const s = await window.owner.status();
-      if (s.activated) { $('loginPane').style.display = 'block'; $('lUser').focus(); }
-      else { $('activatePane').style.display = 'block'; $('secret').focus(); }
+      // Already activated — this page shouldn't normally be reached (main.js
+      // loads console.html directly), but if it is, skip straight through.
+      if (s.activated) { window.location.href = 'console.html'; return; }
+      $('secret').focus();
     }
     async function activate() {
       $('aErr').style.display = 'none';
       const btn = $('activateBtn'); btn.disabled = true; btn.textContent = 'Verifying…';
-      const r = await window.owner.activate({ secret: $('secret').value, username: $('aUser').value, password: $('aPass').value });
+      const r = await window.owner.activate({ secret: $('secret').value });
       btn.disabled = false; btn.textContent = 'Activate console';
       if (r.success) { window.location.href = 'console.html'; return; }
       $('aErr').textContent = r.error || 'Activation failed.'; $('aErr').style.display = 'block';
     }
-    async function login() {
-      $('lErr').style.display = 'none';
-      const btn = $('loginBtn'); btn.disabled = true; btn.textContent = 'Signing in…';
-      const r = await window.owner.login({ username: $('lUser').value, password: $('lPass').value });
-      btn.disabled = false; btn.textContent = 'Sign in';
-      if (r.success) { window.location.href = 'console.html'; return; }
-      $('lErr').textContent = r.error || 'Sign-in failed.'; $('lErr').style.display = 'block';
-    }
     $('activateBtn').addEventListener('click', activate);
-    $('loginBtn').addEventListener('click', login);
-    $('aPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') activate(); });
-    $('lPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
+    $('secret').addEventListener('keydown', (e) => { if (e.key === 'Enter') activate(); });
     init();
   </script>
 </body>

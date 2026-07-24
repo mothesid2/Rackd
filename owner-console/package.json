@@ -1,13 +1,15 @@
 {
   "name": "rackd-owner-console",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "Rackd Owner Console — private cockpit: provisioning, kiosks, online orders, and publishing updates.",
   "main": "main.js",
   "author": "Rackd",
   "scripts": {
     "start": "electron .",
     "dist": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",
-    "dist:mac": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac"
+    "dist:mac": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
+    "release:staging": "npm run dist && node ../scripts/publish-update.js staging owner dist",
+    "release": "npm run dist && node ../scripts/publish-update.js production owner dist"
   },
   "dependencies": {
     "electron-updater": "^6.8.9"

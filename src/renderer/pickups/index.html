@@ -96,6 +96,9 @@
     let cancelId = null;       // order awaiting a cancel reason
 
     document.addEventListener('DOMContentLoaded', async () => {
+      if (!(await enforceMenuAccess('access_pickups'))) return;
+      await loadFeatures();
+      if (!isFeatureEnabled('web_store')) { window.api.navigate('main-menu'); return; }
       const s = await window.api.getSession();
       if (s && s.success && s.session) {
         myRole = s.session.role || null;

@@ -27,10 +27,15 @@ function fmtDateTime(str) {
   return fmtDate(str) + '  ' + fmtTime(str);
 }
 
-function nowCTString() {
-  return new Date().toLocaleString('en-US', {
-    weekday: 'short', year: 'numeric', month: 'long', day: 'numeric',
+function nowCTTimeString() {
+  return new Date().toLocaleTimeString('en-US', {
     hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: TZ
+  });
+}
+
+function nowCTDateString() {
+  return new Date().toLocaleDateString('en-US', {
+    weekday: 'short', year: 'numeric', month: 'long', day: 'numeric', timeZone: TZ
   });
 }
 
@@ -41,6 +46,7 @@ function fmtDateFull(d) {
 }
 
 // Update status bar
+let _lastStatusDateStr = null;
 async function updateStatusBar() {
   const res = await window.api.getSession();
   const session = res.session;
@@ -49,17 +55,73 @@ async function updateStatusBar() {
 
   if (leftEl) {
     leftEl.innerHTML = session
-      ? `Logged in: <span class="status-role">${capitalize(session.role)}</span> &nbsp;|&nbsp; <strong>${fmtDateFull(new Date())}</strong>`
+      ? `Logged in: <span class="status-role">${session.name || session.username}</span> &nbsp;|&nbsp; <strong>${fmtDateFull(new Date())}</strong>`
       : 'Not logged in';
   }
 
   if (rightEl) {
-    rightEl.textContent = nowCTString();
+    // Time and date are separate spans so only the ticking clock repaints each
+    // second — the date is written once and left alone until it actually changes.
+    let timeEl = rightEl.querySelector('.status-time');
+    let dateEl = rightEl.querySelector('.status-date');
+    if (!timeEl || !dateEl) {
+      rightEl.innerHTML = '<span class="status-time"></span>&nbsp;&nbsp;<span class="status-date"></span>';
+      timeEl = rightEl.querySelector('.status-time');
+      dateEl = rightEl.querySelector('.status-date');
+    }
+    timeEl.textContent = nowCTTimeString();
+    const dateStr = nowCTDateString();
+    if (dateStr !== _lastStatusDateStr) {
+      dateEl.textContent = dateStr;
+      _lastStatusDateStr = dateStr;
+    }
   }
 }
 
 function capitalize(str) {
   return str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
+}
+
+// Item 6: business-level feature flags (Owner Console → licenses.features,
+// already round-tripping to license:status — this is the first thing to
+// actually READ that array and gate UI with it; previously nothing did except
+// unused React scaffolding in src/renderer/lib/license.ts). Cached after first
+// load so callers can use it synchronously once awaited once per page.
+let _featuresCache = null;
+async function loadFeatures() {
+  if (_featuresCache) return _featuresCache;
+  try {
+    const r = await window.api.licenseStatus();
+    _featuresCache = (r.success && r.status && r.status.features) || [];
+  } catch { _featuresCache = []; }
+  return _featuresCache;
+}
+function isFeatureEnabled(feature) {
+  // An empty/unset features array means no tier has ever been curated for this
+  // business (the default for every business created before today, and still
+  // the default for a new one until an owner explicitly picks features in the
+  // Owner Console) — treat that as unrestricted rather than restricted to
+  // nothing, or every existing install loses every one of these the moment
+  // this ships. Only once a list is actually set does it become a real allowlist.
+  if (!_featuresCache || _featuresCache.length === 0) return true;
+  return _featuresCache.includes(feature);
+}
+
+// Item 3: defense-in-depth for menu-access grants — the main menu already hides
+// tiles a cashier lacks, but a saved URL or devtools nav could still reach the
+// page directly, so each gated page re-checks itself on load. Managers/admins
+// always pass (menuAccess omits the key entirely for them since perms:me's
+// menuAccessForUserAll returns true for every key regardless of role, but this
+// only ever runs for cashiers in practice since managers see every tile).
+async function enforceMenuAccess(key) {
+  try {
+    const me = await window.api.permsMe();
+    if (me.success && me.menuAccess && me.menuAccess[key] === false) {
+      window.api.navigate('main-menu');
+      return false;
+    }
+  } catch { /* fail open — perms:me itself re-validates every gated action server-side */ }
+  return true;
 }
 
 // Toast notifications
@@ -148,11 +210,14 @@ const ICONS = {
 setInterval(updateStatusBar, 1000);
 document.addEventListener('DOMContentLoaded', updateStatusBar);
 
-/* ===== Session idle guard (item 2) =====
- * After 15 minutes of inactivity the acting employee must re-enter their PIN
- * before doing anything else. Enforced server-side on gated actions; this overlay
- * makes it a hard, visible lock on every authenticated screen. No-ops on the
- * login/activation screens (no employee session). */
+/* ===== Session idle guard (item 2, batch 5 UX fix) =====
+ * After 15 minutes of inactivity the register locks until an authorized
+ * employee re-enters their PIN. FIX: this used to jump straight to a PIN pad
+ * labeled with only the ORIGINAL employee's name — reading as "locked to
+ * Bob," even though the backend never actually required Bob specifically.
+ * Now it's two steps, same pattern as the register's own sign-in screen: pick
+ * who you are from every authorized staff member, then enter YOUR PIN. So a
+ * register is never stuck waiting on one specific person stepping back. */
 (function sessionIdleGuard() {
   if (!window.api || !window.api.sessionState || !window.api.sessionReauth) return;
 
@@ -160,6 +225,7 @@ document.addEventListener('DOMContentLoaded', updateStatusBar);
   let pin = '';
   let locked = false;
   let lastTouch = 0;
+  let selectedUserId = null;
 
   function buildOverlay() {
     const el = document.createElement('div');
@@ -168,19 +234,56 @@ document.addEventListener('DOMContentLoaded', updateStatusBar);
     el.innerHTML = `
       <div style="width:340px;background:#fff;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,0.4);padding:28px;text-align:center">
         <div style="font-size:18px;font-weight:800;color:#1a1a1a;margin-bottom:4px">Session locked</div>
-        <div style="font-size:13px;color:#666;margin-bottom:18px">Inactive for a while. Enter your PIN to continue — <span id="idleEmp" style="font-weight:600"></span></div>
-        <div id="idleDots" style="font-size:26px;letter-spacing:6px;height:34px;color:#333;margin-bottom:10px">– – – –</div>
-        <div id="idleKeypad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:260px;margin:0 auto"></div>
+        <div style="font-size:13px;color:#666;margin-bottom:16px">Inactive for a while. Any authorized staff member can unlock it.</div>
+        <div id="idleWho">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#999;margin-bottom:8px;text-align:left">Who's this?</div>
+          <div id="idleUserList" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto"></div>
+        </div>
+        <div id="idlePinPane" style="display:none">
+          <div style="font-size:13px;color:#666;margin-bottom:10px">Enter PIN — <span id="idleEmp" style="font-weight:600"></span> <a href="#" id="idleBack" style="font-size:12px;color:#888;margin-left:6px">(not you?)</a></div>
+          <div id="idleDots" style="font-size:26px;letter-spacing:6px;height:34px;color:#333;margin-bottom:10px">– – – –</div>
+          <div id="idleKeypad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:260px;margin:0 auto"></div>
+        </div>
         <div id="idleErr" style="display:none;background:#fee2e2;color:#991b1b;border-radius:8px;padding:8px 12px;font-size:13px;margin-top:12px"></div>
       </div>`;
     document.body.appendChild(el);
     const dots = el.querySelector('#idleDots');
     const err = el.querySelector('#idleErr');
     const keypad = el.querySelector('#idleKeypad');
+    const whoPane = el.querySelector('#idleWho');
+    const pinPane = el.querySelector('#idlePinPane');
+    const userList = el.querySelector('#idleUserList');
     const render = () => { dots.textContent = pin ? pin.split('').map(() => '●').join('  ') : '– – – –'; };
+
+    async function loadUsers() {
+      userList.innerHTML = '<div style="font-size:13px;color:#999">Loading…</div>';
+      let r;
+      try { r = await window.api.sessionListUnlockUsers(); } catch { r = null; }
+      if (!r || !r.success || !r.users.length) { userList.innerHTML = '<div style="font-size:13px;color:#999">No staff found</div>'; return; }
+      userList.innerHTML = r.users.map((u) => `
+        <button class="idle-user-btn" data-id="${u.id}" data-name="${(u.name || '').replace(/"/g, '&quot;')}"
+          style="border:1px solid #e2e2e2;border-radius:10px;background:#fafafa;padding:10px 14px;font-size:14px;font-weight:600;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center">
+          <span>${u.name}</span><span style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase">${u.role}</span>
+        </button>`).join('');
+      [...userList.querySelectorAll('.idle-user-btn')].forEach((b) => b.addEventListener('click', () => selectUser(Number(b.dataset.id), b.dataset.name)));
+    }
+    function selectUser(id, name) {
+      selectedUserId = id;
+      err.style.display = 'none'; pin = ''; render();
+      el.querySelector('#idleEmp').textContent = name || '';
+      whoPane.style.display = 'none';
+      pinPane.style.display = 'block';
+    }
+    el.querySelector('#idleBack').addEventListener('click', (e) => {
+      e.preventDefault();
+      selectedUserId = null; pin = ''; render(); err.style.display = 'none';
+      pinPane.style.display = 'none';
+      whoPane.style.display = 'block';
+    });
+
     async function submit() {
-      if (pin.length < 4) return;
-      const res = await window.api.sessionReauth(pin);
+      if (pin.length < 4 || !selectedUserId) return;
+      const res = await window.api.sessionReauth(selectedUserId, pin);
       if (res && res.success) { pin = ''; render(); err.style.display = 'none'; hide(); lastTouch = Date.now(); return; }
       err.textContent = (res && res.error) || 'Incorrect PIN'; err.style.display = 'block';
       pin = ''; render();
@@ -196,16 +299,20 @@ document.addEventListener('DOMContentLoaded', updateStatusBar);
       .map((k) => `<button class="idlekey" style="border:1px solid #e2e2e2;border-radius:12px;background:#fafafa;font-size:20px;font-weight:700;padding:14px 0;cursor:pointer">${k}</button>`).join('');
     [...keypad.children].forEach((b) => b.addEventListener('click', () => key(b.textContent)));
     el.addEventListener('keydown', (e) => {
+      if (pinPane.style.display === 'none') return; // don't eat keystrokes on the user-select step
       if (/^[0-9]$/.test(e.key)) key(e.key);
       else if (e.key === 'Backspace') key('⌫');
       else if (e.key === 'Enter') key('✓');
     });
+    el._loadUsers = loadUsers;
+    el._resetToWho = () => { selectedUserId = null; pin = ''; render(); whoPane.style.display = 'block'; pinPane.style.display = 'none'; };
     return el;
   }
 
-  function show(empName) {
+  function show() {
     if (!overlay) overlay = buildOverlay();
-    overlay.querySelector('#idleEmp').textContent = empName || '';
+    overlay._resetToWho();
+    overlay._loadUsers();
     overlay.style.display = 'flex';
     overlay.setAttribute('tabindex', '-1');
     overlay.focus();
@@ -220,7 +327,7 @@ document.addEventListener('DOMContentLoaded', updateStatusBar);
     let s;
     try { s = await window.api.sessionState(); } catch { return; }
     if (!s || !s.success || !s.employee) { hide(); return; } // login screen / logged out
-    if (s.idleLocked) { if (!locked) show(s.employee.username); }
+    if (s.idleLocked) { if (!locked) show(); }
     else hide();
   }
 

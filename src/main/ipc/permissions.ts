@@ -5,9 +5,9 @@ import { getDb } from '../db/schema';
 import { getCurrentSession } from './auth';
 import { nowCT } from '../utils/time';
 import { assertWritable } from '../supabase/licenseCheck';
-import { PERMISSION_KEYS, permissionsForUser, pinLockState, requirePermission } from '../permissions';
+import { PERMISSION_KEYS, MENU_KEYS, permissionsForUser, menuAccessForUserAll, pinLockState, requirePermission } from '../permissions';
 import type { PermissionKey } from '../permissions';
-import { enqueueEmployee, enqueueEmployeePermission } from '../supabase/sync';
+import { enqueueEmployee, enqueueEmployeePermission, triggerSyncNow } from '../supabase/sync';
 
 // Admin holds every manager capability, so "manager access" is satisfied by admin too.
 function isManager(): boolean {
@@ -40,10 +40,14 @@ export function registerPermissionHandlers(): void {
   ipcMain.handle('perms:me', () => {
     const s = getCurrentSession();
     if (!s) return { success: false, error: 'not signed in' };
-    return { success: true, role: s.role, userId: s.userId, permissions: permissionsForUser(getDb(), s.userId) };
+    return {
+      success: true, role: s.role, userId: s.userId,
+      permissions: permissionsForUser(getDb(), s.userId),
+      menuAccess: menuAccessForUserAll(getDb(), s.userId),
+    };
   });
 
-  ipcMain.handle('perms:keys', () => ({ success: true, keys: PERMISSION_KEYS }));
+  ipcMain.handle('perms:keys', () => ({ success: true, keys: PERMISSION_KEYS, menuKeys: MENU_KEYS }));
 
   // Generic authorization endpoint for UI-driven gated actions (e.g. manual rebate
   // apply). Validates the permission for the current session, applying + logging a
@@ -70,6 +74,7 @@ export function registerPermissionHandlers(): void {
     return {
       success: true,
       keys: PERMISSION_KEYS,
+      menuKeys: MENU_KEYS,
       employees: emps.map((e) => ({ ...e, has_pin: !!e.has_pin, permissions: byEmp[e.uid as string] || {} })),
     };
   });
@@ -81,7 +86,7 @@ export function registerPermissionHandlers(): void {
   //  • Cashier: RANDOM PIN only — no username/password. Must change the PIN on first
   //    login. Admin or manager can create cashiers.
   // Generated credentials are returned ONCE so the creator can hand them over.
-  ipcMain.handle('perms:saveEmployee', (_e, emp: Record<string, unknown>) => {
+  ipcMain.handle('perms:saveEmployee', async (_e, emp: Record<string, unknown>) => {
     if (!isManager()) return { success: false, error: 'Manager access required' };
     const w = assertWritable('employee_manage'); if (!w.ok) return { success: false, error: w.error };
     const db = getDb();
@@ -99,6 +104,9 @@ export function registerPermissionHandlers(): void {
           const uid = (db.prepare('SELECT uid FROM users WHERE id = ?').get(id) as { uid: string }).uid;
           enqueueEmployee('update', uid, db);
         })();
+        if (role === 'manager') {
+          try { await triggerSyncNow(); } catch { /* offline — will retry on the next cycle */ }
+        }
         return { success: true, id: emp.id };
       }
 
@@ -153,6 +161,13 @@ export function registerPermissionHandlers(): void {
         ).run(uid, username, name, role, passwordHash, pinHash, role === 'manager' ? mustChangePassword : 0, mustChangePin);
         enqueueEmployee('insert', uid, db);
       })();
+      // Managers sign into the Manager Portal against employees_cloud, not this
+      // device — push now instead of waiting up to 60s for the background cycle,
+      // so freshly issued credentials work immediately instead of only after the
+      // next sync tick (or never, if handed out before it fires).
+      if (role === 'manager') {
+        try { await triggerSyncNow(); } catch { /* offline — will retry on the next cycle */ }
+      }
 
       const id = (db.prepare('SELECT id FROM users WHERE uid = ?').get(uid) as { id: number }).id;
       // Return the generated credentials ONCE for the creator to deliver.
@@ -163,10 +178,14 @@ export function registerPermissionHandlers(): void {
   });
 
   // Toggle a single permission grant (+ optional cap value) for an employee.
+  // Accepts both action keys (PERMISSION_KEYS) and menu-access keys (MENU_KEYS,
+  // item 3) — same storage, same shape, different default semantics on read.
   ipcMain.handle('perms:setPermission', (_e, employeeUid: string, key: string, isGranted: boolean, value: number | null) => {
     if (!isManager()) return { success: false, error: 'Manager access required' };
     const w = assertWritable('employee_manage'); if (!w.ok) return { success: false, error: w.error };
-    if (!(PERMISSION_KEYS as readonly string[]).includes(key)) return { success: false, error: 'unknown permission' };
+    if (!(PERMISSION_KEYS as readonly string[]).includes(key) && !(MENU_KEYS as readonly string[]).includes(key)) {
+      return { success: false, error: 'unknown permission' };
+    }
     const db = getDb();
     db.transaction(() => {
       const existing = db.prepare('SELECT uid FROM employee_permissions WHERE employee_uid = ? AND permission_key = ?')

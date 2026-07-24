@@ -36,6 +36,7 @@ export default function Home() {
   const [zipInput, setZipInput] = useState('');
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [q, setQ] = useState('');
 
   useEffect(() => {
     supabase().from('locations').select('id, name, tenant_id, address, zip, logo_url, show_logo').eq('is_storefront_enabled', true).order('name')
@@ -73,10 +74,21 @@ export default function Home() {
   function clearSort() { setOrigin(null); setDist({}); setNote(null); setZipInput(''); }
 
   // Sorted list: by distance when an origin is set, else alphabetical.
-  const ordered = useMemo(() => {
+  const sorted = useMemo(() => {
     if (!origin) return locs;
     return [...locs].sort((a, b) => (dist[a.id] ?? Infinity) - (dist[b.id] ?? Infinity));
   }, [locs, origin, dist]);
+
+  // Search by name, ZIP, or address (client-side — the location list is small).
+  const ordered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return sorted;
+    return sorted.filter((l) =>
+      l.name.toLowerCase().includes(needle) ||
+      (l.zip || '').toLowerCase().includes(needle) ||
+      (l.address || '').toLowerCase().includes(needle)
+    );
+  }, [sorted, q]);
 
   return (
     <div>
@@ -95,21 +107,40 @@ export default function Home() {
         <span className="text-sm text-smoke">{locs.length ? `${locs.length} ${locs.length === 1 ? 'store' : 'stores'}` : ''}</span>
       </div>
 
-      {/* Sort / filter by proximity (on top of storefront-enabled eligibility). */}
+      {/* Search by name, ZIP, or address. */}
       {locs.length > 1 && (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <button onClick={useMyLocation} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full border border-black/15 bg-white px-3.5 py-2 text-sm font-semibold hover:border-accent disabled:opacity-50">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z" /><circle cx="12" cy="9" r="2.5" /></svg>
-            Near me
-          </button>
-          <div className="inline-flex items-center rounded-full border border-black/15 bg-white overflow-hidden">
-            <input value={zipInput} onChange={(e) => setZipInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') useZip(); }} inputMode="numeric" maxLength={5} placeholder="ZIP" className="w-20 px-3 py-2 text-sm outline-none" />
-            <button onClick={useZip} disabled={busy} className="px-3 py-2 text-sm font-semibold text-accent disabled:opacity-50">Sort</button>
+        <div className="mb-3">
+          <div className="inline-flex items-center gap-2 rounded-full border border-black/15 bg-white px-3.5 py-2 w-full sm:w-80">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" className="text-smoke shrink-0"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.35-4.35" /></svg>
+            <input
+              value={q} onChange={(e) => setQ(e.target.value)}
+              placeholder="Search by name, ZIP, or address"
+              className="w-full text-sm outline-none"
+              aria-label="Search shops by name, ZIP, or address"
+            />
           </div>
-          {origin && <button onClick={clearSort} className="text-sm text-smoke underline">Reset</button>}
+        </div>
+      )}
+
+      {/* Sort by location (closest) — geolocation or ZIP, on top of storefront-enabled eligibility. */}
+      {locs.length > 1 && (
+        <div className="mb-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-smoke mb-1.5">Sort by location (closest)</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={useMyLocation} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full border border-black/15 bg-white px-3.5 py-2 text-sm font-semibold hover:border-accent disabled:opacity-50">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z" /><circle cx="12" cy="9" r="2.5" /></svg>
+              Near me
+            </button>
+            <div className="inline-flex items-center rounded-full border border-black/15 bg-white overflow-hidden">
+              <input value={zipInput} onChange={(e) => setZipInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') useZip(); }} inputMode="numeric" maxLength={5} placeholder="ZIP" className="w-20 px-3 py-2 text-sm outline-none" />
+              <button onClick={useZip} disabled={busy} className="px-3 py-2 text-sm font-semibold text-accent disabled:opacity-50">Sort</button>
+            </div>
+            {origin && <button onClick={clearSort} className="text-sm text-smoke underline">Reset</button>}
+          </div>
         </div>
       )}
       {note && <p className="text-xs text-smoke mb-3 -mt-1">{note}</p>}
+      {q.trim() && <p className="text-xs text-smoke mb-3 -mt-1">{ordered.length} match{ordered.length === 1 ? '' : 'es'} for "{q.trim()}"</p>}
 
       {loading ? (
         <div className="grid gap-3">{[0, 1].map((i) => <div key={i} className="h-20 rounded-2xl bg-black/[0.04] animate-pulse" />)}</div>
@@ -117,6 +148,11 @@ export default function Home() {
         <div className="rounded-2xl border border-black/10 bg-white p-8 text-center">
           <div className="font-display font-bold text-lg">No shops online yet</div>
           <p className="text-sm text-smoke mt-1">Check back soon — stores are coming online for pickup ordering.</p>
+        </div>
+      ) : ordered.length === 0 ? (
+        <div className="rounded-2xl border border-black/10 bg-white p-8 text-center">
+          <div className="font-display font-bold text-lg">No shops match "{q.trim()}"</div>
+          <p className="text-sm text-smoke mt-1">Try a different name, ZIP, or address.</p>
         </div>
       ) : (
         <div className="grid gap-3">
@@ -134,7 +170,7 @@ export default function Home() {
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="font-semibold truncate">{l.name}</div>
-                  <div className="text-sm text-smoke truncate">{l.address || 'Tap to order for pickup'}</div>
+                  {l.address && <div className="text-sm text-smoke truncate">{l.address}</div>}
                 </div>
                 {origin && mi != null && isFinite(mi) && <span className="text-xs font-semibold text-smoke shrink-0">{mi < 10 ? mi.toFixed(1) : Math.round(mi)} mi</span>}
                 <span className="text-accent group-hover:translate-x-0.5 transition-transform" aria-hidden="true">

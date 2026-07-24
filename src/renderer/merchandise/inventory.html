@@ -227,6 +227,7 @@
     let isManager = false;
 
     document.addEventListener('DOMContentLoaded', async () => {
+      if (!(await enforceMenuAccess('access_merchandise'))) return;
       const { session } = await window.api.getSession();
       isManager = session?.role === 'manager';
 

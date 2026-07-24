@@ -1,14 +1,27 @@
 import { ipcMain } from 'electron';
 import bcrypt from 'bcryptjs';
+import { randomUUID, randomBytes } from 'crypto';
 import { getDb } from '../db/schema';
 import { nowCT } from '../utils/time';
 import { assertWritable } from '../supabase/licenseCheck';
 import { isDayOpen, openDay, touchActivity, clearActivity } from '../daySession';
+import { enqueueEmployee, triggerSyncNow } from '../supabase/sync';
+
+/** A random numeric PIN not already in use by an active employee (mirrors permissions.ts). */
+function genUniquePin(db: ReturnType<typeof getDb>, len = 4): string {
+  const rows = db.prepare("SELECT pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND pin_hash <> ''").all() as { pin_hash: string }[];
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const pin = Array.from(randomBytes(len), (b) => String(b % 10)).join('');
+    if (!rows.some((r) => bcrypt.compareSync(pin, r.pin_hash))) return pin;
+  }
+  return String(Date.now()).slice(-len);
+}
 
 type Role = 'admin' | 'manager' | 'cashier';
 interface User {
   id: number;
   username: string | null;
+  name: string | null;
   password_hash: string | null;
   role: Role;
   must_change_password: number;
@@ -18,6 +31,7 @@ interface User {
 interface Session {
   userId: number;
   username: string;
+  name: string;
   role: Role;
 }
 
@@ -66,6 +80,7 @@ export function registerAuthHandlers(): void {
       currentSession = {
         userId: user.id,
         username: user.username as string,
+        name: user.name || (user.username as string),
         role: user.role,
       };
       touchActivity();
@@ -120,7 +135,7 @@ export function registerAuthHandlers(): void {
       const { verifyPinForUser } = require('../permissions') as typeof import('../permissions');
       const r = verifyPinForUser(db, Number(userId), String(pin || ''));
       if (!r.ok || !r.employee) return { success: false, error: r.error, lockedUntil: r.lockedUntil };
-      currentSession = { userId: r.employee.id, username: r.employee.username, role: r.employee.role as Role };
+      currentSession = { userId: r.employee.id, username: r.employee.username, name: r.employee.name || r.employee.username, role: r.employee.role as Role };
       touchActivity();
       const openShift = db.prepare(
         `SELECT id FROM shift_totals WHERE cashier_id = ? AND closed_at IS NULL ORDER BY opened_at DESC LIMIT 1`
@@ -189,7 +204,7 @@ export function registerAuthHandlers(): void {
   // List users — manager only
   ipcMain.handle('auth:listUsers', async () => {
     try {
-      if (!currentSession || currentSession.role !== 'manager') {
+      if (!currentSession || (currentSession.role !== 'manager' && currentSession.role !== 'admin')) {
         return { success: false, error: 'Manager access required' };
       }
       const db = getDb();
@@ -202,24 +217,78 @@ export function registerAuthHandlers(): void {
     }
   });
 
-  // Create user — manager only; new accounts require password change on first login
+  // Create user — manager only; new accounts require a credential change on
+  // first login (password for managers, PIN for cashiers).
+  // FIX (item 1, regression): this insert never set `uid` or `name`, and never
+  // called enqueueEmployee — so an account created here (e.g. via POS Settings'
+  // "User Management" card) never reached employees_cloud, silently, no matter
+  // how long the till stayed online. A cashier created here also only got a
+  // password_hash, never a pin_hash, so they could never sign in at the register
+  // either (register sign-in is PIN-only) — fixed by generating one here too.
+  // FIX (regression, batch 5): cashiers were ALSO given a password_hash + a
+  // permanent must_change_password=1 that nothing ever cleared (completeFirstLogin
+  // only clears it for non-cashier roles, since cashiers have no password to
+  // change) — the login screen forces a change whenever EITHER flag is set, so a
+  // cashier got the "set a new password and PIN" prompt on every single login,
+  // forever, not just the first one. Cashiers are PIN-only: no password at all,
+  // no must_change_password.
   ipcMain.handle('auth:createUser', async (_event, username: string, password: string, role: string) => {
     try {
       const w = assertWritable('employee_manage'); if (!w.ok) return { success: false, error: w.error };
-      if (!currentSession || currentSession.role !== 'manager') {
+      if (!currentSession || (currentSession.role !== 'manager' && currentSession.role !== 'admin')) {
         return { success: false, error: 'Manager access required' };
       }
-      if (!username || !password || !['manager', 'cashier'].includes(role)) {
+      if (!username || !['manager', 'cashier'].includes(role)) {
         return { success: false, error: 'Invalid input' };
       }
-      if (password.length < 4) {
+      const isCashier = role === 'cashier';
+      if (!isCashier && (!password || password.length < 4)) {
         return { success: false, error: 'Password must be at least 4 characters' };
       }
       const db = getDb();
-      const hash = bcrypt.hashSync(password, 10);
-      db.prepare(
-        'INSERT INTO users (username, password_hash, role, must_change_password) VALUES (?, ?, ?, 1)'
-      ).run(username.trim(), hash, role);
+      const uid = randomUUID();
+      const name = username.trim();
+      const hash = isCashier ? null : bcrypt.hashSync(password, 10);
+      const pin = isCashier ? genUniquePin(db) : null;
+      const pinHash = pin ? bcrypt.hashSync(pin, 10) : null;
+      db.transaction(() => {
+        db.prepare(
+          `INSERT INTO users (uid, username, name, password_hash, pin_hash, role, is_active, must_change_password, must_change_pin)
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`
+        ).run(uid, name, name, hash, pinHash, role, isCashier ? 0 : 1, isCashier ? 1 : 0);
+        enqueueEmployee('insert', uid, db);
+      })();
+      // Managers sign into the Manager Portal against the cloud copy — push now
+      // instead of waiting up to 60s for the background cycle (same fix as
+      // perms:saveEmployee).
+      try { await triggerSyncNow(); } catch { /* offline — will retry on the next cycle */ }
+      return { success: true, pin: pin || undefined };
+    } catch (err) {
+      const msg = String(err);
+      if (msg.includes('UNIQUE')) return { success: false, error: 'Username already exists' };
+      return { success: false, error: msg };
+    }
+  });
+
+  // Rename a user — manager only (batch 5, item 5: an Edit option per staff
+  // member, not just create/delete). Username doubles as display name here
+  // (see createUser), so this updates both together.
+  ipcMain.handle('auth:updateUsername', async (_event, userId: number, username: string) => {
+    try {
+      const w = assertWritable('employee_manage'); if (!w.ok) return { success: false, error: w.error };
+      if (!currentSession || (currentSession.role !== 'manager' && currentSession.role !== 'admin')) {
+        return { success: false, error: 'Manager access required' };
+      }
+      const name = String(username || '').trim();
+      if (!name) return { success: false, error: 'Username is required' };
+      const db = getDb();
+      const target = db.prepare('SELECT uid FROM users WHERE id = ?').get(userId) as { uid: string | null } | undefined;
+      if (!target) return { success: false, error: 'User not found' };
+      db.transaction(() => {
+        db.prepare('UPDATE users SET username = ?, name = ? WHERE id = ?').run(name, name, userId);
+        if (target.uid) enqueueEmployee('update', target.uid, db);
+      })();
+      try { await triggerSyncNow(); } catch { /* offline — will retry on the next cycle */ }
       return { success: true };
     } catch (err) {
       const msg = String(err);
@@ -228,18 +297,25 @@ export function registerAuthHandlers(): void {
     }
   });
 
-  // Delete user — manager only, cannot delete own account
+  // Delete user — manager only, cannot delete own account. Deactivates the cloud
+  // copy (synced) before removing the row locally, so a "deleted" account can't
+  // still sign into the Manager Portal or another kiosk after being removed here.
   ipcMain.handle('auth:deleteUser', async (_event, userId: number) => {
     try {
       const w = assertWritable('employee_manage'); if (!w.ok) return { success: false, error: w.error };
-      if (!currentSession || currentSession.role !== 'manager') {
+      if (!currentSession || (currentSession.role !== 'manager' && currentSession.role !== 'admin')) {
         return { success: false, error: 'Manager access required' };
       }
       if (userId === currentSession.userId) {
         return { success: false, error: 'Cannot delete your own account' };
       }
       const db = getDb();
+      const target = db.prepare('SELECT uid FROM users WHERE id = ?').get(userId) as { uid: string | null } | undefined;
       db.transaction(() => {
+        if (target?.uid) {
+          db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(userId);
+          enqueueEmployee('update', target.uid, db);
+        }
         db.prepare('UPDATE transactions   SET cashier_id  = NULL WHERE cashier_id  = ?').run(userId);
         db.prepare('UPDATE shift_totals   SET cashier_id  = NULL WHERE cashier_id  = ?').run(userId);
         db.prepare('UPDATE invoices       SET received_by = NULL WHERE received_by = ?').run(userId);
