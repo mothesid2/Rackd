@@ -106,7 +106,7 @@
   <!-- Add Product Modal -->
   <div class="modal-overlay" id="addProductModal" style="display:none">
     <div class="modal" style="max-width:500px;width:95%">
-      <button class="modal-close" onclick="closeModal('addProductModal')">×</button>
+      <button class="modal-close" onclick="closeModal('addProductModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">Add Product</div>
       <div class="form-row">
         <div class="form-group"><label>Barcode</label><input type="text" id="ap-barcode" onchange="apCatalogLookup()" placeholder="Scan to auto-fill from catalog" /></div>
@@ -141,7 +141,7 @@
   <!-- Stock Adjust Modal -->
   <div class="modal-overlay" id="adjustModal" style="display:none">
     <div class="modal" style="max-width:380px">
-      <button class="modal-close" onclick="closeModal('adjustModal')">×</button>
+      <button class="modal-close" onclick="closeModal('adjustModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">Adjust Stock</div>
       <div style="font-size:14px;color:#555;margin-bottom:14px" id="adjProductName"></div>
       <div class="form-group">
@@ -162,7 +162,7 @@
   <!-- Sale History Modal -->
   <div class="modal-overlay" id="historyModal" style="display:none">
     <div class="modal" style="max-width:620px;width:95%">
-      <button class="modal-close" onclick="closeModal('historyModal')">×</button>
+      <button class="modal-close" onclick="closeModal('historyModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title" id="historyModalTitle">Sale History</div>
       <div id="historyModalSummary" style="font-size:13px;color:#666;margin-bottom:14px"></div>
       <div style="max-height:380px;overflow-y:auto">
@@ -189,7 +189,7 @@
   <!-- Delete Single Product Modal -->
   <div class="modal-overlay" id="deleteProductModal" style="display:none">
     <div class="modal" style="max-width:380px">
-      <button class="modal-close" onclick="closeModal('deleteProductModal')">×</button>
+      <button class="modal-close" onclick="closeModal('deleteProductModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">Delete Product?</div>
       <p style="font-size:14px;color:#555;margin-bottom:6px">Delete <strong id="deleteProductName"></strong>?</p>
       <p style="font-size:13px;color:#888;margin-bottom:20px">Sale history will be preserved but unlinked from this product.</p>
@@ -203,7 +203,7 @@
   <!-- Clear All Confirm Modal -->
   <div class="modal-overlay" id="clearConfirmModal" style="display:none">
     <div class="modal" style="max-width:380px">
-      <button class="modal-close" onclick="closeModal('clearConfirmModal')">×</button>
+      <button class="modal-close" onclick="closeModal('clearConfirmModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">Clear All Products?</div>
       <p style="font-size:14px;color:#555;margin-bottom:20px">This will permanently delete every product in inventory. This cannot be undone.</p>
       <div class="modal-actions">

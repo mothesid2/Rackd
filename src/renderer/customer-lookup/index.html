@@ -229,7 +229,7 @@
   <!-- Add Customer Modal -->
   <div class="modal-overlay" id="addCustomerModal" style="display:none">
     <div class="modal" style="max-width:480px;width:95%">
-      <button class="modal-close" onclick="closeModal('addCustomerModal')">×</button>
+      <button class="modal-close" onclick="closeModal('addCustomerModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">Add Customer</div>
       <div class="form-row">
         <div class="form-group"><label>First Name *</label><input type="text" id="ac-first" /></div>
@@ -256,7 +256,7 @@
   <!-- Confirm New Customer: (1) verify info is correct, then (2) marketing/loyalty consent -->
   <div class="modal-overlay" id="confirmCustomerModal" style="display:none">
     <div class="modal" style="max-width:460px;width:95%">
-      <button class="modal-close" onclick="closeModal('confirmCustomerModal')">×</button>
+      <button class="modal-close" onclick="closeModal('confirmCustomerModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">Confirm New Customer</div>
 
       <!-- Step 1 — verify information -->
@@ -299,7 +299,7 @@
   <!-- Edit Customer Modal -->
   <div class="modal-overlay" id="editCustomerModal" style="display:none">
     <div class="modal" style="max-width:480px;width:95%">
-      <button class="modal-close" onclick="closeModal('editCustomerModal')">×</button>
+      <button class="modal-close" onclick="closeModal('editCustomerModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">Edit Customer</div>
       <input type="hidden" id="ec-id" />
       <div class="form-row">
@@ -327,7 +327,7 @@
   <!-- Send Text Modal -->
   <div class="modal-overlay" id="sendTextModal" style="display:none">
     <div class="modal" style="max-width:440px">
-      <button class="modal-close" onclick="closeModal('sendTextModal')">×</button>
+      <button class="modal-close" onclick="closeModal('sendTextModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">Send Text Message</div>
       <div style="font-size:14px;color:#666;margin-bottom:14px">To: <strong id="smsToName"></strong> (<span id="smsToPhone"></span>)</div>
       <div class="form-group">
@@ -348,7 +348,7 @@
   <!-- SMS Blast Modal -->
   <div class="modal-overlay" id="smsBlastModal" style="display:none">
     <div class="modal" style="max-width:500px">
-      <button class="modal-close" onclick="closeModal('smsBlastModal')">×</button>
+      <button class="modal-close" onclick="closeModal('smsBlastModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">SMS Text Blast</div>
       <div class="form-group">
         <label>Message</label>
@@ -380,7 +380,7 @@
   <!-- Birthdays Modal -->
   <div class="modal-overlay" id="birthdayModal" style="display:none">
     <div class="modal" style="max-width:520px;width:95%">
-      <button class="modal-close" onclick="closeModal('birthdayModal')">×</button>
+      <button class="modal-close" onclick="closeModal('birthdayModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">🎂 Birthdays Today</div>
       <p style="font-size:13px;color:#666;margin-bottom:12px">
         Generates a 15% off code (7-day expiry), awards a +50 point bonus, and texts opted-in customers.
@@ -397,7 +397,7 @@
   <!-- Transaction Detail Modal -->
   <div class="modal-overlay" id="txnDetailModal" style="display:none">
     <div class="modal" style="max-width:500px;width:95%">
-      <button class="modal-close" onclick="closeModal('txnDetailModal')">×</button>
+      <button class="modal-close" onclick="closeModal('txnDetailModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title" id="txnDetailTitle">Transaction #—</div>
       <div id="txnDetailMeta" style="font-size:13px;color:#888;margin-bottom:12px"></div>
       <div id="txnDetailItems" style="max-height:220px;overflow-y:auto;margin:8px 0;border:1px solid #f0f0f0;border-radius:8px;padding:4px 8px"></div>

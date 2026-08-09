@@ -259,11 +259,35 @@
 
     function init(root) {
       const scope = root || document;
+      if (scope.matches && scope.matches('[data-tooltip]')) bind(scope);
       scope.querySelectorAll('[data-tooltip]').forEach(bind);
     }
 
     document.addEventListener('scroll', hide, true);
     window.addEventListener('resize', hide);
+
+    // Auto-bind: nearly every screen in this app builds its content via
+    // `container.innerHTML = ...` rather than a render/diff framework, so
+    // requiring every one of those call sites to remember to call
+    // RackdUI.tooltip.init() after every re-render would get missed
+    // constantly. Observing the whole document once here means adding
+    // data-tooltip to markup is enough on its own, the same way onclick=""
+    // attributes in this codebase already "just work" without extra wiring.
+    if (typeof MutationObserver !== 'undefined') {
+      const observer = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+          for (const node of m.addedNodes) {
+            if (node.nodeType !== 1) continue;
+            init(node);
+          }
+        }
+      });
+      const start = () => observer.observe(document.body, { childList: true, subtree: true });
+      if (document.body) start();
+      else document.addEventListener('DOMContentLoaded', start);
+    }
+    if (document.readyState !== 'loading') init();
+    else document.addEventListener('DOMContentLoaded', () => init());
 
     return { init, hide };
   })();

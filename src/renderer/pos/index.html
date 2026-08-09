@@ -339,7 +339,7 @@
             <button id="redeemBtn" onclick="openRedeem()" style="display:none;font-size:11px;font-weight:600;background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:3px 9px;cursor:pointer">Redeem</button>
           </div>
         </div>
-        <button onclick="detachCustomer()" style="background:none;border:none;cursor:pointer;color:#888;font-size:18px;padding:2px 6px;line-height:1;flex-shrink:0" title="Remove customer">&times;</button>
+        <button onclick="detachCustomer()" style="background:none;border:none;cursor:pointer;color:#888;font-size:18px;padding:2px 6px;line-height:1;flex-shrink:0" data-tooltip="Remove customer" aria-label="Remove customer">&times;</button>
       </div>
 
       <div class="card cart-card">
@@ -484,7 +484,7 @@
   <!-- CASH MODAL -->
   <div class="modal-overlay" id="cashModal" style="display:none">
     <div class="modal" style="max-width:380px">
-      <button class="modal-close" onclick="closeModal('cashModal')">×</button>
+      <button class="modal-close" onclick="closeModal('cashModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">Cash Payment</div>
       <div style="font-size:28px;font-weight:800;text-align:center;margin-bottom:20px" id="cashTotalDisplay"></div>
       <div class="form-group">
@@ -592,7 +592,7 @@
     <div class="modal" style="max-width:400px">
       <div class="modal-header">
         <div class="modal-title">Redeem Rewards</div>
-        <button class="modal-close" onclick="closeModal('redeemModal')">&times;</button>
+        <button class="modal-close" onclick="closeModal('redeemModal')" data-tooltip="Close" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
         <p style="font-size:13px;color:#555;margin-bottom:12px">Balance: <strong id="redeemBalance">0</strong> pts</p>
@@ -611,7 +611,7 @@
     <div class="modal" style="max-width:430px">
       <div class="modal-header">
         <div class="modal-title">Military ID Age Override</div>
-        <button class="modal-close" onclick="closeModal('militaryOverrideModal')">&times;</button>
+        <button class="modal-close" onclick="closeModal('militaryOverrideModal')" data-tooltip="Close" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
         <p style="font-size:14px;color:#444;margin-bottom:14px">
@@ -694,7 +694,7 @@
   <!-- MISC / OPEN-PRICE ITEM MODAL -->
   <div class="modal-overlay" id="miscModal" style="display:none">
     <div class="modal" style="max-width:380px">
-      <button class="modal-close" onclick="closeModal('miscModal')">×</button>
+      <button class="modal-close" onclick="closeModal('miscModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">MISC / Open-Price Item</div>
       <p style="font-size:13px;color:#666;margin-bottom:14px">For items with no barcode. Enter a price and pick a department so it shows up in your X report and audits.</p>
       <div class="form-group">
@@ -716,7 +716,7 @@
   <!-- REFUND / RETURN MODAL (Phase 7) -->
   <div class="modal-overlay" id="refundModal" style="display:none">
     <div class="modal" style="max-width:560px">
-      <button class="modal-close" onclick="closeModal('refundModal')">×</button>
+      <button class="modal-close" onclick="closeModal('refundModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">Refund / Return</div>
       <div id="refundStep1">
         <p style="font-size:13px;color:#666;margin-bottom:12px">A manager authentication code and the original receipt number are required for every return.</p>
@@ -744,7 +744,7 @@
   <!-- REBATE DETAILS MODAL (Off mode: cashier reviews + applies) -->
   <div class="modal-overlay" id="rebateDetailsModal" style="display:none">
     <div class="modal" style="max-width:460px">
-      <button class="modal-close" onclick="closeModal('rebateDetailsModal')">×</button>
+      <button class="modal-close" onclick="closeModal('rebateDetailsModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">Manufacturer Rebates</div>
       <div id="rebateModalBody" style="max-height:50vh;overflow-y:auto"></div>
       <div class="modal-actions"><button class="btn btn-gray" onclick="closeModal('rebateDetailsModal')">Close</button></div>
@@ -754,7 +754,7 @@
   <!-- PRICE OVERRIDE MODAL -->
   <div class="modal-overlay" id="priceEditModal" style="display:none">
     <div class="modal" style="max-width:340px">
-      <button class="modal-close" onclick="closeModal('priceEditModal')">×</button>
+      <button class="modal-close" onclick="closeModal('priceEditModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">Override Price</div>
       <p style="font-size:13px;color:#666;margin:6px 0 12px" id="priceEditName"></p>
       <div class="form-group">
@@ -786,7 +786,7 @@
   <!-- CASH DRAWER MODAL -->
   <div class="modal-overlay" id="drawerModal" style="display:none">
     <div class="modal" style="max-width:440px">
-      <button class="modal-close" onclick="closeModal('drawerModal')">×</button>
+      <button class="modal-close" onclick="closeModal('drawerModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title">Cash Drawer</div>
       <div id="drawerSummary" style="font-size:14px;margin:10px 0 14px">Loading…</div>
       <div style="display:flex;gap:8px;margin-bottom:14px">
@@ -1188,10 +1188,10 @@
               <input class="qty-input" type="number" value="${item.qty}"
                      onchange="updateQty(${idx}, this.value)" />
             </td>
-            <td>${isReturn ? fmt(item.unit_price) : `<a href="#" onclick="editPrice(${idx});return false" title="Override price" style="color:inherit;text-decoration:${item.priceOverridden ? 'underline dotted #b45309' : 'none'}">${fmt(item.unit_price)}</a>`}</td>
+            <td>${isReturn ? fmt(item.unit_price) : `<a href="#" onclick="editPrice(${idx});return false" data-tooltip="Override price" style="color:inherit;text-decoration:${item.priceOverridden ? 'underline dotted #b45309' : 'none'}">${fmt(item.unit_price)}</a>`}</td>
             <td><strong style="color:${isReturn ? '#991b1b' : 'inherit'}">${fmt(item.line_total)}</strong></td>
             <td>
-              <button class="remove-item-btn" onclick="removeItem(${idx})" title="Remove">×</button>
+              <button class="remove-item-btn" onclick="removeItem(${idx})" data-tooltip="Remove item" aria-label="Remove item">×</button>
             </td>
           </tr>
         `;
@@ -1336,7 +1336,7 @@
       // Distinct line per applied manufacturer rebate (attributable in reporting).
       document.getElementById('rebateLines').innerHTML = appliedRebateList.map((a, i) =>
         `<div class="total-line" style="color:#065f46"><span>🏷️ ${esc(a.name)}${a.was_auto_applied ? '' : ' (manual)'}</span>` +
-        `<span>-${fmt(a.discount)} <button onclick="removeRebate(${i})" title="Remove" style="border:none;background:none;color:#991b1b;cursor:pointer;font-weight:800">✕</button></span></div>`
+        `<span>-${fmt(a.discount)} <button onclick="removeRebate(${i})" data-tooltip="Remove rebate" aria-label="Remove rebate" style="border:none;background:none;color:#991b1b;cursor:pointer;font-weight:800">✕</button></span></div>`
       ).join('');
 
       // Mirror the live cart to the customer-facing display as items are scanned,

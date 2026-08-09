@@ -5,6 +5,7 @@ import { useCart } from '@/lib/cart';
 import { fmt } from '@/lib/config';
 import { useStoreMenu } from '@/lib/queries';
 import { SkeletonMenuRow } from '@/components/ui/Skeleton';
+import { Tooltip } from '@/components/ui/Tooltip';
 
 // A static export can't pre-render a dynamic /store/[id] path, so the store is a
 // static /store route that reads ?id=<location> at runtime (client-side).
@@ -78,9 +79,13 @@ function StoreInner() {
                 </div>
                 {inCart > 0 ? (
                   <div className="flex items-center gap-1.5">
-                    <button aria-label="Remove one" className="w-9 h-9 rounded-xl border border-black/15 text-lg leading-none hover:border-accent hover:text-accent transition-colors" onClick={() => cart.setQty(it.barcode, inCart - 1)}>−</button>
+                    <Tooltip label="Remove one">
+                      <button aria-label="Remove one" className="w-9 h-9 rounded-xl border border-black/15 text-lg leading-none hover:border-accent hover:text-accent transition-colors" onClick={() => cart.setQty(it.barcode, inCart - 1)}>−</button>
+                    </Tooltip>
                     <span className="w-6 text-center font-semibold tabular-nums">{inCart}</span>
-                    <button aria-label="Add one" className="w-9 h-9 rounded-xl border border-black/15 text-lg leading-none hover:border-accent hover:text-accent transition-colors disabled:opacity-30 disabled:hover:border-black/15 disabled:hover:text-ink" disabled={!canAdd} onClick={() => cart.setQty(it.barcode, inCart + 1)}>+</button>
+                    <Tooltip label="Add one">
+                      <button aria-label="Add one" className="w-9 h-9 rounded-xl border border-black/15 text-lg leading-none hover:border-accent hover:text-accent transition-colors disabled:opacity-30 disabled:hover:border-black/15 disabled:hover:text-ink" disabled={!canAdd} onClick={() => cart.setQty(it.barcode, inCart + 1)}>+</button>
+                    </Tooltip>
                   </div>
                 ) : (
                   <button className="px-4 py-2.5 rounded-xl bg-ink text-white text-sm font-semibold hover:bg-char transition-colors disabled:opacity-30"

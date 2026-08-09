@@ -135,7 +135,7 @@
   <!-- Transaction detail modal -->
   <div class="modal-overlay" id="txnModal" style="display:none">
     <div class="modal receipt-modal" style="max-width:500px;width:95%">
-      <button class="modal-close" onclick="closeModal('txnModal')">×</button>
+      <button class="modal-close" onclick="closeModal('txnModal')" data-tooltip="Close" aria-label="Close">×</button>
       <div class="modal-title" id="txnModalTitle">Transaction #—</div>
       <div class="receipt-meta" id="txnModalMeta"></div>
       <div class="receipt-items" id="txnModalItems"></div>
@@ -163,7 +163,7 @@
     <div class="modal" style="max-width:420px">
       <div class="modal-header">
         <div class="modal-title">Delete Transaction</div>
-        <button class="modal-close" onclick="closeModal('deleteConfirmModal')">&times;</button>
+        <button class="modal-close" onclick="closeModal('deleteConfirmModal')" data-tooltip="Close" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
         <div class="confirm-body">
