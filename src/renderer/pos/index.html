@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>rackd POS — New Sale</title>
   <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
   <style>
     body { overflow: hidden; }
 
@@ -825,6 +826,7 @@
   </div>
 
   <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
   <script src="../lib/writeGuard.js"></script>
   <script src="../lib/licenseUi.js"></script>
   <script src="../lib/syncUi.js"></script>
@@ -1058,32 +1060,29 @@
 
     // ---- Product Search ----
     async function searchProducts(query) {
-      const res = query
-        ? await window.api.searchProducts(query)
-        : await window.api.getProducts({ });
-      if (!res.success) return;
-
       const results = document.getElementById('productResults');
-      const products = res.products || [];
-
-      if (products.length === 0) {
-        results.innerHTML = '<div class="no-results">No products found</div>';
-        return;
-      }
-
-      results.innerHTML = products.slice(0, 30).map(p => {
-        const isLow = p.stock_qty <= p.low_stock_threshold && p.stock_qty > 0;
-        const isOut = p.stock_qty <= 0;
-        return `
-          <div class="product-tile ${isOut ? 'out-of-stock' : ''}" onclick="addToCartById(${p.id})">
-            <div class="tile-name">${esc(p.name)}</div>
-            <div class="tile-price">${fmt(p.price)}</div>
-            <div class="tile-stock ${isOut ? 'out' : isLow ? 'low' : ''}">
-              ${isOut ? '⚠ Out of stock' : isLow ? `⚠ ${p.stock_qty} left` : `${p.stock_qty} in stock`}
-            </div>
-          </div>
-        `;
-      }).join('');
+      await RackdUI.skeleton.during(
+        results, 'card', 8,
+        () => (query ? window.api.searchProducts(query) : window.api.getProducts({})),
+        (res) => {
+          if (!res || !res.success) return '';
+          const products = res.products || [];
+          if (products.length === 0) return '<div class="no-results">No products found</div>';
+          return products.slice(0, 30).map(p => {
+            const isLow = p.stock_qty <= p.low_stock_threshold && p.stock_qty > 0;
+            const isOut = p.stock_qty <= 0;
+            return `
+              <div class="product-tile ${isOut ? 'out-of-stock' : ''}" onclick="addToCartById(${p.id})">
+                <div class="tile-name">${esc(p.name)}</div>
+                <div class="tile-price">${fmt(p.price)}</div>
+                <div class="tile-stock ${isOut ? 'out' : isLow ? 'low' : ''}">
+                  ${isOut ? '⚠ Out of stock' : isLow ? `⚠ ${p.stock_qty} left` : `${p.stock_qty} in stock`}
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      );
     }
 
     let _productsCache = [];

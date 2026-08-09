@@ -61,7 +61,7 @@ async function renderBusinesses() {
           <button class="rowbtn" style="color:#f2a9a5" data-delete-biz="${b.tenant_id}" data-name="${esc(b.name || 'this business')}">Delete</button>
         </div>
       </div>
-      <div class="muted" data-locs="${b.tenant_id}" style="margin-top:12px;font-size:13px">Loading locations…</div>
+      <div data-locs="${b.tenant_id}" style="margin-top:12px">${RackdUI.skeleton.rowsHtml(2)}</div>
     </div>`).join('');
   wrap.querySelectorAll('[data-add]').forEach((btn) => btn.addEventListener('click', () => {
     $('lTenant').value = btn.dataset.add; $('lName').value = ''; $('lAddress').value = ''; $('lZip').value = '';
@@ -99,6 +99,7 @@ async function loadLocations(tenantId) {
         <td class="num muted" style="font-size:12px">${l.kiosk_count || 0} kiosk${l.kiosk_count === 1 ? '' : 's'}</td>
         <td class="num" style="width:90px"><button class="rowbtn" data-rename="${l.id}" data-name="${esc(l.name)}">Rename</button></td></tr>`).join('')}</tbody></table>`
     : '<span class="muted">No locations.</span>';
+  RackdUI.fadeIn(el);
   el.querySelectorAll('[data-rename]').forEach((btn) => btn.addEventListener('click', async () => {
     const name = prompt('Rename location', btn.dataset.name);
     if (!name || name === btn.dataset.name) return;
@@ -201,7 +202,7 @@ function sectionHead(iconPath, title, right = '') {
 
 // ── Business (item 16: pick a business, see ALL of its settings in one place) ──
 async function renderBusinessDetail() {
-  view.innerHTML = '<div class="spin">Loading…</div>';
+  view.innerHTML = RackdUI.skeleton.cardsHtml(6);
   if (!currentTenant) { view.innerHTML = '<div class="card muted">No businesses yet — create one first.</div>'; return; }
   const biz = bizList.find((b) => b.tenant_id === currentTenant);
   const [locR, bizAllR, revR, kioskR, staffR] = await Promise.all([
@@ -385,6 +386,7 @@ async function renderBusinessDetail() {
   view.innerHTML = `
     <div class="sec-head"><div class="h2" style="margin:0">${esc(biz?.name || 'Business')}</div></div>
     ${revenueSection}${businessInfoSection}${twilioSection}${adsSection}${usersSection}${locationsSection}${kiosksSection}`;
+  RackdUI.fadeIn(view);
 
   // ── wire: Business Info ───────────────────────────────────────────────────
   $('bizKeyCopy')?.addEventListener('click', async () => {

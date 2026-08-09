@@ -17,6 +17,13 @@ process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false'; // unsigned local builds
 const path = require('path');
 const builder = require('electron-builder');
 
+// Keep the three renderers' shared-ui-kit.{css,js} copies current before
+// packaging any of them — this is the one choke point every build path
+// (per-app desktop:prod/demo, build-fleet.js, release-all.js) actually runs
+// through, so it's the safest place to guarantee the sync happened rather
+// than trusting every caller to have run it themselves.
+require(path.join(__dirname, 'sync-shared-ui.js'));
+
 const appDir = process.argv[2] || '.';
 const variant = process.argv[3] === 'demo' ? 'demo' : 'prod';
 const projectDir = path.resolve(appDir);

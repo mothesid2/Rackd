@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>rackd POS — Age Verification Log</title>
   <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
   <style>
     .page-layout { padding: 24px; padding-bottom: 80px; max-width: 1000px; margin: 0 auto;
       height: calc(100vh - 32px); overflow-y: auto; }
@@ -58,6 +59,7 @@
   <div class="status-bar"><div class="status-left" id="status-left">Loading…</div><div class="status-right" id="status-right"></div></div>
 
   <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', async () => {
       const session = (await window.api.getSession()).session;

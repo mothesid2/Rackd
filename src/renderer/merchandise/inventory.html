@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>rackd POS — Inventory</title>
   <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
   <style>
     .page-layout {
       padding: 24px;
@@ -218,6 +219,7 @@
   </div>
 
   <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
   <script>
     let products = [];
     let sortKey = 'name';
@@ -277,6 +279,7 @@
     });
 
     async function loadProducts() {
+      document.getElementById('invBody').innerHTML = RackdUI.skeleton.tableRowsHtml(9, 10);
       const res = await window.api.getProducts();
       if (!res.success) { showToast(res.error, 'error'); return; }
       products = res.products;
@@ -365,6 +368,7 @@
           </tr>
         `;
       }).join('');
+      RackdUI.fadeIn(tbody);
     }
 
     function openAdjust(id, name) {

@@ -427,7 +427,9 @@ async function renderRebates() {
 
 // ── dashboard ───────────────────────────────────────────────────────────────
 async function renderDashboard() {
-  view.innerHTML = '<div class="spin">Loading store totals…</div>';
+  view.innerHTML =
+    '<div class="kpi-row">' + '<div class="kpi"><div class="ru-skel ru-skel-text ru-w-60" style="height:11px"></div><div class="ru-skel ru-skel-text ru-w-80" style="height:22px;margin-top:8px"></div></div>'.repeat(4) + '</div>' +
+    '<div class="h2">Locations</div>' + RackdUI.skeleton.cardsHtml(3);
   const { start, end } = range();
   const r = await window.portal.dashboard({ start, end });
   if (!r.success) { view.innerHTML = `<div class="card">Couldn't load: ${esc(r.error)}</div>`; return; }
@@ -465,12 +467,13 @@ async function renderDashboard() {
         </div>`;
       }).join('') : '<div class="card muted">No sales in this range yet.</div>'}
     </div>`;
+  RackdUI.fadeIn(view);
 }
 
 async function openLocation(id, name) {
   const modal = document.getElementById('repModal');
   document.getElementById('repTitle').textContent = name;
-  document.getElementById('repBody').innerHTML = '<div class="spin">Loading…</div>';
+  document.getElementById('repBody').innerHTML = RackdUI.skeleton.rowsHtml(4);
   modal.style.display = 'flex';
   const { start, end } = range();
   const r = await window.portal.locationReport({ location_id: id, start, end });
@@ -498,12 +501,13 @@ async function openLocation(id, name) {
     <table class="grid"><tbody>
       ${(rep.top_products || []).length ? rep.top_products.map((t) => `<tr><td>${esc(t.name)}</td><td class="num">${fmt(t.revenue)}</td></tr>`).join('') : '<tr><td class="muted">No sales</td></tr>'}
     </tbody></table>`;
+  RackdUI.fadeIn(document.getElementById('repBody'));
 }
 
 // ── inventory (item 5: edit, not just view) ───────────────────────────────────
 let invCache = [];
 async function renderInventory() {
-  view.innerHTML = '<div class="spin">Loading inventory…</div>';
+  view.innerHTML = '<table class="grid"><tbody>' + RackdUI.skeleton.tableRowsHtml(7, 8) + '</tbody></table>';
   const r = await window.portal.inventory();
   if (!r.success) { view.innerHTML = `<div class="card">Couldn't load: ${esc(r.error)}</div>`; return; }
   // Item 9: scope to the selected store.
@@ -537,6 +541,7 @@ function drawInventory() {
         }).join('') : '<tr><td colspan="7" class="muted" style="padding:24px;text-align:center">No inventory synced yet.</td></tr>'}
       </tbody>
     </table>`;
+  RackdUI.fadeIn(view);
   view.querySelectorAll('[data-adjust]').forEach((btn) => btn.addEventListener('click', async () => {
     const id = btn.dataset.adjust;
     const item = items.find((x) => String(x.id) === id);
@@ -630,7 +635,7 @@ async function saveNewCustomer() {
 
 // ── store settings (item 9: top-right store picker → that store's full settings) ─
 async function renderStoreSettings() {
-  view.innerHTML = '<div class="spin">Loading store settings…</div>';
+  view.innerHTML = RackdUI.skeleton.cardsHtml(5);
   if (!currentStoreId) { view.innerHTML = '<div class="card muted">No stores on this business yet.</div>'; return; }
   const r = await window.portal.storefrontLocations();
   if (!r.success) { view.innerHTML = `<div class="card">Couldn't load: ${esc(r.error)}</div>`; return; }
@@ -665,6 +670,7 @@ async function renderStoreSettings() {
       </div>
     </div>
     <div class="muted" style="font-size:12px;margin-top:16px">Name and address are set by the owner in the Owner Console and flow down here automatically.</div>`;
+  RackdUI.fadeIn(view);
 }
 
 // ── storefront (online store control) ────────────────────────────────────────

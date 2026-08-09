@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>rackd POS — Variants</title>
   <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
   <style>
     .page-layout { padding: 24px; padding-bottom: 56px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
     .cols { display: grid; grid-template-columns: 1fr 360px; gap: 16px; flex: 1; overflow: hidden; }
@@ -75,6 +76,7 @@
   <div class="status-bar"><div class="status-left" id="status-left">Loading…</div><div class="status-right" id="status-right"></div></div>
 
   <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
   <script>
     const productId = parseInt(localStorage.getItem('variantProductId') || '0', 10);
     const productName = localStorage.getItem('variantProductName') || 'Product';

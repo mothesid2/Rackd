@@ -4,6 +4,9 @@
   "description": "rackd Point of Sale System",
   "main": "dist/main/index.js",
   "scripts": {
+    "sync:ui": "node scripts/sync-shared-ui.js",
+    "prestart": "npm run sync:ui",
+    "predev": "npm run sync:ui",
     "start": "npm run build:main && electron .",
     "build:main": "tsc -p tsconfig.json",
     "build": "npm run build:main && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
