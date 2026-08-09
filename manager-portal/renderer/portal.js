@@ -57,11 +57,6 @@ function isFeatureEnabled(feature) {
   document.querySelectorAll('.navbtn').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
   document.getElementById('applyRange').addEventListener('click', () => render());
   document.getElementById('logout').addEventListener('click', async () => { await window.portal.logout(); window.location.href = 'login.html'; });
-  document.getElementById('changeBusiness').addEventListener('click', async () => {
-    if (!confirm('Disconnect from this business and enter a new business key?')) return;
-    await window.portal.clearBusiness();
-    window.location.href = 'login.html';
-  });
   document.getElementById('cSave').addEventListener('click', saveCustomer);
   document.getElementById('nSave').addEventListener('click', saveNewCustomer);
   document.getElementById('mSave').addEventListener('click', saveMenuItem);
@@ -120,7 +115,10 @@ async function renderTimesheet() {
   const totalHours = rows.reduce((s, e) => s + e.hours, 0);
 
   view.innerHTML = `
-    <div class="h2">Timesheets <span class="muted" style="font-weight:400;font-size:13px">— ${currentStoreId ? esc(nameOf[currentStoreId] || 'this store') : 'all locations'}, clock-in/out punches for the selected range</span></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div class="h2" style="margin:0">Timesheets <span class="muted" style="font-weight:400;font-size:13px">— ${currentStoreId ? esc(nameOf[currentStoreId] || 'this store') : 'all locations'}, clock-in/out punches for the selected range</span></div>
+      <button class="btn btn-accent" id="tsAddBtn">+ Add shift</button>
+    </div>
     <div class="kpi-row">
       <div class="kpi"><div class="lbl">Total hours</div><div class="val">${totalHours.toFixed(1)}</div></div>
       <div class="kpi"><div class="lbl">Employees</div><div class="val">${rows.length}</div></div>
@@ -139,7 +137,42 @@ async function renderTimesheet() {
       </tbody>
     </table>`;
   view.querySelectorAll('[data-adjust]').forEach((b) => b.addEventListener('click', () => openTimesheetAdjust(b.dataset.adjust, b.dataset.name)));
+  document.getElementById('tsAddBtn').addEventListener('click', openTimesheetAdd);
 }
+
+// ── add a brand-new shift (not just adjusting an existing punch) ─────────────
+async function openTimesheetAdd() {
+  const sel = document.getElementById('tsAddEmployee');
+  sel.innerHTML = '<option>Loading…</option>';
+  document.getElementById('tsAddIn').value = '';
+  document.getElementById('tsAddOut').value = '';
+  document.getElementById('tsAddModal').style.display = 'flex';
+  const r = await window.portal.staff();
+  const staff = (r.success ? r.staff || [] : []).filter((s) => s.is_active);
+  sel.innerHTML = staff.length
+    ? staff.map((s) => `<option value="${esc(s.uid)}" data-name="${esc(s.name || s.username || '')}">${esc(s.name || s.username || '—')} (${esc(s.role)})</option>`).join('')
+    : '<option value="">No active staff</option>';
+}
+document.getElementById('tsAddSave')?.addEventListener('click', async () => {
+  const btn = document.getElementById('tsAddSave');
+  const sel = document.getElementById('tsAddEmployee');
+  const uid = sel.value;
+  const name = sel.selectedOptions[0]?.dataset.name || '';
+  const inVal = document.getElementById('tsAddIn').value;
+  const outVal = document.getElementById('tsAddOut').value;
+  if (!uid) return toast('Pick an employee', true);
+  if (!inVal) return toast('Clock-in time is required', true);
+  btn.disabled = true; btn.textContent = 'Adding…';
+  const r = await window.portal.addTimeClock({
+    employee_uid: uid, employee_name: name,
+    clock_in: new Date(inVal).toISOString(), clock_out: outVal ? new Date(outVal).toISOString() : null,
+  });
+  btn.disabled = false; btn.textContent = 'Add shift';
+  if (!r.success) return toast(r.error || 'Failed', true);
+  document.getElementById('tsAddModal').style.display = 'none';
+  toast('Shift added — applies on the register’s next sync');
+  render();
+});
 
 // Local-datetime <-> ISO helpers for the <input type="datetime-local"> fields
 // (that input has no timezone; treat it as the manager's local wall-clock time).
@@ -160,7 +193,10 @@ function openTimesheetAdjust(employeeUid, name) {
         <div class="fg" style="flex:1"><label>Clock in</label><input type="datetime-local" data-in="${esc(p.uid)}" value="${isoToLocalInput(p.clock_in)}" /></div>
         <div class="fg" style="flex:1"><label>Clock out ${p.clock_out ? '' : '(blank = still clocked in)'}</label><input type="datetime-local" data-out="${esc(p.uid)}" value="${isoToLocalInput(p.clock_out)}" /></div>
       </div>
-      <button class="rowbtn" data-save-punch="${esc(p.uid)}">Save</button>
+      <div class="row" style="justify-content:space-between;margin-top:4px">
+        <button class="rowbtn" data-save-punch="${esc(p.uid)}">Save</button>
+        <button class="rowbtn" style="color:#f2a9a5" data-delete-punch="${esc(p.uid)}">Delete shift</button>
+      </div>
     </div>`).join('') : '<div class="muted">No punches for this employee in range.</div>';
   wrap.querySelectorAll('[data-save-punch]').forEach((btn) => btn.addEventListener('click', async () => {
     const uid = btn.dataset.savePunch;
@@ -172,6 +208,16 @@ function openTimesheetAdjust(employeeUid, name) {
     btn.disabled = false; btn.textContent = 'Save';
     if (!r.success) return toast(r.error || 'Failed', true);
     toast('Punch updated — applies on the register’s next sync');
+    render();
+  }));
+  wrap.querySelectorAll('[data-delete-punch]').forEach((btn) => btn.addEventListener('click', async () => {
+    if (!confirm('Delete this shift entirely? This removes it from hours and tip-pool calculations. This cannot be undone from here.')) return;
+    const uid = btn.dataset.deletePunch;
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    const r = await window.portal.deleteTimeClock({ uid });
+    if (!r.success) { btn.disabled = false; btn.textContent = 'Delete shift'; return toast(r.error || 'Failed', true); }
+    toast('Shift deleted — applies on the register’s next sync');
+    document.getElementById('tsModal').style.display = 'none';
     render();
   }));
   document.getElementById('tsModal').style.display = 'flex';
@@ -204,17 +250,22 @@ async function renderStaff() {
   const r = await window.portal.staff();
   const wrap = document.getElementById('staffWrap');
   if (!r.success) { wrap.innerHTML = `<div class="card muted">${esc(r.error || 'Could not load staff')}</div>`; return; }
-  const staffList = r.staff || [];
+  // Deleting a staff member soft-deactivates (is_active=false) rather than
+  // hard-deleting — see portal:deleteStaff in main.js for why. That's an
+  // implementation detail, not something a manager should have to parse from
+  // an "inactive" badge sitting next to Bob's name forever; a removed staff
+  // member should actually disappear from this list.
+  const staffList = (r.staff || []).filter((s) => s.is_active);
   wrap.innerHTML = `<div class="card" style="padding:0;overflow:hidden"><table class="grid"><tbody>${
     staffList.length ? staffList.map((s) => {
       const isAdmin = s.role === 'admin';
       const isCashier = s.role === 'cashier';
       const tempBadge = (isCashier ? s.must_change_pin : s.must_change_password)
-        ? ` <span style="font-size:10.5px;color:#b8860b;background:rgba(224,161,58,.14);border-radius:999px;padding:1px 7px;margin-left:4px">temp ${isCashier ? 'PIN' : 'password'}</span>` : '';
+        ? ` <span style="font-size:10.5px;color:var(--warn);background:rgba(156,107,18,.1);border-radius:var(--radius-sm);padding:1px 7px;margin-left:4px">temp ${isCashier ? 'PIN' : 'password'}</span>` : '';
       return `<tr>
       <td>${esc(s.name || s.username || '—')}
         <span class="badge ${isAdmin ? 'warn' : 'dim'}" style="margin-left:6px">${esc(s.role)}</span>
-        ${s.is_active ? '' : ' <span style="font-size:10.5px;color:var(--muted);border:1px solid var(--line-soft);border-radius:999px;padding:1px 7px;margin-left:4px">inactive</span>'}${tempBadge}</td>
+        ${tempBadge}</td>
       <td class="num" style="width:260px">${isAdmin ? '<span class="muted" style="font-size:12px">managed on the POS</span>' : `
         <button class="rowbtn" data-edit='${JSON.stringify(s).replace(/'/g, "&#39;")}'>Edit</button>
         <button class="rowbtn" data-reset="${esc(s.uid)}" data-name="${esc(s.name || '')}" data-role="${esc(s.role)}">Reset ${isCashier ? 'PIN' : 'password'}</button>
@@ -383,13 +434,18 @@ async function renderDashboard() {
   // Item 9 (re-scope to the top-right store picker): the RPC returns every
   // location's totals in one call; filter down to the selected store here.
   const locs = currentStoreId ? r.locations.filter((l) => l.location_id === currentStoreId) : r.locations;
-  const totRev = locs.reduce((s, l) => s + Number(l.revenue || 0), 0);
+  // net_revenue/merchant_fee_amount are only present once the manager-portal
+  // report RPC (migration 052) has been deployed — fall back to gross revenue
+  // with zero fee so this doesn't break against an older cloud function.
+  const netOf = (l) => Number(l.net_revenue != null ? l.net_revenue : l.revenue || 0);
+  const totRev = locs.reduce((s, l) => s + netOf(l), 0);
+  const totFee = locs.reduce((s, l) => s + Number(l.merchant_fee_amount || 0), 0);
   const totTxn = locs.reduce((s, l) => s + Number(l.txn_count || 0), 0);
   const dayAgo = Date.now() - 86400000;
 
   view.innerHTML = `
     <div class="kpi-row">
-      <div class="kpi"><div class="lbl">Business revenue</div><div class="val green">${fmt(totRev)}</div></div>
+      <div class="kpi"><div class="lbl">Business revenue</div><div class="val green">${fmt(totRev)}</div>${totFee ? `<div class="muted" style="font-size:11.5px;margin-top:2px">after ${fmt(totFee)} processing fees</div>` : ''}</div>
       <div class="kpi"><div class="lbl">Transactions</div><div class="val">${totTxn}</div></div>
       <div class="kpi"><div class="lbl">Avg sale</div><div class="val">${fmt(totTxn ? totRev / totTxn : 0)}</div></div>
       <div class="kpi"><div class="lbl">Locations</div><div class="val">${locs.length}</div></div>
@@ -398,10 +454,12 @@ async function renderDashboard() {
     <div class="hgrid">
       ${locs.length ? locs.map((l) => {
         const stale = !l.last_txn_at || new Date(l.last_txn_at).getTime() < dayAgo;
+        const fee = Number(l.merchant_fee_amount || 0);
         return `
         <div class="card click" onclick="openLocation('${esc(l.location_id)}','${esc(nameOf[l.location_id] || l.location_name || 'Location')}')">
           <div style="font-weight:800;margin-bottom:8px">${esc(nameOf[l.location_id] || l.location_name || 'Location')}</div>
-          <div class="val green" style="font-size:22px">${fmt(l.revenue)}</div>
+          <div class="val green" style="font-size:22px">${fmt(netOf(l))}</div>
+          ${fee ? `<div class="muted" style="font-size:11.5px">after ${fmt(fee)} processing fees</div>` : ''}
           <div class="muted" style="font-size:12.5px;margin-top:6px">${l.txn_count} sales · ${l.refund_count} refunds</div>
           <div style="margin-top:8px">${stale ? '<span class="pill flag">💤 No sales 24h</span>' : `<span class="muted" style="font-size:12px">Last sale ${new Date(l.last_txn_at).toLocaleString()}</span>`}</div>
         </div>`;
@@ -420,15 +478,20 @@ async function openLocation(id, name) {
   const rep = r.report, s = rep.summary, p = rep.payments;
   const payLines = [{ lbl: 'Cash', v: p.cash }].concat(p.brands.filter((b) => b.amount).map((b) => ({ lbl: b.brand, v: b.amount })));
   if (p.other_card && p.other_card.amount) payLines.push({ lbl: 'Other card', v: p.other_card.amount });
+  // net_revenue/merchant_fee_amount are only present once migration 052's report
+  // RPC is deployed — fall back to the gross figure with zero fee otherwise.
+  const netRevenue = s.net_revenue != null ? s.net_revenue : s.total_collected;
+  const feeAmount = Number(s.merchant_fee_amount || 0);
   document.getElementById('repBody').innerHTML = `
     <div class="kpi-row" style="margin-bottom:12px">
-      <div class="kpi"><div class="lbl">Net collected</div><div class="val green">${fmt(s.total_collected)}</div></div>
+      <div class="kpi"><div class="lbl">Net collected</div><div class="val green">${fmt(netRevenue)}</div>${feeAmount ? `<div class="muted" style="font-size:11.5px;margin-top:2px">after ${fmt(feeAmount)} processing fees (${s.merchant_fee_pct}%${s.merchant_fee_flat_cents ? ' + ' + fmt(s.merchant_fee_flat_cents / 100) + '/txn' : ''})</div>` : ''}</div>
       <div class="kpi"><div class="lbl">Sales</div><div class="val">${s.count}</div></div>
       <div class="kpi"><div class="lbl">Tax</div><div class="val">${fmt(s.tax)}</div></div>
     </div>
     <div class="h2" style="font-size:14px">Payments</div>
     <table class="grid"><tbody>
       ${payLines.map((l) => `<tr><td>${esc(l.lbl)}</td><td class="num">${fmt(l.v)}</td></tr>`).join('')}
+      ${feeAmount ? `<tr><td class="muted">Processing fees</td><td class="num muted">-${fmt(feeAmount)}</td></tr>` : ''}
       <tr><td class="muted">Refunds</td><td class="num">${rep.refunds.count ? fmt(rep.refunds.total) : '—'}</td></tr>
     </tbody></table>
     <div class="h2" style="font-size:14px;margin-top:14px">Top products</div>
@@ -744,8 +807,8 @@ function drawMenu() {
     const bc = esc(i.barcode);
     const online = i.override_price != null ? fmt(i.override_price) : `<span class="muted">${fmt(i.price)}</span>`;
     const thumb = i.image_url
-      ? `<img src="${esc(i.image_url)}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;background:var(--panel-2)" />`
-      : `<div style="width:40px;height:40px;border-radius:8px;background:var(--panel-2);display:grid;place-items:center;color:var(--faint)">—</div>`;
+      ? `<img src="${esc(i.image_url)}" alt="" style="width:40px;height:40px;border-radius:var(--radius-sm);object-fit:cover;background:var(--panel-2)" />`
+      : `<div style="width:40px;height:40px;border-radius:var(--radius-sm);background:var(--panel-2);display:grid;place-items:center;color:var(--faint)">—</div>`;
     return `<tr>
       <td><input type="checkbox" ${i.is_visible ? 'checked' : ''} onchange="toggleMenu('${bc}', this.checked)" /></td>
       <td>${thumb}<button class="rowbtn" style="margin-top:4px" onclick="uploadImage('${bc}')">${i.image_url ? 'Change' : 'Add'}</button></td>

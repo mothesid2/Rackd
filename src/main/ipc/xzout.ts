@@ -45,10 +45,11 @@ interface FullReport {
   // Tip pool (batch 5, item 7 + item 9: shows up in X/Z reporting)
   tip_pool: TipPool;
   // Estimated card-processing cost on product sales (batch 5 legal rework,
-  // item 3) — same merchant_fee_pct as the tip deduction, since card fees eat
-  // into sale revenue too, not just tips. Informational only: does NOT alter
-  // gross_sales/net_sales above, which keep their existing established meaning.
+  // item 3) — same merchant fee rates as the tip deduction, since card fees
+  // eat into sale revenue too, not just tips. Informational only: does NOT
+  // alter gross_sales/net_sales above, which keep their existing meaning.
   card_processing_fee_pct: number;
+  card_processing_fee_flat_cents: number;
   card_processing_fee_amount: number;
 }
 
@@ -57,7 +58,7 @@ function buildFullReport(db: ReturnType<typeof import('../db/schema').getDb>, sh
   // created_at is stored as ISO 8601 (e.g. "2026-04-12T14:30:00.000-05:00"),
   // so substr(created_at,1,10) reliably gives the local date.
   const openDate = shiftOpenedAt.substring(0, 10); // 'YYYY-MM-DD'
-  const feePct = merchantFeePct(db);
+  const fees = merchantFeeRates(db);
 
   const summary = db.prepare(`
     SELECT
@@ -69,12 +70,13 @@ function buildFullReport(db: ReturnType<typeof import('../db/schema').getDb>, sh
       COALESCE(SUM(CASE WHEN payment_method='card' THEN total ELSE 0 END), 0) AS card_total,
       COALESCE(SUM(CASE WHEN payment_method='split' THEN total ELSE 0 END), 0) AS split_total,
       COALESCE(SUM(CASE WHEN order_source='online' THEN total ELSE 0 END), 0) AS online_total,
-      COUNT(*) AS sale_count
+      COUNT(*) AS sale_count,
+      COALESCE(SUM(CASE WHEN payment_method IN ('card','split') THEN 1 ELSE 0 END), 0) AS card_txn_count
     FROM transactions
     WHERE substr(created_at, 1, 10) >= ? AND payment_status = 'completed'
   `).get(openDate) as {
     gross_sales: number; discount_total: number; tax_total: number; net_sales: number;
-    cash_total: number; card_total: number; split_total: number; online_total: number; sale_count: number;
+    cash_total: number; card_total: number; split_total: number; online_total: number; sale_count: number; card_txn_count: number;
   };
 
   const byCategory = db.prepare(`
@@ -141,22 +143,54 @@ function buildFullReport(db: ReturnType<typeof import('../db/schema').getDb>, sh
     top_products: topProducts,
     by_hour: byHour,
     tip_pool: computeTipPool(db, openDate, openDate),
-    card_processing_fee_pct: feePct,
-    card_processing_fee_amount: Math.round((summary.card_total + summary.split_total) * (feePct / 100) * 100) / 100,
+    card_processing_fee_pct: fees.effectivePct,
+    card_processing_fee_flat_cents: fees.flatCents,
+    card_processing_fee_amount: Math.round(((summary.card_total + summary.split_total) * (fees.effectivePct / 100) + summary.card_txn_count * (fees.flatCents / 100)) * 100) / 100,
   };
 }
 
-/** Owner-set merchant/card-processing rate for this location (0 until configured). */
-function merchantFeePct(db: ReturnType<typeof import('../db/schema').getDb>): number {
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'merchant_fee_pct'").get() as { value: string } | undefined;
-  return Math.max(0, Math.min(100, Number(row?.value) || 0));
+interface MerchantFeeRates { creditPct: number; debitPct: number; effectivePct: number; flatCents: number }
+
+/**
+ * Owner-set merchant/card-processing rates for this location (all 0 until
+ * configured) — credit %, debit %, and a flat per-transaction fee, matching
+ * how real card processing prices (e.g. "2.6% + $0.10"), not one blended %.
+ *
+ * CONSTRAINT: this build's terminal integration (src/main/services/
+ * valorTerminal.ts) only ever reports card BRAND (Visa/Mastercard/etc, from
+ * ISSUER/CARD_TYPE) — never an account-type flag distinguishing credit from
+ * debit. Until that data exists, `effectivePct` is the LOWER of the two
+ * configured rates, applied uniformly to every card transaction. This is a
+ * deliberate legal-safety choice: since the actual card type used per sale is
+ * unknown, applying the higher (credit) rate would risk OVER-deducting from
+ * the tip pool on transactions that were actually cheaper debit swipes —
+ * deducting more than the true incurred cost is the direction that's legally
+ * indefensible, so this always errs toward under-deducting instead.
+ */
+function merchantFeeRates(db: ReturnType<typeof import('../db/schema').getDb>): MerchantFeeRates {
+  const get = (key: string) => {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+    return Number(row?.value) || 0;
+  };
+  const creditPct = Math.max(0, Math.min(100, get('merchant_fee_credit_pct')));
+  const debitPct = Math.max(0, Math.min(100, get('merchant_fee_debit_pct')));
+  const flatCents = Math.max(0, get('merchant_fee_flat_cents'));
+  // If only one of the two rates has been set, use it rather than treating
+  // the unset one's 0 as "free" and averaging it away.
+  const configured = [creditPct, debitPct].filter((v) => v > 0);
+  const effectivePct = configured.length ? Math.min(...configured) : 0;
+  return { creditPct, debitPct, effectivePct, flatCents };
 }
 
 interface TipPoolShare { employee_uid: string; name: string; role: string; hours: number; share: number }
 interface TipPool {
   total_tips: number;
   card_tip_total: number;
-  merchant_fee_pct: number;
+  merchant_fee_credit_pct: number;
+  merchant_fee_debit_pct: number;
+  merchant_fee_effective_pct: number;
+  merchant_fee_flat_cents: number;
+  card_tip_txn_count: number;
   deduction_amount: number;
   pool_amount: number;
   total_hours: number;
@@ -213,13 +247,15 @@ function allocateCents<T extends { weight: number }>(entries: T[], poolCents: nu
 export function computeTipPool(db: ReturnType<typeof import('../db/schema').getDb>, startDate: string, endDate: string): TipPool {
   const tipRow = db.prepare(
     `SELECT COALESCE(SUM(tip_amount), 0) AS total,
-            COALESCE(SUM(CASE WHEN payment_method IN ('card','split') THEN tip_amount ELSE 0 END), 0) AS card_total
+            COALESCE(SUM(CASE WHEN payment_method IN ('card','split') THEN tip_amount ELSE 0 END), 0) AS card_total,
+            COALESCE(SUM(CASE WHEN payment_method IN ('card','split') AND tip_amount > 0 THEN 1 ELSE 0 END), 0) AS card_tip_txns
      FROM transactions WHERE substr(created_at, 1, 10) BETWEEN ? AND ? AND payment_status = 'completed'`
-  ).get(startDate, endDate) as { total: number; card_total: number };
+  ).get(startDate, endDate) as { total: number; card_total: number; card_tip_txns: number };
   const totalTips = Math.round((tipRow.total || 0) * 100) / 100;
   const cardTipTotal = Math.round((tipRow.card_total || 0) * 100) / 100;
+  const cardTipTxnCount = tipRow.card_tip_txns || 0;
 
-  const feePct = merchantFeePct(db);
+  const fees = merchantFeeRates(db);
 
   // Role lookup — the whole point of this rebuild is that this can never be
   // skipped or bypassed for a given employee_uid.
@@ -266,14 +302,24 @@ export function computeTipPool(db: ReturnType<typeof import('../db/schema').getD
     }
     byEmployee.sort((a, b) => b.share - a.share);
     return {
-      total_tips: totalTips, card_tip_total: cardTipTotal, merchant_fee_pct: feePct,
+      total_tips: totalTips, card_tip_total: cardTipTotal,
+      merchant_fee_credit_pct: fees.creditPct, merchant_fee_debit_pct: fees.debitPct,
+      merchant_fee_effective_pct: fees.effectivePct, merchant_fee_flat_cents: fees.flatCents, card_tip_txn_count: cardTipTxnCount,
       deduction_amount: 0, pool_amount: 0, total_hours: 0, pooled: false,
       skip_reason: 'No eligible (non-management) employee clocked in — tips post directly to whoever rang the sale, not pooled (29 CFR §531.52).',
       by_employee: byEmployee,
     };
   }
 
-  const deductionAmount = Math.round(cardTipTotal * (feePct / 100) * 100) / 100;
+  // Deduction = (% rate on the card-tendered tip total) + (flat per-swipe fee,
+  // once for each card transaction that included a tip). The flat fee is a
+  // real cost triggered by the swipe itself; attributing one flat-fee unit to
+  // each tipped card transaction (rather than splitting it proportionally
+  // across item total vs. tip) keeps the calculation simple and auditable —
+  // flagged to the user as a judgment call, not dictated by the legal guidance.
+  const pctDeduction = cardTipTotal * (fees.effectivePct / 100);
+  const flatDeduction = cardTipTxnCount * (fees.flatCents / 100);
+  const deductionAmount = Math.round((pctDeduction + flatDeduction) * 100) / 100;
   const poolAmount = Math.round((totalTips - deductionAmount) * 100) / 100;
 
   const shares = allocateCents(
@@ -285,7 +331,9 @@ export function computeTipPool(db: ReturnType<typeof import('../db/schema').getD
     .sort((a, b) => b.share - a.share);
 
   return {
-    total_tips: totalTips, card_tip_total: cardTipTotal, merchant_fee_pct: feePct,
+    total_tips: totalTips, card_tip_total: cardTipTotal,
+    merchant_fee_credit_pct: fees.creditPct, merchant_fee_debit_pct: fees.debitPct,
+    merchant_fee_effective_pct: fees.effectivePct, merchant_fee_flat_cents: fees.flatCents, card_tip_txn_count: cardTipTxnCount,
     deduction_amount: deductionAmount, pool_amount: poolAmount,
     total_hours: Math.round(totalHours * 100) / 100, pooled: true, skip_reason: null,
     by_employee: byEmployee,
@@ -298,9 +346,9 @@ export function computeTipPool(db: ReturnType<typeof import('../db/schema').getD
 export function saveTipPoolLedger(db: ReturnType<typeof import('../db/schema').getDb>, reportDate: string, zReportId: number | null, tp: TipPool): void {
   const generatedAt = nowCT();
   const res = db.prepare(
-    `INSERT INTO tip_pool_ledger (report_date, z_report_id, total_tips, card_tip_total, merchant_fee_pct, deduction_amount, pool_amount, pooled, skip_reason, total_hours, generated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(reportDate, zReportId, tp.total_tips, tp.card_tip_total, tp.merchant_fee_pct, tp.deduction_amount, tp.pool_amount, tp.pooled ? 1 : 0, tp.skip_reason, tp.total_hours, generatedAt);
+    `INSERT INTO tip_pool_ledger (report_date, z_report_id, total_tips, card_tip_total, merchant_fee_credit_pct, merchant_fee_debit_pct, merchant_fee_flat_cents, card_tip_txn_count, deduction_amount, pool_amount, pooled, skip_reason, total_hours, generated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(reportDate, zReportId, tp.total_tips, tp.card_tip_total, tp.merchant_fee_credit_pct, tp.merchant_fee_debit_pct, tp.merchant_fee_flat_cents, tp.card_tip_txn_count, tp.deduction_amount, tp.pool_amount, tp.pooled ? 1 : 0, tp.skip_reason, tp.total_hours, generatedAt);
   const ledgerId = Number(res.lastInsertRowid);
   const insertShare = db.prepare(
     `INSERT INTO tip_pool_shares (ledger_id, employee_uid, employee_name, role, hours, share_amount) VALUES (?, ?, ?, ?, ?, ?)`
@@ -322,7 +370,7 @@ function normalizeBrand(cardType: string | null): string {
 // monthly / MTD / YTD audit report. Breaks payments out by card brand + cash,
 // and sales out by department (product category).
 function buildPeriodReport(db: ReturnType<typeof import('../db/schema').getDb>, startDate: string, endDate: string) {
-  const feePct = merchantFeePct(db);
+  const fees = merchantFeeRates(db);
   const summary = db.prepare(`
     SELECT
       COALESCE(SUM(subtotal + discount_amount), 0) AS gross,
@@ -365,6 +413,7 @@ function buildPeriodReport(db: ReturnType<typeof import('../db/schema').getDb>, 
   const brands = ['Visa', 'Mastercard', 'Discover', 'Amex'].map(b => ({ brand: b, ...brandMap[b] }));
   const otherCard = brandMap.Other;
   const cardTotal = brands.reduce((s, b) => s + b.amount, 0) + otherCard.amount;
+  const cardCount = brands.reduce((s, b) => s + b.count, 0) + otherCard.count;
 
   const byCategory = db.prepare(`
     SELECT COALESCE(p.category, ti.category, 'Uncategorized') AS category,
@@ -415,8 +464,9 @@ function buildPeriodReport(db: ReturnType<typeof import('../db/schema').getDb>, 
     top_products: topProducts,
     refunds: { count: refundRow.count, total: refundRow.total },
     tip_pool: computeTipPool(db, startDate, endDate),
-    card_processing_fee_pct: feePct,
-    card_processing_fee_amount: Math.round(cardTotal * (feePct / 100) * 100) / 100,
+    card_processing_fee_pct: fees.effectivePct,
+    card_processing_fee_flat_cents: fees.flatCents,
+    card_processing_fee_amount: Math.round((cardTotal * (fees.effectivePct / 100) + cardCount * (fees.flatCents / 100)) * 100) / 100,
   };
 }
 

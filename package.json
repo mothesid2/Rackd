@@ -1,6 +1,6 @@
 {
   "name": "sei-vape-pos",
-  "version": "1.0.17",
+  "version": "1.0.24",
   "description": "rackd Point of Sale System",
   "main": "dist/main/index.js",
   "scripts": {

@@ -5,9 +5,13 @@
 :root { color-scheme: light; }
 
 body {
+  /* Softened from #f5f2ed (relative luminance 0.890) to #e9e2d8 (0.767, a ~14%
+     reduction) after feedback that the near-white ground was hard on the eyes.
+     Same warm hue/saturation family (HSL 37°, 29%), just less glare — not a
+     move toward dark mode. */
   background:
     radial-gradient(1100px 460px at 82% -8%, rgba(176, 29, 46, 0.06), rgba(176, 29, 46, 0) 60%),
-    #f5f2ed;
+    #e9e2d8;
   color: #17191d;
   font-family: var(--font-body), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;

@@ -168,6 +168,21 @@ Deno.serve(async (req: Request) => {
       // with it and sees every location. max_registers = total kiosks allowed
       // across all the business's locations.
       case 'createBusiness': {
+        const bizName = (body.name as string)?.trim() || 'Business';
+        // Guard against a repeat of 2026-07-24's "BB Business LLC" duplicate-tenant
+        // incident: two clicks (or a retry after a slow response) on "+ New
+        // business" silently produced two separate tenants under the same name,
+        // one of which orphaned real activity. Case-insensitive on the business
+        // (kind='business') license row's name — per-location names aren't
+        // checked, only the business identity itself.
+        const { data: dupe } = await admin
+          .from('licenses')
+          .select('tenant_id')
+          .eq('kind', 'business')
+          .ilike('name', bizName)
+          .maybeSingle();
+        if (dupe) return json({ error: `A business named "${bizName}" already exists.` }, 409);
+
         const tenantId = (body.tenant_id as string)?.trim() || crypto.randomUUID();
         const rawLocs = Array.isArray(body.locations) ? body.locations : [];
         const locNames = rawLocs
@@ -183,7 +198,7 @@ Deno.serve(async (req: Request) => {
         if (locErr) throw locErr;
 
         const row = {
-          name: (body.name as string)?.trim() || 'Business',
+          name: bizName,
           license_key: (body.license_key as string)?.trim() || genKey(),
           tenant_id: tenantId,
           location_id: null,
@@ -292,11 +307,15 @@ Deno.serve(async (req: Request) => {
       case 'setLocationMerchantFee': {
         const locationId = (body.location_id as string)?.trim();
         if (!locationId) return json({ error: 'location_id required' }, 400);
-        const pct = Math.max(0, Math.min(100, Number(body.merchant_fee_pct)));
-        if (!Number.isFinite(pct)) return json({ error: 'merchant_fee_pct must be a number' }, 400);
+        const clampPct = (v: unknown) => Math.max(0, Math.min(100, Number(v) || 0));
+        const creditPct = clampPct(body.merchant_fee_credit_pct);
+        const debitPct = clampPct(body.merchant_fee_debit_pct);
+        const flatCents = Math.max(0, Math.round(Number(body.merchant_fee_flat_cents) || 0));
         const { data, error } = await admin
-          .from('locations').update({ merchant_fee_pct: pct }).eq('id', locationId)
-          .select('id, merchant_fee_pct').single();
+          .from('locations').update({
+            merchant_fee_credit_pct: creditPct, merchant_fee_debit_pct: debitPct, merchant_fee_flat_cents: flatCents,
+          }).eq('id', locationId)
+          .select('id, merchant_fee_credit_pct, merchant_fee_debit_pct, merchant_fee_flat_cents').single();
         if (error) throw error;
         return json({ location: data });
       }
@@ -396,15 +415,24 @@ Deno.serve(async (req: Request) => {
         if (existing) return json({ error: 'That username is already taken on this business.' }, 400);
         const password = genPassword();
         const passwordHash = bcrypt.hashSync(password, 10);
+        // FIX: this insert never set pin_hash (and set must_change_pin: false, so
+        // the normal forced-first-login flow would never prompt for one either) —
+        // a manager created here was permanently PIN-less, silently invisible from
+        // every kiosk's "who's signing in" list forever (auth:listPinUsers requires
+        // a non-empty pin_hash). Every other manager-creation path (perms.ts
+        // saveEmployee, this same function's cashier branch above) already
+        // generates one; this just brings Owner Console in line with that.
+        const pin = genPin4();
+        const pinHash = bcrypt.hashSync(pin, 10);
         const { error } = await admin.from('employees_cloud').insert({
           uid, tenant_id: tenantId, location_id: null, username, name: managerName, role: 'manager',
-          password_hash: passwordHash, is_active: true, must_change_password: true, must_change_pin: false,
+          password_hash: passwordHash, pin_hash: pinHash, is_active: true, must_change_password: true, must_change_pin: true,
         });
         if (error) throw error;
         await admin.from('owner_audit_log').insert({
           tenant_id: tenantId, action: 'create_manager', target_uid: uid, target_label: username, detail: {},
         });
-        return json({ uid, username, name: managerName, role: 'manager', password });
+        return json({ uid, username, name: managerName, role: 'manager', password, pin });
       }
 
       // List a business's kiosks (registered machines) with their location + any
@@ -565,6 +593,31 @@ Deno.serve(async (req: Request) => {
         if (error) throw error;
         if (lic?.location_id) await admin.from('locations').delete().eq('id', lic.location_id);
         return json({ ok: true });
+      }
+
+      // Delete an ENTIRE business (batch 5): every license (business + any
+      // manager/register codes), every location, every employee, and kiosk
+      // registration for the tenant. Unlike `delete` above (single license_key,
+      // written for the old one-license-per-location model where a business
+      // license's location_id was always set), this is tenant-scoped — the
+      // current business-key model leaves location_id null on the business
+      // license, so `delete` alone would silently orphan the location and
+      // every employee. Built specifically so an accidental duplicate business
+      // (see 2026-07-24's "BB Business LLC" duplicate-tenant incident) can be
+      // cleaned up from the UI instead of needing a hand-run SQL script.
+      case 'deleteBusiness': {
+        const tenantId = (body.tenant_id as string)?.trim();
+        if (!tenantId) return json({ error: 'tenant_id required' }, 400);
+        const { data: biz } = await admin.from('licenses').select('name').eq('tenant_id', tenantId).eq('kind', 'business').maybeSingle();
+        if (!biz) return json({ error: 'business not found' }, 404);
+        await admin.from('license_registrations').delete().eq('tenant_id', tenantId);
+        await admin.from('employee_permissions_cloud').delete().eq('tenant_id', tenantId);
+        await admin.from('time_clock_cloud').delete().eq('tenant_id', tenantId);
+        await admin.from('employees_cloud').delete().eq('tenant_id', tenantId);
+        await admin.from('locations').delete().eq('tenant_id', tenantId);
+        const { error } = await admin.from('licenses').delete().eq('tenant_id', tenantId);
+        if (error) throw error;
+        return json({ ok: true, name: biz.name });
       }
 
       case 'freeSeat': {

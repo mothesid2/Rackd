@@ -482,9 +482,9 @@ export function enqueueInventorySnapshot(
 ): boolean {
   if (!isSupabaseConfigured()) return false;
   const p = db
-    .prepare('SELECT id, barcode, name, category, price, cost, stock_qty, low_stock_threshold FROM products WHERE id = ?')
+    .prepare('SELECT id, barcode, name, category, vendor, price, cost, stock_qty, low_stock_threshold, age_restricted FROM products WHERE id = ?')
     .get(productId) as
-    | { id: number; barcode: string | null; name: string; category: string | null; price: number; cost: number; stock_qty: number; low_stock_threshold: number }
+    | { id: number; barcode: string | null; name: string; category: string | null; vendor: string | null; price: number; cost: number; stock_qty: number; low_stock_threshold: number; age_restricted: number }
     | undefined;
   if (!p) return false;
   const sku =
@@ -499,8 +499,10 @@ export function enqueueInventorySnapshot(
     barcode: p.barcode,
     name: p.name,
     category: p.category,
+    vendor: p.vendor,
     price: p.price,
     cost: p.cost,
+    age_restricted: !!p.age_restricted,
     quantity: p.stock_qty,
     reorder_point: p.low_stock_threshold,
     adjustment_reason: reason,
@@ -611,6 +613,82 @@ function applyStockMovement(row: Record<string, unknown>, db: Database.Database 
       delta,
       new Date().toISOString(),
       local.id
+    );
+  }
+}
+
+/**
+ * Catalog pull applier: land a peer's product (added or edited on another
+ * kiosk at this location) locally — this is the piece that was missing.
+ * inventory_cloud has always been pushed to (enqueueInventorySnapshot,
+ * reporting-only) but never pulled from, so a product created/edited on one
+ * kiosk never reached a second kiosk at the same location; only its stock
+ * COUNT would converge afterward, and only for a barcode both kiosks already
+ * had. This is additive to that push mirror, not a replacement for it.
+ *
+ * Identity = barcode, same as applyStockMovement's resolution (local ids
+ * aren't portable across registers). Rows with no barcode are skipped — there
+ * is no other stable cross-kiosk key to land them on.
+ *
+ * Deliberately does NOT touch stock_qty on an existing local product: stock
+ * count convergence is already owned by the movement-delta pull
+ * (applyStockMovement); blindly overwriting it here from a stale-ish snapshot
+ * would fight that mechanism and could clobber a concurrent local sale. A
+ * brand-new product (no local match) has no existing count to protect, so its
+ * initial stock_qty is seeded from the incoming snapshot's quantity.
+ *
+ * Guards against clobbering a same-cycle local edit that hasn't pushed yet —
+ * same pattern as applyCustomer: if this product has a pending, unsynced
+ * 'inventory' outbox row, the local edit wins for now (it'll reconcile via
+ * the push path's own last-write-wins check once it sends).
+ */
+export function applyProduct(row: Record<string, unknown>, db: Database.Database = getDb()): void {
+  const barcode = String(row.barcode ?? '').trim();
+  if (!barcode) return;
+
+  const local = db.prepare('SELECT id FROM products WHERE barcode = ?').get(barcode) as { id: number } | undefined;
+  if (local) {
+    const pending = db.prepare(
+      `SELECT 1 FROM sync_queue WHERE table_name = 'inventory' AND record_id = ? AND synced = 0 AND dead_letter = 0 LIMIT 1`
+    ).get(String(local.id));
+    if (pending) return;
+  }
+
+  const name = String(row.name ?? '').trim();
+  if (!name) return; // local products.name is NOT NULL
+  const updatedAt = String(row.updated_at ?? new Date().toISOString());
+
+  if (local) {
+    db.prepare(
+      `UPDATE products SET name = ?, category = ?, vendor = ?, price = ?, cost = ?,
+         low_stock_threshold = ?, age_restricted = ?, updated_at = ? WHERE id = ?`
+    ).run(
+      name,
+      (row.category as string) ?? null,
+      (row.vendor as string) ?? null,
+      Number(row.price) || 0,
+      Number(row.cost) || 0,
+      Number(row.reorder_point) || 5,
+      row.age_restricted ? 1 : 0,
+      updatedAt,
+      local.id
+    );
+  } else {
+    db.prepare(
+      `INSERT INTO products (barcode, name, category, vendor, price, cost, stock_qty, low_stock_threshold, age_restricted, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      barcode,
+      name,
+      (row.category as string) ?? null,
+      (row.vendor as string) ?? null,
+      Number(row.price) || 0,
+      Number(row.cost) || 0,
+      Number(row.quantity) || 0,
+      Number(row.reorder_point) || 5,
+      row.age_restricted ? 1 : 0,
+      updatedAt,
+      updatedAt
     );
   }
 }
@@ -737,6 +815,10 @@ export function registerPullSpec(key: string, spec: PullSpec): void {
 registerPullSpec('stock_movements', { cloudTable: 'stock_movements_cloud', apply: applyStockMovement });
 // Phase 3: pull peers' customers into the shared per-location book.
 registerPullSpec('customers', { cloudTable: 'customers_cloud', apply: applyCustomer });
+// Catalog sync: pull peers' product adds/edits (inventory_cloud is also the
+// existing push-only reporting mirror — this reuses it as a pull source, it
+// does not replace or change that push path).
+registerPullSpec('products', { cloudTable: 'inventory_cloud', apply: applyProduct });
 
 // ── Rebates: tenant config pulled DOWN so every register detects offline ──────
 function applyManufacturer(row: Record<string, unknown>, db: Database.Database = getDb()): void {
@@ -840,6 +922,16 @@ registerPullSpec('employee_permissions', { cloudTable: 'employee_permissions_clo
 
 export function applyTimeClock(row: Record<string, unknown>, db: Database.Database = getDb()): void {
   const uid = String(row.uid ?? ''); if (!uid) return;
+  // A manager deleting a shift from the portal is a soft-delete in the cloud
+  // (UPDATE deleted=true, not a real DELETE) — the peer-pull mechanism is
+  // purely additive/upsert-by-uid with no way to notice a row vanishing, so a
+  // hard cloud delete would leave a stale copy on any kiosk that already
+  // pulled it. The tombstone rides the same pull/apply path as any other
+  // update; here on the kiosk it turns into a real local delete, so every
+  // downstream consumer (tip pool, X/Z reports) just sees the row gone
+  // instead of needing a `WHERE deleted = 0` added everywhere it reads
+  // time_clock.
+  if (row.deleted) { db.prepare('DELETE FROM time_clock WHERE uid = ?').run(uid); return; }
   // FIX (batch 5, item 8): the ON CONFLICT clause never updated clock_in, only
   // clock_out — a manager's clock-IN correction (Manager Portal timesheet
   // adjustment) would push to the cloud fine but never actually reach the
@@ -1018,13 +1110,14 @@ async function pullLocationAddress(
 }
 
 /**
- * Pull this kiosk's own location's merchant/card-processing fee rate
+ * Pull this kiosk's own location's merchant/card-processing fee rates
  * (batch 5 tip-pool legal rework) — owner-only, set in the Owner Console.
+ * Credit %, debit %, and a flat per-transaction fee, not one blended %, since
+ * that's how real card processing actually prices (e.g. "2.6% + $0.10").
  * Deliberately its OWN query, never merged into pullLocationAddress's SELECT:
- * `locations.merchant_fee_pct` only exists once migration 052 is applied, and
- * this must be able to 42703 in isolation without taking the address pull
- * down with it (see the 2026-07-24 admin-function outage for why this
- * discipline matters now).
+ * these columns only exist once migration 052 is applied, and this must be
+ * able to 42703 in isolation without taking the address pull down with it
+ * (see the 2026-07-24 admin-function outage for why this discipline matters).
  */
 async function pullMerchantFeeRate(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
@@ -1033,9 +1126,12 @@ async function pullMerchantFeeRate(
   const locationId = getLocationId(db);
   if (!locationId) return;
   try {
-    const { data, error } = await supabase.from('locations').select('merchant_fee_pct').eq('id', locationId).maybeSingle();
-    if (error || !data) return; // column may not exist yet (migration 052 pending) — non-fatal
-    writeSetting('merchant_fee_pct', String(data.merchant_fee_pct ?? 0), db);
+    const { data, error } = await supabase.from('locations')
+      .select('merchant_fee_credit_pct, merchant_fee_debit_pct, merchant_fee_flat_cents').eq('id', locationId).maybeSingle();
+    if (error || !data) return; // columns may not exist yet (migration 052 pending) — non-fatal
+    writeSetting('merchant_fee_credit_pct', String(data.merchant_fee_credit_pct ?? 0), db);
+    writeSetting('merchant_fee_debit_pct', String(data.merchant_fee_debit_pct ?? 0), db);
+    writeSetting('merchant_fee_flat_cents', String(data.merchant_fee_flat_cents ?? 0), db);
   } catch {
     /* non-fatal — keep whatever rate is cached locally */
   }

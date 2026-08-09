@@ -254,7 +254,7 @@
 
       if (r.card_processing_fee_amount > 0) {
         document.getElementById('xPayTiles').insertAdjacentHTML('beforeend',
-          `<div class="metric-tile"><div class="lbl">Est. card fees (${r.card_processing_fee_pct}%)</div><div class="val amber">-${fmt(r.card_processing_fee_amount)}</div></div>`);
+          `<div class="metric-tile"><div class="lbl">Est. card fees (${cardFeeLabel(r)})</div><div class="val amber">-${fmt(r.card_processing_fee_amount)}</div></div>`);
       }
 
       document.getElementById('xRefunds').innerHTML = r.refunds.count
@@ -286,6 +286,12 @@
       return `<div class="report-line-row"><span class="lbl">${esc(String(label))}</span><span class="val">${esc(String(val))}</span></div>`;
     }
 
+    // "2.6%" or "2.6% + $0.10/txn" — the flat per-transaction fee only shows once set.
+    function cardFeeLabel(r) {
+      const pct = `${r.card_processing_fee_pct}%`;
+      return r.card_processing_fee_flat_cents > 0 ? `${pct} + ${fmt(r.card_processing_fee_flat_cents / 100)}/txn` : pct;
+    }
+
     // Tip pool (batch 5, rebuilt to the user's legal spec): shared by the X
     // Report card and the Z Report results. Managers/owner never appear here
     // as recipients (excluded from the calculation entirely, not just the fee
@@ -304,7 +310,7 @@
       }
       const rows = [
         buildLineRow('Total tips', fmt(tp.total_tips)),
-        buildLineRow(`Card processing deduction (${tp.merchant_fee_pct}% of card tips)`, '-' + fmt(tp.deduction_amount)),
+        buildLineRow(`Card processing deduction (${tp.merchant_fee_effective_pct}% of card tips${tp.merchant_fee_flat_cents > 0 ? ` + ${fmt(tp.merchant_fee_flat_cents / 100)}/card tip` : ''})`, '-' + fmt(tp.deduction_amount)),
         buildLineRow('Pool to distribute', fmt(tp.pool_amount)),
       ].join('');
       const emp = tp.by_employee.length
@@ -329,7 +335,7 @@
           ${buildLineRow('Cash', fmt(r.cash_total))}
           ${buildLineRow('Card', fmt(r.card_total))}
           ${buildLineRow('Transactions', r.sale_count)}
-          ${r.card_processing_fee_amount > 0 ? buildLineRow(`Est. card processing fee (${r.card_processing_fee_pct}%)`, '-' + fmt(r.card_processing_fee_amount)) : ''}
+          ${r.card_processing_fee_amount > 0 ? buildLineRow(`Est. card processing fee (${cardFeeLabel(r)})`, '-' + fmt(r.card_processing_fee_amount)) : ''}
         </div>
         ${r.tip_pool && r.tip_pool.total_tips > 0 ? `<div class="report-section">
           <div class="report-section-title">Tip Pool</div>

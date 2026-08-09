@@ -64,6 +64,34 @@ interface CreateTransactionData {
   };
 }
 
+/**
+ * A refund's tax as the SAME proportional share of the original sale's actual
+ * (unrounded) tax_amount, not a fresh subtotal*taxRate recompute rounded to
+ * cents. The original sale's tax_amount is stored unrounded (renderer sends
+ * whatever computeTotals() produced, e.g. 2.50*0.0825 = 0.20625, never
+ * rounded before insert) — rounding only the refund's side of that same
+ * arithmetic is what left a full refund a cent short of the sale it
+ * reverses. Two $2.50+tax sales, fully refunded, netted to -$0.01 instead of
+ * $0.00 in the X/Z report before this fix.
+ *
+ * A full refund (subtotal === origSubtotal) gets EXACTLY -origTaxAmount, so
+ * it always nets to precisely zero against the sale it reverses, no matter
+ * how the tax rounded. A partial refund gets a proportional share, which
+ * still isn't perfectly cent-exact across several partial refunds of the
+ * same receipt, but no longer diverges from what the original sale actually
+ * charged the way a fresh independent recompute did.
+ */
+export function computeRefundTax(
+  subtotal: number,
+  origSubtotal: number,
+  origTaxAmount: number,
+  taxRate: number
+): { tax: number; total: number } {
+  const tax = origSubtotal > 0 ? origTaxAmount * (subtotal / origSubtotal) : +(subtotal * taxRate).toFixed(2);
+  const total = -(subtotal + tax);
+  return { tax, total };
+}
+
 function loyaltyTier(lifetime: number, gold: boolean): string {
   if (gold || lifetime >= 1500) return 'Gold';
   if (lifetime >= 500) return 'Silver';
@@ -460,6 +488,11 @@ export function registerTransactionHandlers(): void {
         receipt: {
           id, created_at: txn.created_at, discount_amount: (txn.discount_amount as number) || 0,
           tax_rate: (txn.tax_rate as number) || 0,
+          // The sale's own (unrounded) subtotal/tax_amount — the renderer needs
+          // these to derive a refund's tax as the same proportional share the
+          // server computes, so the terminal is charged the right amount and a
+          // full refund still nets to exactly zero (see refundItems).
+          orig_subtotal: (txn.subtotal as number) || 0, orig_tax_amount: (txn.tax_amount as number) || 0,
           payment_method: txn.payment_method, customer, within_window: withinWindow,
           window_days: REFUND_WINDOW_DAYS, items,
         },
@@ -474,6 +507,13 @@ export function registerTransactionHandlers(): void {
   // shift, and syncs. ─────────────────────────────────────────────────────────
   ipcMain.handle('transactions:refundItems', async (_event, payload: {
     original_txn_id: number; manager_pin: string; items: { product_id: number; qty: number }[];
+    // Card refunds: the renderer sends the card back through the terminal
+    // (terminal:sendPayment, negative amount -> TRAN_CODE 5) BEFORE calling this
+    // handler, and passes the approval through here for both the audit trail
+    // and the server-side guard below. This handler never talks to the
+    // terminal itself — see the guard immediately below for why that's not
+    // just a formality.
+    auth_code?: string; last4?: string; card_type?: string; terminal_ref?: string; signature_data?: string;
   }) => {
     try {
       const w = assertWritable('return'); if (!w.ok) return { success: false, error: w.error };
@@ -517,14 +557,34 @@ export function registerTransactionHandlers(): void {
         }
         if (!validated.length) throw new Error('No refundable items selected');
 
+        // Card refunds must have already cleared the terminal — the renderer
+        // sends the reversal (terminal:sendPayment, negative amount) BEFORE
+        // calling this handler and passes the approval through in `payload`.
+        // Enforced here too, not just in the renderer: without this, nothing
+        // stops a refund from being recorded as done while the customer's
+        // card was never actually credited.
+        if (orig.payment_method === 'card' && !payload?.auth_code) {
+          throw new Error('Card refunds require the terminal to approve the reversal first — no auth code received. Nothing was refunded.');
+        }
+
         const taxRate = (orig.tax_rate as number) || 0;
-        const tax = +(subtotal * taxRate).toFixed(2);
-        const total = -+(subtotal + tax).toFixed(2);
+        const origSubtotal = (orig.subtotal as number) || 0;
+        const origTaxAmount = (orig.tax_amount as number) || 0;
+        const { tax, total } = computeRefundTax(subtotal, origSubtotal, origTaxAmount, taxRate);
 
         const res = db.prepare(`
-          INSERT INTO transactions (cashier_id, customer_id, subtotal, tax_rate, tax_amount, discount_amount, total, payment_method, payment_status, original_txn_id, created_at)
-          VALUES (?, ?, ?, ?, ?, 0, ?, ?, 'completed', ?, ?)
-        `).run(session?.userId || orig.cashier_id, orig.customer_id ?? null, -subtotal, taxRate, -tax, total, orig.payment_method, origId, nowCT());
+          INSERT INTO transactions
+            (cashier_id, customer_id, subtotal, tax_rate, tax_amount, discount_amount, total,
+             payment_method, payment_status, original_txn_id, auth_code, last4, card_type,
+             terminal_ref, signature_data, created_at)
+          VALUES (?, ?, ?, ?, ?, 0, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          session?.userId || orig.cashier_id, orig.customer_id ?? null, -subtotal, taxRate, -tax, total,
+          orig.payment_method, origId,
+          payload?.auth_code || null, payload?.last4 || null, payload?.card_type || null,
+          payload?.terminal_ref || null, payload?.signature_data || null,
+          nowCT()
+        );
         const refundId = res.lastInsertRowid as number;
 
         const itemIds: number[] = [];

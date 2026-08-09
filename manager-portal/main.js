@@ -481,9 +481,55 @@ ipcMain.handle('portal:timesheet', async (_e, { start, end } = {}) => {
     const endIso = new Date(`${end}T23:59:59.999`).toISOString();
     const rows = await sb(
       `/rest/v1/time_clock_cloud?select=uid,location_id,employee_uid,employee_name,clock_in,clock_out` +
+      `&deleted=eq.false` +
       `&clock_in=gte.${encodeURIComponent(startIso)}&clock_in=lte.${encodeURIComponent(endIso)}&order=clock_in.asc`
     );
     return { success: true, punches: rows || [] };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
+
+// Log a brand-new shift the register never saw a punch for — an employee forgot
+// to clock in/out, or a manager needs to backfill hours manually. clock_out may
+// be omitted to log them as still clocked in. Same sync path as every other
+// punch (peer-pull by uid), so this reaches the register + feeds tip-pool hours
+// and X/Z reports exactly like a real punch would.
+ipcMain.handle('portal:addTimeClock', async (_e, { employee_uid, employee_name, clock_in, clock_out } = {}) => {
+  try {
+    requireAuth();
+    if (!employee_uid || !clock_in) throw new Error('Pick an employee and a clock-in time');
+    const inMs = new Date(clock_in).getTime();
+    if (Number.isNaN(inMs)) throw new Error('Invalid clock-in time');
+    if (clock_out) {
+      const outMs = new Date(clock_out).getTime();
+      if (Number.isNaN(outMs)) throw new Error('Invalid clock-out time');
+      if (outMs < inMs) throw new Error('Clock-out cannot be before clock-in');
+    }
+    await sb('/rest/v1/time_clock_cloud', {
+      method: 'POST',
+      body: {
+        uid: randomUUID(), tenant_id: session.tenant_id, location_id: currentLocationId || null,
+        register_id: 'manager', employee_uid, employee_name: employee_name || null,
+        clock_in: new Date(clock_in).toISOString(), clock_out: clock_out ? new Date(clock_out).toISOString() : null,
+      },
+    });
+    return { success: true };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
+
+// Soft-delete: sets deleted=true rather than a real DELETE. The peer-pull sync
+// (src/main/supabase/sync.ts pullCycle) is purely additive/upsert-by-uid with
+// no way to notice a row vanishing upstream — a real DELETE here would leave a
+// stale, still-counted copy on any kiosk that already pulled this punch. The
+// tombstone rides the same UPDATE path as a normal correction, and
+// applyTimeClock turns it into a real local delete once it reaches the kiosk.
+ipcMain.handle('portal:deleteTimeClock', async (_e, { uid } = {}) => {
+  try {
+    requireAuth();
+    if (!uid) throw new Error('missing uid');
+    await sb(`/rest/v1/time_clock_cloud?uid=eq.${encodeURIComponent(uid)}`, {
+      method: 'PATCH', body: { deleted: true },
+    });
+    return { success: true };
   } catch (e) { return { success: false, error: String(e.message || e) }; }
 });
 

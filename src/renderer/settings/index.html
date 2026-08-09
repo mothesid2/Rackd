@@ -327,6 +327,16 @@
       <button class="btn btn-navy" data-write-action="settings_change" onclick="saveZebraSettings()">Save Zebra Settings</button>
     </div>
 
+    <!-- Touchscreen -->
+    <div class="card settings-section">
+      <div class="card-title">Touchscreen</div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;cursor:pointer"><input type="checkbox" id="onscreenKeyboardEnabled" style="width:auto" /> Show an on-screen keyboard when tapping a text field</label>
+        <div style="font-size:12px;color:#888;margin-top:4px">Turn this on for kiosks with a touchscreen and no physical keyboard attached. Leave off if this register has a keyboard.</div>
+      </div>
+      <button class="btn btn-navy" data-write-action="settings_change" onclick="saveTouchscreenSettings()">Save Touchscreen Settings</button>
+    </div>
+
     <!-- Owner Console — PIN-gated, hidden from store managers -->
     <div class="card settings-section" id="ownerCard">
       <div class="card-title">Owner Console 🔒</div>
@@ -438,13 +448,15 @@
 
       const res = await window.api.createUser(username, password, role);
       if (res.success) {
-        // Cashiers sign in at the register with a PIN, not this password — it's
-        // generated here, so show it once (blocking, so it isn't missed) rather
-        // than a toast that auto-dismisses.
-        if (res.pin) {
+        // Cashiers sign in at the register with a PIN only. Managers need BOTH —
+        // the generated PIN isn't just a nice-to-have, it's what they type to get
+        // through their first sign-in at all before being prompted for a new one
+        // (same as a cashier's temp PIN) — so it has to be handed over too, not
+        // just the password. Shown once, blocking, so neither is missed.
+        if (isCashier) {
           alert(`Cashier "${username}" created.\nRegister PIN: ${res.pin}\n\nGive it to them — they'll be asked to change it on first sign-in.`);
         } else {
-          showToast(`User "${username}" created — they must change password on first login`, 'success');
+          alert(`Manager "${username}" created.\nPassword: ${password}\nRegister PIN: ${res.pin}\n\nGive both to them — they'll be asked to set their own on first sign-in.`);
         }
         document.getElementById('newUsername').value = '';
         document.getElementById('newPassword').value = '';
@@ -500,6 +512,7 @@
         window._savedDrawerPort = s.drawer_com_port || '';
         toggleDrawerFields();
         loadDrawerPorts();
+        document.getElementById('onscreenKeyboardEnabled').checked = s.onscreen_keyboard_enabled === '1';
       }
 
       if (termCfgRes.success) {
@@ -736,6 +749,11 @@
       ]);
       window._savedDrawerPort = document.getElementById('drawerComPort').value;
       showToast('Drawer settings saved!', 'success');
+    }
+
+    async function saveTouchscreenSettings() {
+      await window.api.updateSetting('onscreen_keyboard_enabled', document.getElementById('onscreenKeyboardEnabled').checked ? '1' : '0');
+      showToast('Touchscreen settings saved!', 'success');
     }
 
     async function testDrawer() {

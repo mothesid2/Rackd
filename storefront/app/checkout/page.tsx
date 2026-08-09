@@ -87,10 +87,10 @@ export default function Checkout() {
           <span>Tax on Online Order Fee{taxRate ? ` (${(taxRate * 100).toFixed(2)}%)` : ''}</span><span>{fmt(feeTax)}</span>
         </div>
         <div className="flex justify-between border-t mt-1.5 pt-2 font-bold"><span>Total</span><span>{fmt(total)}</span></div>
-        <div className="text-xs text-neutral-400 mt-1">Pickup only — bring your ID.</div>
+        <div className="text-xs text-neutral-600 mt-1">Pickup only — bring your ID.</div>
       </div>
 
-      {error && <div className="bg-red-50 text-red-700 rounded-lg p-3 text-sm">{error}</div>}
+      {error && <div role="alert" className="bg-red-50 text-red-700 rounded-lg p-3 text-sm">{error}</div>}
 
       {!clientSecret ? (
         <button className="rounded-lg bg-accent text-white py-3 font-semibold disabled:opacity-40" disabled={busy} onClick={startPayment}>
@@ -143,7 +143,7 @@ function PayForm() {
   return (
     <div className="bg-white rounded-xl border p-4 grid gap-3">
       <PaymentElement />
-      {err && <div className="text-red-600 text-sm">{err}</div>}
+      {err && <div role="alert" className="text-red-600 text-sm">{err}</div>}
       <button className="rounded-lg bg-accent text-white py-3 font-semibold disabled:opacity-40" disabled={busy} onClick={pay}>
         {busy ? 'Processing…' : 'Pay now'}
       </button>

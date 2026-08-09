@@ -13,7 +13,9 @@ export const metadata: Metadata = {
   title: 'Rackd — Order & Pickup',
   description: 'Order ahead from your local shop and pick it up in store. 21+ only.',
 };
-export const viewport: Viewport = { width: 'device-width', initialScale: 1, maximumScale: 1, themeColor: '#101216' };
+// WCAG 1.4.4 (Resize Text): maximumScale previously locked out pinch-zoom,
+// which blocks low-vision users from enlarging text on mobile.
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#101216' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

@@ -14,6 +14,7 @@ import { migration012 } from './012_online_order_source';
 import { migration013 } from './013_admin_role';
 import { migration014 } from './014_cashier_pin_only';
 import { migration015 } from './015_tip_pool_ledger';
+import { migration016 } from './016_tip_pool_ledger_fee_structure';
 
 /**
  * A single schema change. Migrations are applied in `id` order exactly once and
@@ -29,7 +30,7 @@ export interface Migration {
 }
 
 // Ordered registry. Append new migrations here.
-const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015];
+const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016];
 
 /**
  * Run any migrations that haven't been applied yet. Idempotent: safe to call

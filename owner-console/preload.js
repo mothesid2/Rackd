@@ -6,12 +6,13 @@ contextBridge.exposeInMainWorld('owner', {
 
   businesses: () => ipcRenderer.invoke('owner:businesses'),
   createBusiness: (payload) => ipcRenderer.invoke('owner:createBusiness', payload),
+  deleteBusiness: (tenantId) => ipcRenderer.invoke('owner:deleteBusiness', tenantId),
   locations: (tenantId) => ipcRenderer.invoke('owner:locations', tenantId),
   addLocation: (tenantId, name, address, zip) => ipcRenderer.invoke('owner:addLocation', tenantId, name, address, zip),
   renameLocation: (locationId, name) => ipcRenderer.invoke('owner:renameLocation', locationId, name),
 
   setLocationAddress: (locationId, address, zip) => ipcRenderer.invoke('owner:setLocationAddress', locationId, address, zip),
-  setLocationMerchantFee: (locationId, pct) => ipcRenderer.invoke('owner:setLocationMerchantFee', locationId, pct),
+  setLocationMerchantFee: (locationId, fees) => ipcRenderer.invoke('owner:setLocationMerchantFee', locationId, fees),
   setLocationContact: (locationId, phone, email) => ipcRenderer.invoke('owner:setLocationContact', locationId, phone, email),
   setBusinessContact: (tenantId, contactEmail, contactPhone) => ipcRenderer.invoke('owner:setBusinessContact', tenantId, contactEmail, contactPhone),
   setFeatures: (tenantId, features) => ipcRenderer.invoke('owner:setFeatures', tenantId, features),

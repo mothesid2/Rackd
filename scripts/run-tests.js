@@ -12,10 +12,11 @@ const { computeStatusFrom, computeStatus } = require('../dist/main/supabase/lice
 const {
   isSyncAllowed, failureUpdate, enqueueSync, recordFailure,
   getDeadLetters, retryDeadLetter, clearDeadLetter, getSyncStatus, getTenantId, enqueueCustomer,
-  applyEmployee, applyTimeClock,
+  applyEmployee, applyTimeClock, applyProduct,
 } = require('../dist/main/supabase/sync');
 const { cacheToken, getValidToken } = require('../dist/main/supabase/tokenManager');
 const { computeTipPool, saveTipPoolLedger } = require('../dist/main/ipc/xzout');
+const { computeRefundTax } = require('../dist/main/ipc/transactions');
 const { initSchema } = require('../dist/main/db/schema');
 const { runMigrations } = require('../dist/main/db/migrations');
 
@@ -177,12 +178,146 @@ async function main() {
     assert.equal(row.clock_in, '2026-07-24T08:30:00Z');
   });
 
+  console.log('applyTimeClock — Manager Portal shift delete (soft-delete tombstone, batch 6):');
+  await check('a deleted=true pull removes the local punch entirely, not just marks it', () => {
+    db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('punch-del-1','emp-2','Worker2','2026-07-24T09:00:00Z','2026-07-24T17:00:00Z')").run();
+    applyTimeClock({ uid: 'punch-del-1', employee_uid: 'emp-2', deleted: true, updated_at: '2026-07-24T18:00:00Z' }, db);
+    const row = db.prepare('SELECT * FROM time_clock WHERE uid=?').get('punch-del-1');
+    assert.equal(row, undefined, 'the row must be gone, not just flagged');
+  });
+  await check('a deleted=true pull for a punch this kiosk never had is a harmless no-op', () => {
+    applyTimeClock({ uid: 'punch-never-existed-here', employee_uid: 'emp-2', deleted: true, updated_at: '2026-07-24T18:00:00Z' }, db);
+    const row = db.prepare('SELECT * FROM time_clock WHERE uid=?').get('punch-never-existed-here');
+    assert.equal(row, undefined);
+  });
+
+  console.log('applyProduct — cloud-to-kiosk catalog pull (new):');
+  await check('a peer product this kiosk has never seen creates a new local row, seeded with its quantity', () => {
+    applyProduct({
+      barcode: 'NEW-BARCODE-1', name: 'Widget', category: 'Gadgets', vendor: 'Acme',
+      price: 9.99, cost: 4, quantity: 12, reorder_point: 3, age_restricted: false,
+      updated_at: '2026-07-26T00:00:00Z',
+    }, db);
+    const row = db.prepare('SELECT * FROM products WHERE barcode=?').get('NEW-BARCODE-1');
+    assert.ok(row, 'product should have been created');
+    assert.equal(row.name, 'Widget');
+    assert.equal(row.category, 'Gadgets');
+    assert.equal(row.vendor, 'Acme');
+    assert.equal(row.price, 9.99);
+    assert.equal(row.stock_qty, 12, 'brand-new product has no local count to protect — seed from the snapshot');
+    assert.equal(row.age_restricted, 0);
+  });
+  await check('an age-restricted peer product keeps its 21+ flag on create (compliance-critical)', () => {
+    applyProduct({
+      barcode: 'NEW-BARCODE-VAPE', name: 'Disposable Vape', category: 'Vape', vendor: 'Geek Bar',
+      price: 15, cost: 8, quantity: 5, reorder_point: 2, age_restricted: true,
+      updated_at: '2026-07-26T00:00:00Z',
+    }, db);
+    const row = db.prepare('SELECT age_restricted FROM products WHERE barcode=?').get('NEW-BARCODE-VAPE');
+    assert.equal(row.age_restricted, 1);
+  });
+  await check('a row with no barcode is skipped — no stable key to land it on', () => {
+    const before = db.prepare('SELECT COUNT(*) n FROM products').get().n;
+    applyProduct({ name: 'No Barcode Item', price: 1, quantity: 1, updated_at: '2026-07-26T00:00:00Z' }, db);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM products').get().n, before);
+  });
+  await check('editing an EXISTING product on a peer updates catalog fields locally but never touches stock_qty', () => {
+    const { lastInsertRowid: id } = db.prepare(
+      `INSERT INTO products (barcode, name, category, vendor, price, cost, stock_qty, low_stock_threshold, age_restricted)
+       VALUES ('SHARED-BARCODE-1','Old Name','Old Cat','Old Vendor',5,2,42,5,0)`
+    ).run();
+    applyProduct({
+      barcode: 'SHARED-BARCODE-1', name: 'New Name', category: 'New Cat', vendor: 'New Vendor',
+      price: 7.5, cost: 3, quantity: 999, reorder_point: 8, age_restricted: true,
+      updated_at: '2026-07-26T01:00:00Z',
+    }, db);
+    const row = db.prepare('SELECT * FROM products WHERE id=?').get(id);
+    assert.equal(row.name, 'New Name');
+    assert.equal(row.category, 'New Cat');
+    assert.equal(row.vendor, 'New Vendor');
+    assert.equal(row.price, 7.5);
+    assert.equal(row.age_restricted, 1);
+    assert.equal(row.stock_qty, 42, 'stock count is owned by the movement-delta pull, not the catalog pull');
+  });
+  await check('re-applying the same peer row (cursor boundary re-fetch) is idempotent — no duplicate, no error', () => {
+    const before = db.prepare('SELECT COUNT(*) n FROM products WHERE barcode=?').get('NEW-BARCODE-1').n;
+    applyProduct({
+      barcode: 'NEW-BARCODE-1', name: 'Widget', category: 'Gadgets', vendor: 'Acme',
+      price: 9.99, cost: 4, quantity: 12, reorder_point: 3, age_restricted: false,
+      updated_at: '2026-07-26T00:00:00Z',
+    }, db);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM products WHERE barcode=?').get('NEW-BARCODE-1').n, before);
+  });
+  await check('a pending unsynced local edit wins over an inbound peer pull for the same product', () => {
+    const { lastInsertRowid: id } = db.prepare(
+      `INSERT INTO products (barcode, name, category, vendor, price, cost, stock_qty, low_stock_threshold, age_restricted)
+       VALUES ('SHARED-BARCODE-2','Local Edit In Flight','Cat','V',20,10,3,5,0)`
+    ).run();
+    // Simulate: this kiosk just edited the product and queued the push, but it
+    // hasn't sent yet (synced=0) — mirrors enqueueInventorySnapshot's queue row.
+    db.prepare(
+      "INSERT INTO sync_queue (table_name, record_id, operation, payload) VALUES ('inventory', ?, 'update', '{}')"
+    ).run(String(id));
+    applyProduct({
+      barcode: 'SHARED-BARCODE-2', name: 'Stale Peer Value', category: 'Cat', vendor: 'V',
+      price: 1, cost: 1, quantity: 1, reorder_point: 5, age_restricted: false,
+      updated_at: '2026-07-26T02:00:00Z',
+    }, db);
+    const row = db.prepare('SELECT name, price FROM products WHERE id=?').get(id);
+    assert.equal(row.name, 'Local Edit In Flight', 'inbound pull must not clobber the not-yet-pushed local edit');
+    assert.equal(row.price, 20);
+  });
+
+  console.log('computeRefundTax — refund nets exactly against the sale it reverses (pure):');
+  await check("user's exact repro: two $2.50+tax sales, fully refunded, net to precisely $0.00", () => {
+    const taxRate = 0.0825;
+    // Original sale, as actually stored: unrounded, exactly what the renderer's
+    // computeTotals() produces and transactions:create writes verbatim.
+    const saleSubtotal = 2.50;
+    const saleTax = saleSubtotal * taxRate; // 0.20625, unrounded — matches the real insert
+    const saleTotal = saleSubtotal + saleTax;
+
+    // A full refund of that same sale.
+    const { total: refundTotal } = computeRefundTax(saleSubtotal, saleSubtotal, saleTax, taxRate);
+    assert.equal(+(saleTotal + refundTotal).toFixed(10), 0, 'one sale + its full refund must net to exactly zero');
+
+    // The user's actual scenario: TWO such pairs.
+    const netCashFlow = (saleTotal + refundTotal) + (saleTotal + refundTotal);
+    assert.equal(+netCashFlow.toFixed(10), 0, 'two sales + two full refunds must net to exactly $0.00, not -$0.01');
+  });
+  await check('a full refund reuses the original tax EXACTLY, not a fresh rounded recompute', () => {
+    // computeRefundTax returns the positive magnitude being reversed — the
+    // caller negates it when storing tax_amount (see refundItems: `-tax`).
+    const origSubtotal = 2.50, origTax = 2.50 * 0.0825; // 0.20625
+    const { tax } = computeRefundTax(2.50, origSubtotal, origTax, 0.0825);
+    assert.equal(tax, origTax, 'full refund (subtotal === origSubtotal) must reuse the original tax exactly');
+  });
+  await check('the OLD buggy formula would have failed this — confirms the bug was real, not hypothetical', () => {
+    // What the code did before this fix: recompute tax fresh from the refunded
+    // subtotal and round it to cents, ignoring what the original sale actually
+    // stored. Demonstrating this against the same numbers shows the discrepancy
+    // the user actually saw.
+    const oldBuggyTax = +(2.50 * 0.0825).toFixed(2); // 0.21 — rounded
+    const saleTax = 2.50 * 0.0825; // 0.20625 — unrounded, as actually stored
+    assert.notEqual(oldBuggyTax, saleTax, 'the old formula diverges from the original sale — this was the bug');
+  });
+  await check('a partial refund takes a proportional share of the original tax, not a fresh recompute', () => {
+    // A $10 sale (two $5 items) with $0.825 tax; refunding just one $5 item.
+    const origSubtotal = 10, origTax = 10 * 0.0825;
+    const { tax } = computeRefundTax(5, origSubtotal, origTax, 0.0825);
+    assert.equal(tax, origTax * 0.5, 'half the subtotal refunded -> half the original tax, proportionally');
+  });
+  await check('falls back to a fresh rate-based computation when there is no original subtotal to derive from', () => {
+    const { tax } = computeRefundTax(5, 0, 0, 0.0825);
+    assert.equal(tax, +(5 * 0.0825).toFixed(2));
+  });
+
   console.log('tip pool (batch 5, legal rebuild, db-backed):');
   // Clean slate — the applyTimeClock test above left an open (no clock_out)
   // punch in time_clock, which would otherwise bleed into today's hours here.
   db.prepare("DELETE FROM transactions").run();
   db.prepare("DELETE FROM time_clock").run();
-  db.prepare("UPDATE settings SET value = '3' WHERE key = 'merchant_fee_pct'").run();
+  db.prepare("UPDATE settings SET value = '3' WHERE key = 'merchant_fee_credit_pct'").run();
 
   // Known staff — role is what makes the FLSA exclusion testable at all.
   const aliceId = db.prepare("INSERT INTO users (uid, username, name, role, password_hash, pin_hash, is_active) VALUES ('leg-cash-alice', NULL, 'Alice', 'cashier', NULL, 'x', 1)").run().lastInsertRowid;
@@ -197,7 +332,7 @@ async function main() {
     const tp = computeTipPool(db, '2026-07-24', '2026-07-24');
     assert.equal(tp.pooled, true);
     assert.equal(tp.total_tips, 100);
-    assert.equal(tp.merchant_fee_pct, 3);
+    assert.equal(tp.merchant_fee_effective_pct, 3);
     assert.equal(tp.deduction_amount, 3);
     assert.equal(tp.pool_amount, 97);
     assert.equal(tp.total_hours, 24);
@@ -276,14 +411,14 @@ async function main() {
     db.prepare("DELETE FROM time_clock").run();
     db.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, tip_amount, payment_method, payment_status, created_at) VALUES (?, 100, 0, 0, 0, 100, 100, 'card', 'completed', '2026-07-31T12:00:00.000-05:00')").run(aliceId);
     db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('tp-in-9','leg-cash-alice','Alice','2026-07-31T08:00:00.000-05:00','2026-07-31T16:00:00.000-05:00')").run();
-    db.prepare("UPDATE settings SET value = '0' WHERE key = 'merchant_fee_pct'").run();
+    db.prepare("UPDATE settings SET value = '0' WHERE key = 'merchant_fee_credit_pct'").run();
     const unset = computeTipPool(db, '2026-07-31', '2026-07-31');
     assert.equal(unset.deduction_amount, 0, 'no deduction until the owner explicitly sets a real rate — never a guessed default');
-    db.prepare("UPDATE settings SET value = '2.9' WHERE key = 'merchant_fee_pct'").run();
+    db.prepare("UPDATE settings SET value = '2.9' WHERE key = 'merchant_fee_credit_pct'").run();
     const set = computeTipPool(db, '2026-07-31', '2026-07-31');
-    assert.equal(set.merchant_fee_pct, 2.9);
+    assert.equal(set.merchant_fee_effective_pct, 2.9);
     assert.equal(set.deduction_amount, 2.9);
-    db.prepare("UPDATE settings SET value = '3' WHERE key = 'merchant_fee_pct'").run();
+    db.prepare("UPDATE settings SET value = '3' WHERE key = 'merchant_fee_credit_pct'").run();
   });
 
   await check('audit ledger persists the fee rate and deduction actually used, not just the final shares', () => {
@@ -297,7 +432,7 @@ async function main() {
     saveTipPoolLedger(db, '2026-08-01', null, tp);
     const ledger = db.prepare("SELECT * FROM tip_pool_ledger WHERE report_date = '2026-08-01'").get();
     assert.ok(ledger, 'ledger row must exist');
-    assert.equal(ledger.merchant_fee_pct, 3);
+    assert.equal(ledger.merchant_fee_credit_pct, 3);
     assert.equal(ledger.deduction_amount, tp.deduction_amount);
     assert.equal(ledger.pool_amount, tp.pool_amount);
     assert.equal(ledger.pooled, 1);
@@ -305,6 +440,29 @@ async function main() {
     assert.equal(shares.length, 1);
     assert.equal(shares[0].employee_name, 'Alice');
     assert.equal(shares[0].share_amount, tp.by_employee[0].share);
+  });
+
+  await check('Manager Portal shift deletion actually flows into tip-pool hours (batch 6, end-to-end)', () => {
+    db.prepare("DELETE FROM transactions").run();
+    db.prepare("DELETE FROM time_clock").run();
+    db.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, tip_amount, payment_method, payment_status, created_at) VALUES (?, 100, 0, 0, 0, 100, 100, 'card', 'completed', '2026-08-02T18:00:00.000-05:00')").run(aliceId);
+    db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('tp-del-alice','leg-cash-alice','Alice','2026-08-02T08:00:00.000-05:00','2026-08-02T20:00:00.000-05:00')").run();
+    db.prepare("INSERT INTO time_clock (uid, employee_uid, employee_name, clock_in, clock_out) VALUES ('tp-del-bob','leg-cash-bob','Bob','2026-08-02T08:00:00.000-05:00','2026-08-02T20:00:00.000-05:00')").run();
+    const before = computeTipPool(db, '2026-08-02', '2026-08-02');
+    assert.equal(before.total_hours, 24, 'both Alice and Bob clocked 12h each, pre-delete');
+    assert.equal(before.by_employee.length, 2);
+    assert.ok(before.by_employee.every((e) => Math.abs(e.share - before.pool_amount / 2) < 0.01), 'split evenly pre-delete');
+
+    // This is the exact call Manager Portal's delete-shift button drives, one
+    // hop removed (portal:deleteTimeClock soft-deletes in the cloud; this is
+    // what applying that tombstone on pull does on the kiosk).
+    applyTimeClock({ uid: 'tp-del-bob', employee_uid: 'leg-cash-bob', deleted: true, updated_at: '2026-08-02T20:05:00.000-05:00' }, db);
+
+    const after = computeTipPool(db, '2026-08-02', '2026-08-02');
+    assert.equal(after.total_hours, 12, "Bob's deleted shift must not count toward hours anymore");
+    assert.equal(after.by_employee.length, 1, 'Bob must not appear as a recipient once his shift is deleted');
+    assert.equal(after.by_employee[0].name, 'Alice');
+    assert.equal(after.by_employee[0].share, after.pool_amount, 'Alice alone now gets the whole pool');
   });
 
   db.prepare("DELETE FROM transactions").run();

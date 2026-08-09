@@ -118,17 +118,22 @@
     async function loadStaff() {
       const r = await window.api.permsListEmployees();
       if (!r.success) { document.getElementById('empList').innerHTML = `<div style="color:#b01d2e;padding:16px">${esc(r.error||'Failed')}</div>`; return; }
+      // Deactivating (unchecking Active in the edit modal) is this screen's
+      // "remove" — it should actually drop out of the list, not linger with
+      // an "inactive" pill (same fix as the Manager Portal staff list).
       employees = r.employees; if (r.keys) PERM_KEYS = r.keys; if (r.menuKeys) MENU_KEYS = r.menuKeys;
-      document.getElementById('empList').innerHTML = employees.map(e => `
+      const visible = employees.filter(e => e.is_active);
+      document.getElementById('empList').innerHTML = visible.map(e => `
         <div class="emp-row ${selected===e.uid?'sel':''}" onclick="selectEmp('${esc(e.uid)}')">
           <div><div style="font-weight:600">${esc(e.name||e.username)}</div><div class="role">${esc(e.username)}</div></div>
           <div style="text-align:right">
             ${e.role==='manager'?'<span class="pill mgr">Manager</span>':''}
-            ${e.is_active?'':'<span class="pill off">inactive</span>'}
             ${e.has_pin?'':'<span class="pill off">no PIN</span>'}
           </div>
         </div>`).join('') || '<div style="color:#aaa;padding:16px">No employees.</div>';
+      if (selected && !visible.some(e => e.uid === selected)) selected = null;
       if (selected) renderPerms();
+      else document.getElementById('permPanel').innerHTML = '<div style="color:#aaa">Select an employee to edit permissions.</div>';
     }
 
     function selectEmp(uid) { selected = uid; loadStaff(); renderPerms(); }

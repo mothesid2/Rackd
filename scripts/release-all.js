@@ -21,9 +21,23 @@ const path = require('path');
 const fs = require('fs');
 
 const root = path.resolve(__dirname, '..');
+// stdio: 'inherit' streams live but Node never captures it, so execFileSync's
+// thrown error has stdout/stderr === null on failure — exactly the useless
+// "output: [ null, null, null ]" a failed release produced with no way to see
+// what actually broke. Capture instead: print the child's output ourselves
+// (so a normal run still shows everything), and on failure the real
+// stdout/stderr are printed explicitly before rethrowing, not lost.
 function run(cmd, args, cwd = root) {
   console.log(`\n$ ${cmd} ${args.join(' ')}`);
-  execFileSync(cmd, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' });
+  try {
+    const output = execFileSync(cmd, args, { cwd, encoding: 'utf8', shell: process.platform === 'win32' });
+    if (output) process.stdout.write(output);
+  } catch (e) {
+    if (e.stdout) process.stdout.write(e.stdout);
+    if (e.stderr) process.stderr.write(e.stderr);
+    console.error(`\n✗ FAILED: ${cmd} ${args.join(' ')}`);
+    throw e;
+  }
 }
 
 // ── 1) git push — best-effort. A clean "nothing to push" or a real failure

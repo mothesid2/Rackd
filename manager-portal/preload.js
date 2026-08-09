@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('portal', {
   setStaffPermission: (args) => ipcRenderer.invoke('portal:setStaffPermission', args),
   timesheet: (range) => ipcRenderer.invoke('portal:timesheet', range),
   adjustTimeClock: (args) => ipcRenderer.invoke('portal:adjustTimeClock', args),
+  addTimeClock: (args) => ipcRenderer.invoke('portal:addTimeClock', args),
+  deleteTimeClock: (args) => ipcRenderer.invoke('portal:deleteTimeClock', args),
   session: () => ipcRenderer.invoke('portal:session'),
   setCurrentLocation: (locationId) => ipcRenderer.invoke('portal:setCurrentLocation', locationId),
   dashboard: (range) => ipcRenderer.invoke('portal:dashboard', range),

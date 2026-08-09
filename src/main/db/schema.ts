@@ -258,7 +258,9 @@ export function initSchema(db: Database.Database): void {
     INSERT OR IGNORE INTO settings (key, value) VALUES ('terminal_tid', '');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('printer_interface', 'printer');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('printer_type', 'star');
-    INSERT OR IGNORE INTO settings (key, value) VALUES ('merchant_fee_pct', '0');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('merchant_fee_credit_pct', '0');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('merchant_fee_debit_pct', '0');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('merchant_fee_flat_cents', '0');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('twilio_account_sid', '');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('twilio_auth_token', '');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('twilio_from_number', '');

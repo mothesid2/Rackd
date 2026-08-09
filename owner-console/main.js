@@ -133,13 +133,14 @@ ipcMain.handle('owner:activate', async (_e, { secret } = {}) => {
 // ── provisioning ──────────────────────────────────────────────────────────────
 ipcMain.handle('owner:businesses', async () => wrap(() => callAdmin('list')));
 ipcMain.handle('owner:createBusiness', async (_e, payload) => wrap(() => callAdmin('createBusiness', payload || {})));
+ipcMain.handle('owner:deleteBusiness', async (_e, tenantId) => wrap(() => callAdmin('deleteBusiness', { tenant_id: tenantId })));
 ipcMain.handle('owner:locations', async (_e, tenantId) => wrap(() => callAdmin('locations', { tenant_id: tenantId })));
 ipcMain.handle('owner:addLocation', async (_e, tenantId, name, address, zip) => wrap(() => callAdmin('addLocation', { tenant_id: tenantId, name, address, zip })));
 ipcMain.handle('owner:renameLocation', async (_e, locationId, name) => wrap(() => callAdmin('renameLocation', { location_id: locationId, name })));
 
 // ── full business control (items 16 & 17: address/tax, contact, features, ads, managers) ──
 ipcMain.handle('owner:setLocationAddress', async (_e, locationId, address, zip) => wrap(() => callAdmin('setLocationAddress', { location_id: locationId, address, zip })));
-ipcMain.handle('owner:setLocationMerchantFee', async (_e, locationId, pct) => wrap(() => callAdmin('setLocationMerchantFee', { location_id: locationId, merchant_fee_pct: pct })));
+ipcMain.handle('owner:setLocationMerchantFee', async (_e, locationId, fees) => wrap(() => callAdmin('setLocationMerchantFee', { location_id: locationId, ...(fees || {}) })));
 ipcMain.handle('owner:setLocationContact', async (_e, locationId, phone, email) => wrap(() => callAdmin('setLocationContact', { location_id: locationId, phone, email })));
 ipcMain.handle('owner:setBusinessContact', async (_e, tenantId, contact_email, contact_phone) => wrap(() => callAdmin('setBusinessContact', { tenant_id: tenantId, contact_email, contact_phone })));
 ipcMain.handle('owner:setFeatures', async (_e, tenantId, features) => wrap(() => callAdmin('setFeatures', { tenant_id: tenantId, features })));

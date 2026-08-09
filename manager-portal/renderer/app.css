@@ -1,46 +1,59 @@
 /* ============================================================================
-   Rackd Management Portal — visual system
-   A dark, neutral back office in the register of Linear/Stripe-style admin
-   tools: one restrained brand accent (the Rackd red), flat surfaces, no
-   decorative gradients or glow. Single-theme by deliberate choice: it matches
-   the POS's dark grounds and reads as one product. Semantic colors
-   (good/warn/bad) stay distinct from the brand accent.
+   Rackd Management Portal — visual system (round 3)
+   Round 2 was a dark, blue-biased charcoal — it read as a gaming/dev-tool
+   skin, not a back office. This round: a warm-neutral LIGHT ground (paper,
+   not cream — the hue leans a whisper toward the brand red, not yellow),
+   sharp corners everywhere (2-6px, no pills), and the Rackd red spent on
+   exactly three things — the primary action, the active nav item, and
+   danger states. Personality comes from type, not decoration: a confident
+   heading weight/size scale, and a monospace face reserved for money
+   figures (revenue, table totals) so they read as data, not prose — the
+   one deliberately "financial dashboard" choice in the system. No shadows
+   beyond a 1px hairline, no gradients, no glow. This also brings the portal
+   in line with the POS, which has always been light-toned — the old
+   "matches the POS's dark grounds" rationale was never actually true.
    ============================================================================ */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  /* grounds — cool charcoal, picked with a slight blue bias (not flat grey) */
-  --bg:      #0e1116;
-  --panel:   #161a20;
-  --panel-2: #1d222a;
-  --panel-3: #232935;
-  --line:    #2a313b;
-  --line-soft: #212831;
+  /* grounds — warm-neutral paper, hue biased toward the brand red (not
+     yellow/cream, not blue). Cards sit on white; the page ground and inputs
+     sit a shade back — elevation by tone, not shadow. */
+  --bg:      #f7f4f4;
+  --panel:   #ffffff;
+  --panel-2: #f1ecec;
+  --panel-3: #e8e1e0;
+  --line:    #e3dad9;
+  --line-soft: #ece5e4;
 
-  /* ink */
-  --ink:   #eef1f5;
-  --ink-2: #c6cdd8;
-  --muted: #8f99a8;   /* blue-biased grey */
-  --faint: #626c7a;
+  /* ink — warm near-black, never blue-black */
+  --ink:   #201b1a;
+  --ink-2: #4d4442;
+  --muted: #8c8180;
+  --faint: #b6acaa;
 
-  /* brand accent — Rackd red, the single hue, used sparingly (active state,
-     primary action) rather than as a decorative fill. */
-  --accent:        #b01d2e;
-  --accent-bright: #c22536;
+  /* brand accent — Rackd red, deepened toward wine so it reads as a mark
+     (brand), not an alarm. Spent on exactly three things: primary action,
+     active nav, key data points. Never a fill, never a glow. */
+  --accent:        #9c2438;
+  --accent-bright: #83192b;
   --accent-ink:    #ffffff;
-  --accent-dim:    rgba(176, 29, 46, 0.14);
-  --accent-line:   rgba(176, 29, 46, 0.4);
+  --accent-dim:    rgba(156, 36, 56, 0.07);
+  --accent-line:   rgba(156, 36, 56, 0.35);
 
-  /* semantic — separate from the accent */
-  --good: #46b45f;
-  --warn: #e0a13a;
-  --bad:  #e5544e;
+  /* semantic — a distinct family from the accent, so "brand" and "status"
+     never get confused with each other */
+  --good: #1f7a4d;
+  --warn: #9c6b12;
+  --bad:  #c22a1f;
 
-  --radius: 10px;
-  --radius-sm: 7px;
-  --shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  /* sharp, restrained radius — no pill shapes anywhere */
+  --radius: 6px;
+  --radius-sm: 4px;
+  --shadow: 0 1px 2px rgba(32, 27, 26, 0.06);
 
   --font-ui: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 body {
@@ -55,8 +68,8 @@ body {
 
 /* ── brand wordmark (RackD) ───────────────────────────────────────────────── */
 .wordmark {
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 800;
+  letter-spacing: -0.01em;
   line-height: 1;
   text-transform: none;
 }
@@ -75,7 +88,7 @@ body {
 .login-card {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius);
   padding: 36px 34px 30px;
   width: 400px;
   box-shadow: var(--shadow);
@@ -84,10 +97,10 @@ body {
 .login-brand img { width: 40px; height: 40px; }
 .login-brand .wordmark { font-size: 26px; }
 .login-brand .tag {
-  font-size: 10.5px; letter-spacing: 0.16em; font-weight: 600;
+  font-size: 10.5px; letter-spacing: 0.16em; font-weight: 700;
   text-transform: uppercase; color: var(--muted); margin-top: 3px;
 }
-.login-card h1 { font-weight: 700; font-size: 19px; margin-bottom: 6px; }
+.login-card h1 { font-weight: 800; font-size: 20px; letter-spacing: -0.01em; margin-bottom: 6px; }
 .login-card .sub { color: var(--muted); font-size: 13.5px; line-height: 1.5; margin-bottom: 24px; }
 
 label {
@@ -106,21 +119,22 @@ input:focus, select:focus { border-color: var(--accent-line); box-shadow: 0 0 0 
 .btn {
   border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 16px;
   font-size: 14px; font-weight: 600; font-family: var(--font-ui); cursor: pointer;
-  background: var(--panel-2); color: var(--ink-2); transition: background 0.14s, border-color 0.14s, color 0.14s, filter 0.14s;
+  background: var(--panel-2); color: var(--ink-2); transition: background 0.14s, border-color 0.14s, color 0.14s;
 }
 .btn:hover { background: var(--panel-3); color: var(--ink); }
 .btn-accent {
   border-color: transparent;
   background: var(--accent);
   color: var(--accent-ink);
+  font-weight: 700;
 }
 .btn-accent:hover { background: var(--accent-bright); }
-.btn:disabled { opacity: 0.5; cursor: default; filter: none; }
+.btn:disabled { opacity: 0.5; cursor: default; }
 .btn:focus-visible, .navbtn:focus-visible, input:focus-visible, select:focus-visible, .rowbtn:focus-visible {
-  outline: 2px solid var(--accent-bright); outline-offset: 2px;
+  outline: 2px solid var(--accent); outline-offset: 2px;
 }
 
-.err { background: rgba(229, 84, 78, 0.12); color: #f2a9a5; border: 1px solid rgba(229, 84, 78, 0.3); border-radius: var(--radius-sm); padding: 10px 13px; font-size: 13px; margin-top: 14px; display: none; }
+.err { background: rgba(194, 42, 31, 0.07); color: var(--bad); border: 1px solid rgba(194, 42, 31, 0.25); border-radius: var(--radius-sm); padding: 10px 13px; font-size: 13px; margin-top: 14px; display: none; }
 
 /* ============================================================================
    Shell
@@ -134,16 +148,16 @@ input:focus, select:focus { border-color: var(--accent-line); box-shadow: 0 0 0 
 }
 .topbar .brand-lockup { display: flex; align-items: center; gap: 11px; }
 .topbar .brand-lockup img { width: 26px; height: 26px; display: block; }
-.topbar .brand { font-weight: 700; font-size: 18px; letter-spacing: 0.01em; }
+.topbar .brand { font-weight: 800; font-size: 18px; letter-spacing: -0.01em; }
 .topbar .brand .d { color: var(--accent); }
 .topbar .biz {
-  color: var(--muted); font-size: 11.5px; font-weight: 600;
+  color: var(--muted); font-size: 11.5px; font-weight: 700;
   letter-spacing: 0.1em; text-transform: uppercase;
   padding-left: 16px; margin-left: 2px; border-left: 1px solid var(--line);
 }
 .topbar .biz-chip {
   font-size: 11px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums;
-  background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 4px 11px;
 }
 .topbar .spacer { flex: 1; }
 .topbar #rangeWrap {
@@ -158,28 +172,28 @@ input:focus, select:focus { border-color: var(--accent-line); box-shadow: 0 0 0 
 .side .nav-label { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); padding: 6px 12px 8px; }
 .navbtn {
   display: flex; align-items: center; gap: 12px; text-align: left;
-  background: none; border: none; color: var(--muted);
+  background: none; border: none; color: var(--ink-2);
   font-size: 14px; font-weight: 600; font-family: var(--font-ui);
   padding: 8px 12px; border-radius: var(--radius-sm); cursor: pointer;
   position: relative; transition: background 0.13s, color 0.13s;
 }
 .navbtn svg {
   width: 18px; height: 18px; flex: 0 0 auto; stroke: currentColor;
-  padding: 5px; border-radius: 9px; box-sizing: content-box;
+  padding: 5px; border-radius: var(--radius-sm); box-sizing: content-box;
   background: transparent; transition: background 0.13s, color 0.13s;
 }
 .navbtn:hover { color: var(--ink); }
-.navbtn:hover svg { background: var(--panel-3); }
-.navbtn.active { color: var(--ink); background: var(--panel-2); }
+.navbtn:hover svg { background: var(--panel-2); }
+.navbtn.active { color: var(--ink); background: var(--accent-dim); font-weight: 700; }
 .navbtn.active::before {
   content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px;
-  border-radius: 0 3px 3px 0; background: var(--accent);
+  background: var(--accent);
 }
 .navbtn.active svg { color: var(--accent); background: transparent; }
 
 .content { overflow-y: auto; padding: 24px 28px; }
 .content::-webkit-scrollbar { width: 10px; }
-.content::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; border: 3px solid var(--bg); }
+.content::-webkit-scrollbar-thumb { background: var(--line); border-radius: var(--radius-sm); border: 3px solid var(--bg); }
 
 /* ============================================================================
    KPIs / cards
@@ -190,8 +204,10 @@ input:focus, select:focus { border-color: var(--accent-line); box-shadow: 0 0 0 
   border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 16px 17px;
 }
 .kpi .lbl { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-.kpi .val { font-size: 25px; font-weight: 700; margin-top: 7px; font-variant-numeric: tabular-nums; }
-.val.green { color: #82d692; } .val.amber { color: var(--warn); } .val.red { color: #f0918c; }
+/* Money reads as data, not prose — the one deliberately "financial
+   dashboard" typographic choice, echoing Stripe's tabular figures. */
+.kpi .val { font-family: var(--font-mono); font-size: 24px; font-weight: 700; margin-top: 7px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.val.green { color: var(--good); } .val.amber { color: var(--warn); } .val.red { color: var(--bad); }
 
 .hgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 14px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 17px 18px; }
@@ -199,14 +215,19 @@ input:focus, select:focus { border-color: var(--accent-line); box-shadow: 0 0 0 
 .card.click:hover { border-color: var(--accent-line); background: var(--panel-2); }
 
 .h2 {
-  font-size: 15px; font-weight: 700;
+  font-size: 15px; font-weight: 800; letter-spacing: -0.005em;
   color: var(--ink); margin: 6px 0 14px;
   display: flex; align-items: center; flex-wrap: wrap; gap: 9px;
 }
 .muted { color: var(--muted); }
 
-.pill { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
-.flag { background: rgba(224, 161, 58, 0.14); color: var(--warn); border: 1px solid rgba(224, 161, 58, 0.3); margin-right: 6px; }
+.pill { display: inline-block; border-radius: var(--radius-sm); padding: 3px 10px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
+.flag { background: rgba(156, 107, 18, 0.1); color: var(--warn); border: 1px solid rgba(156, 107, 18, 0.28); margin-right: 6px; }
+
+/* role chip next to a staff member's name (dim = cashier/manager, warn = admin) */
+.badge { display: inline-block; border-radius: var(--radius-sm); padding: 2px 7px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.badge.dim { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+.badge.warn { background: rgba(156, 107, 18, 0.1); color: var(--warn); border: 1px solid rgba(156, 107, 18, 0.28); }
 
 /* ============================================================================
    Tables
@@ -215,30 +236,30 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 table.grid th {
   text-align: left; color: var(--muted); font-size: 10.5px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.06em; padding: 9px 11px;
-  border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 1;
+  border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1;
 }
 table.grid td { padding: 10px 11px; border-bottom: 1px solid var(--line-soft); color: var(--ink-2); }
 table.grid tbody tr { transition: background 0.1s; }
-table.grid tbody tr:hover td { background: var(--panel); color: var(--ink); }
-.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.grid tbody tr:hover td { background: var(--panel-2); color: var(--ink); }
+.num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .rowbtn {
   background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-2);
-  border-radius: 7px; padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer;
+  border-radius: var(--radius-sm); padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 .rowbtn:hover { background: var(--panel-3); border-color: var(--accent-line); color: var(--ink); }
-.low { color: #f0918c; font-weight: 700; }
+.low { color: var(--bad); font-weight: 700; }
 
 /* ============================================================================
    Modals / toast
    ============================================================================ */
-.overlay { position: fixed; inset: 0; background: rgba(6, 8, 11, 0.66); backdrop-filter: blur(2px); display: none; align-items: center; justify-content: center; z-index: 50; }
-.modal { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 24px; width: 440px; max-width: 94vw; box-shadow: var(--shadow); }
-.modal h3 { font-weight: 700; font-size: 17px; margin-bottom: 16px; }
+.overlay { position: fixed; inset: 0; background: rgba(32, 27, 26, 0.4); display: none; align-items: center; justify-content: center; z-index: 50; }
+.modal { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; width: 440px; max-width: 94vw; box-shadow: 0 4px 16px rgba(32, 27, 26, 0.14); }
+.modal h3 { font-weight: 800; font-size: 17px; letter-spacing: -0.01em; margin-bottom: 16px; }
 .fg { margin-bottom: 13px; }
 .fg label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
 .permgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-bottom: 13px; }
-.permtog { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; cursor: pointer; }
+.permtog { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 7px 9px; cursor: pointer; }
 .permtog input { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; }
 .perm-sub { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); margin: 10px 0 6px; }
 .row { display: flex; gap: 10px; }
@@ -246,12 +267,12 @@ table.grid tbody tr:hover td { background: var(--panel); color: var(--ink); }
 
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-  background: #17351f; color: #cdeccf; border: 1px solid rgba(70, 180, 95, 0.4);
+  background: var(--panel); color: var(--good); border: 1px solid var(--line);
   padding: 11px 18px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600;
-  z-index: 90; opacity: 0; transition: opacity 0.2s; box-shadow: var(--shadow);
+  z-index: 90; opacity: 0; transition: opacity 0.2s; box-shadow: 0 4px 16px rgba(32, 27, 26, 0.14);
 }
 .toast.show { opacity: 1; }
-.toast.err { background: #3a1a1a; color: #f2c0bc; border-color: rgba(229, 84, 78, 0.45); }
+.toast.err { color: var(--bad); }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }

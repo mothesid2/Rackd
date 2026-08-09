@@ -265,7 +265,7 @@
         const r = await window.api.listPinUsers();
         if (!r || !r.success) return;
         pinUserEl.innerHTML = '<option value="">Select your name…</option>' +
-          r.users.map(u => `<option value="${u.id}">${u.name}${u.role === 'manager' ? ' (Manager)' : u.role === 'admin' ? ' (Admin)' : ''}</option>`).join('');
+          r.users.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
       } catch { /* offline shell */ }
     }
 

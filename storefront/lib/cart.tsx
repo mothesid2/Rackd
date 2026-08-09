@@ -22,16 +22,24 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [locationId, setLocationId] = useState<string | null>(null);
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [lines, setLines] = useState<CartLine[]>([]);
+  // Both effects run on the same initial mount, in declaration order — without
+  // this flag the save-effect below fires immediately after the load-effect
+  // with the load-effect's setState calls not yet applied, so it writes back
+  // the pre-load empty state and silently wipes whatever was just loaded. Real
+  // impact: any hard reload (not just a closed tab) emptied the cart.
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) { const s = JSON.parse(raw); setLocationId(s.locationId); setTenantId(s.tenantId); setLines(s.lines || []); }
     } catch { /* ignore */ }
+    setHydrated(true);
   }, []);
   useEffect(() => {
+    if (!hydrated) return;
     try { localStorage.setItem(KEY, JSON.stringify({ locationId, tenantId, lines })); } catch { /* ignore */ }
-  }, [locationId, tenantId, lines]);
+  }, [hydrated, locationId, tenantId, lines]);
 
   // Switching stores empties the cart (menu/pricing are per store).
   function setStore(t: string, l: string) {

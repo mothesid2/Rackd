@@ -104,9 +104,10 @@ export function registerPermissionHandlers(): void {
           const uid = (db.prepare('SELECT uid FROM users WHERE id = ?').get(id) as { uid: string }).uid;
           enqueueEmployee('update', uid, db);
         })();
-        if (role === 'manager') {
-          try { await triggerSyncNow(); } catch { /* offline — will retry on the next cycle */ }
-        }
+        // Push now instead of waiting up to 60s for the background cycle — a second
+        // kiosk (or the Manager Portal) reading stale data is exactly the multi-kiosk
+        // sync gap that caused real onboarding bugs, not manager-only.
+        try { await triggerSyncNow(); } catch { /* offline — will retry on the next cycle */ }
         return { success: true, id: emp.id };
       }
 
@@ -161,13 +162,11 @@ export function registerPermissionHandlers(): void {
         ).run(uid, username, name, role, passwordHash, pinHash, role === 'manager' ? mustChangePassword : 0, mustChangePin);
         enqueueEmployee('insert', uid, db);
       })();
-      // Managers sign into the Manager Portal against employees_cloud, not this
-      // device — push now instead of waiting up to 60s for the background cycle,
-      // so freshly issued credentials work immediately instead of only after the
-      // next sync tick (or never, if handed out before it fires).
-      if (role === 'manager') {
-        try { await triggerSyncNow(); } catch { /* offline — will retry on the next cycle */ }
-      }
+      // Push now instead of waiting up to 60s for the background cycle — applies to
+      // cashiers too: a brand-new hire created on kiosk A needs to show up on kiosk
+      // B's PIN pad right away during onboarding, not after an arbitrary delay (or
+      // never, if the app closes before the periodic cycle fires).
+      try { await triggerSyncNow(); } catch { /* offline — will retry on the next cycle */ }
 
       const id = (db.prepare('SELECT id FROM users WHERE uid = ?').get(uid) as { id: number }).id;
       // Return the generated credentials ONCE for the creator to deliver.

@@ -366,9 +366,17 @@
 
         <div class="cart-totals">
           <!-- Discount -->
+          <!-- text + inputmode="decimal", not type="number": the on-screen
+               keyboard (shared.js) builds a value character by character via
+               target.value = ...; a type="number" input SILENTLY clears
+               itself the moment that partial value is invalid (e.g. "2." with
+               nothing after the decimal yet), which made the "." key look
+               broken and made typing cents impossible. inputmode="decimal"
+               still shows a numeric keypad on a real touchscreen; validation
+               already happens via parseFloat(...) at read time either way. -->
           <div class="discount-row">
             <label>Discount:</label>
-            <input type="number" id="discountValue" value="0" min="0" step="0.01" />
+            <input type="text" inputmode="decimal" id="discountValue" value="0" />
             <select id="discountType">
               <option value="pct">%</option>
               <option value="dollar">$</option>
@@ -480,7 +488,7 @@
       <div style="font-size:28px;font-weight:800;text-align:center;margin-bottom:20px" id="cashTotalDisplay"></div>
       <div class="form-group">
         <label>Amount Tendered ($)</label>
-        <input type="number" id="cashTendered" step="0.01" min="0" style="font-size:20px;text-align:right" />
+        <input type="text" inputmode="decimal" id="cashTendered" style="font-size:20px;text-align:right" />
       </div>
       <div id="changeDisplay" style="font-size:20px;font-weight:700;text-align:center;color:#2e7d32;margin:12px 0;display:none">
         Change: <span id="changeAmount"></span>
@@ -690,7 +698,7 @@
       <p style="font-size:13px;color:#666;margin-bottom:14px">For items with no barcode. Enter a price and pick a department so it shows up in your X report and audits.</p>
       <div class="form-group">
         <label>Price ($) *</label>
-        <input type="number" id="miscPrice" step="0.01" min="0" style="font-size:20px;text-align:right" placeholder="0.00" />
+        <input type="text" inputmode="decimal" id="miscPrice" style="font-size:20px;text-align:right" placeholder="0.00" />
       </div>
       <div class="form-group">
         <label>Department / Category *</label>
@@ -723,6 +731,7 @@
         <div id="refundMeta" style="font-size:13px;margin-bottom:8px;color:#444"></div>
         <div id="refundItems" style="max-height:44vh;overflow-y:auto"></div>
         <div style="display:flex;justify-content:space-between;font-weight:800;font-size:16px;margin-top:12px;border-top:2px solid #eee;padding-top:8px"><span>Refund total</span><span id="refundTotal" style="color:#991b1b">$0.00</span></div>
+        <div id="refundStatus" style="display:none;font-size:13px;color:#444;margin-top:8px">Waiting for the customer to complete the refund on the terminal…</div>
         <div class="modal-actions">
           <button class="btn btn-gray" onclick="closeModal('refundModal')">Cancel</button>
           <button class="btn btn-red" id="refundProcessBtn" onclick="refundProcess()">Process Refund</button>
@@ -749,7 +758,7 @@
       <p style="font-size:13px;color:#666;margin:6px 0 12px" id="priceEditName"></p>
       <div class="form-group">
         <label>New price ($)</label>
-        <input type="number" id="priceEditInput" step="0.01" min="0" style="font-size:20px;text-align:right" />
+        <input type="text" inputmode="decimal" id="priceEditInput" style="font-size:20px;text-align:right" />
       </div>
       <p style="font-size:12px;color:#888;margin-bottom:12px">Requires manager authorization at checkout if you don't have price-override permission.</p>
       <div class="modal-actions">
@@ -938,6 +947,13 @@
       document.addEventListener('click', e => {
         // Don't steal focus from the ID-scan box while attaching a customer
         if (document.getElementById('attachCustomerModal').style.display === 'flex') return;
+        // Don't steal focus from a field while the on-screen keyboard is being
+        // used to type into it — its keys are plain <div>s, not real form
+        // controls, so every tap matched the "not an input" branch below and
+        // yanked focus to the (invisible) barcode input, which shared.js's
+        // keyboard immediately closes for (not eligible — it's hidden). That
+        // made the keyboard close after every single keystroke.
+        if (e.target.closest('.osk')) return;
         if (!e.target.matches('input, select, button, textarea')) {
           barcodeEl.focus();
         }
@@ -2556,20 +2572,87 @@
 
     async function refundProcess() {
       const items = [];
+      let sub = 0;
       document.querySelectorAll('.refund-qty').forEach((inp) => {
         const it = refundData.items[+inp.dataset.i];
         const q = parseInt(inp.value, 10) || 0;
-        if (q > 0) items.push({ product_id: it.product_id, qty: q });
+        if (q > 0) { items.push({ product_id: it.product_id, qty: q }); sub += it.unit_price * q; }
       });
       if (!items.length) { showToast('Select at least one item and quantity to refund', 'warning'); return; }
+
       const btn = document.getElementById('refundProcessBtn'); btn.disabled = true; btn.textContent = 'Processing…';
+      const statusEl = document.getElementById('refundStatus');
+
+      // Card sale: the money has to actually come back to the customer's card.
+      // Send the reversal to the terminal FIRST (negative amount -> the driver
+      // sends TRAN_CODE 5 / Refund) and only record the refund in the DB if the
+      // terminal actually approves it — this used to just write a DB row and
+      // never touch the terminal at all, so "refunded" customers never got their
+      // money back on card sales.
+      let termFields = {};
+      if (refundData.payment_method === 'card') {
+        // Same proportional-share formula as the server (transactions.ts
+        // refundItems) so the terminal is charged the right amount and, on a
+        // full refund, it exactly matches the original sale's tax.
+        const origSubtotal = refundData.orig_subtotal || 0;
+        const origTaxAmount = refundData.orig_tax_amount || 0;
+        const tax = origSubtotal > 0 ? origTaxAmount * (sub / origSubtotal) : sub * (refundData.tax_rate || 0);
+        const refundAmount = -(sub + tax);
+
+        statusEl.style.display = 'block';
+        btn.textContent = 'Waiting for terminal…';
+
+        let termConfig = { terminal_mid: '', terminal_tid: '' };
+        try {
+          const cfgRes = await window.api.getTerminalConfig();
+          if (cfgRes.success) termConfig = cfgRes.config;
+        } catch { /* use defaults — mock terminal ignores these */ }
+
+        const payload = {
+          amount: refundAmount,
+          transactionId: 'REFUND-' + refundData.id + '-' + Date.now(),
+          merchantId: termConfig.terminal_mid || '',
+          terminalId: termConfig.terminal_tid || '',
+          lineItems: items.map((it) => {
+            const line = refundData.items.find((x) => x.product_id === it.product_id);
+            return { name: line ? line.name : 'Item', qty: it.qty, unitPrice: line ? line.unit_price : 0, total: (line ? line.unit_price : 0) * it.qty };
+          }),
+          taxAmount: tax,
+          taxRate: refundData.tax_rate || 0,
+          discountAmount: 0,
+        };
+
+        const res = await window.api.sendPayment(payload);
+        statusEl.style.display = 'none';
+        if (!res.success || !res.result || !res.result.approved) {
+          btn.disabled = false; btn.textContent = 'Process Refund';
+          showToast((res.result && res.result.errorMessage) || res.error || 'Card refund was declined by the terminal — nothing was refunded.', 'error');
+          return;
+        }
+        termFields = {
+          auth_code: res.result.authCode || '', last4: res.result.last4 || '',
+          card_type: res.result.cardType || '', terminal_ref: payload.transactionId,
+          signature_data: res.result.signatureData || '',
+        };
+        btn.textContent = 'Saving refund…';
+      }
+
       const r = await window.api.refundItems({
         original_txn_id: refundData.id,
         manager_pin: document.getElementById('refundPin').value,
         items,
+        ...termFields,
       });
       btn.disabled = false; btn.textContent = 'Process Refund';
-      if (!r.success) { showToast(r.error || 'Refund failed', 'error'); return; }
+      if (!r.success) {
+        // The card was already reversed at the terminal but the DB write
+        // failed — surface this loudly rather than a generic error, since the
+        // money already moved.
+        showToast(refundData.payment_method === 'card'
+          ? `Terminal refund succeeded but saving it failed: ${r.error || 'unknown error'}. Do not retry the terminal — contact support to record it manually.`
+          : (r.error || 'Refund failed'), 'error');
+        return;
+      }
       closeModal('refundModal');
       showToast(`Refund processed: ${fmt(r.total)} (receipt #${r.refundId})`, 'success');
     }

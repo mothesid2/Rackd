@@ -153,7 +153,7 @@ export default function Account() {
               <input className="border rounded-lg px-3 py-2" type="date" value={dob} onChange={(e) => setDob(e.target.value)} max={new Date().toISOString().slice(0, 10)} />
               <button className="rounded-lg bg-accent text-white px-4 py-2.5 font-semibold disabled:opacity-40" disabled={busy} onClick={attestAge}>Confirm I&apos;m 21+</button>
             </div>
-            {ageErr && <div className="text-red-600 text-sm mt-2">{ageErr}</div>}
+            {ageErr && <div role="alert" className="text-red-600 text-sm mt-2">{ageErr}</div>}
           </>
         )}
       </div>
@@ -161,7 +161,7 @@ export default function Account() {
       <div className="bg-white rounded-xl border p-4">
         <div className="font-semibold mb-2">Mobile number</div>
         <div className="flex gap-2">
-          <input className="border rounded-lg px-3 py-2 flex-1" placeholder="(555) 000-0000" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <input className="border rounded-lg px-3 py-2 flex-1" placeholder="(555) 000-0000" aria-label="Mobile number" value={phone} onChange={(e) => setPhone(e.target.value)} />
           <button className="rounded-lg border px-4" onClick={savePhone} disabled={busy}>Save</button>
         </div>
 
@@ -266,8 +266,8 @@ function AuthPanel() {
       <p className="text-sm text-smoke mb-4">21+ only. Order ahead, pick up in store.</p>
 
       <div className="bg-white rounded-2xl border border-black/10 shadow-tag p-4 grid gap-3">
-        {msg && <div className="rounded-lg bg-green-600/10 text-green-800 text-sm p-3">{msg}</div>}
-        {err && <div className="rounded-lg bg-red-600/10 text-red-700 text-sm p-3">{err}</div>}
+        {msg && <div role="status" className="rounded-lg bg-green-600/10 text-green-800 text-sm p-3">{msg}</div>}
+        {err && <div role="alert" className="rounded-lg bg-red-600/10 text-red-700 text-sm p-3">{err}</div>}
 
         {/* Social */}
         <button onClick={() => oauth('apple')} className="flex items-center justify-center gap-2 rounded-lg bg-black text-white py-2.5 font-semibold">
@@ -290,12 +290,12 @@ function AuthPanel() {
         {tab === 'email' && mode === 'signup' && (
           <div className="grid gap-2.5">
             <div className="grid grid-cols-2 gap-2.5">
-              <input className={input} placeholder="First name" value={first} onChange={(e) => setFirst(e.target.value)} />
-              <input className={input} placeholder="Last name" value={last} onChange={(e) => setLast(e.target.value)} />
+              <input className={input} placeholder="First name" aria-label="First name" value={first} onChange={(e) => setFirst(e.target.value)} />
+              <input className={input} placeholder="Last name" aria-label="Last name" value={last} onChange={(e) => setLast(e.target.value)} />
             </div>
-            <input className={input} type="tel" placeholder="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} />
-            <input className={input} type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <input className={input} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <input className={input} type="tel" placeholder="Phone number" aria-label="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <input className={input} type="email" placeholder="Email" aria-label="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input className={input} type="password" placeholder="Password" aria-label="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
             <label className="text-xs text-smoke">Date of birth (must be 21+)
               <input className={input + ' mt-1'} type="date" value={dob} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setDob(e.target.value)} />
             </label>
@@ -305,8 +305,8 @@ function AuthPanel() {
         )}
         {tab === 'email' && mode === 'signin' && (
           <div className="grid gap-2.5">
-            <input className={input} type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <input className={input} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <input className={input} type="email" placeholder="Email" aria-label="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input className={input} type="password" placeholder="Password" aria-label="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
             <button disabled={busy} onClick={signIn} className="rounded-lg bg-accent text-white py-2.5 font-semibold disabled:opacity-40">Sign in</button>
             <button onClick={() => { setMode('signup'); setErr(null); }} className="text-sm text-smoke">New here? Create an account</button>
           </div>
@@ -315,14 +315,14 @@ function AuthPanel() {
           <div className="grid gap-2.5">
             {!codeSent ? (
               <>
-                <input className={input} type="tel" inputMode="tel" placeholder="Phone number, e.g. (555) 000-1234" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <input className={input} type="tel" inputMode="tel" placeholder="Phone number, e.g. (555) 000-1234" aria-label="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} />
                 <p className="text-xs text-smoke -mt-1">US numbers only. 10 digits, no country code needed.</p>
                 <button disabled={busy} onClick={sendCode} className="rounded-lg bg-accent text-white py-2.5 font-semibold disabled:opacity-40">Text me a code</button>
                 <p className="text-xs text-smoke">New here? You&apos;ll add your name &amp; date of birth after verifying.</p>
               </>
             ) : (
               <>
-                <input className={input} inputMode="numeric" placeholder="6-digit code" value={code} onChange={(e) => setCode(e.target.value)} />
+                <input className={input} inputMode="numeric" placeholder="6-digit code" aria-label="6-digit verification code" value={code} onChange={(e) => setCode(e.target.value)} />
                 <button disabled={busy} onClick={verifyCode} className="rounded-lg bg-accent text-white py-2.5 font-semibold disabled:opacity-40">Verify &amp; continue</button>
                 <button onClick={() => setCodeSent(false)} className="text-sm text-smoke">Use a different number</button>
               </>

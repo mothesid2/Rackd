@@ -23,7 +23,6 @@
         <input type="date" id="endDate" aria-label="End date" />
         <button class="rowbtn" id="applyRange">Apply</button>
       </span>
-      <button class="btn" id="changeBusiness" title="Disconnect from this business and enter a new key">Change business</button>
       <button class="btn" id="logout">Sign out</button>
     </div>
 
@@ -160,6 +159,23 @@
       <div id="tsRows"></div>
       <div class="row" style="justify-content:flex-end;margin-top:8px">
         <button class="btn" onclick="document.getElementById('tsModal').style.display='none'">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add a brand-new shift: an employee forgot to clock in/out, or a manager
+       needs to backfill hours manually. Same sync path as a real punch. -->
+  <div class="overlay" id="tsAddModal">
+    <div class="modal" style="width:420px">
+      <h3>Add a shift</h3>
+      <div class="fg"><label>Employee</label><select id="tsAddEmployee"></select></div>
+      <div class="row">
+        <div class="fg" style="flex:1"><label>Clock in</label><input type="datetime-local" id="tsAddIn" /></div>
+        <div class="fg" style="flex:1"><label>Clock out (blank = still clocked in)</label><input type="datetime-local" id="tsAddOut" /></div>
+      </div>
+      <div class="row" style="justify-content:flex-end;margin-top:8px">
+        <button class="btn" onclick="document.getElementById('tsAddModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="tsAddSave">Add shift</button>
       </div>
     </div>
   </div>

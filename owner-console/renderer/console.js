@@ -58,6 +58,7 @@ async function renderBusinesses() {
         <div class="rowflex">
           ${b.businessKey ? `<span class="keycode" title="Business key">${esc(b.businessKey)}</span>` : `<span class="badge warn">no business key</span>`}
           <button class="rowbtn" data-add="${b.tenant_id}">+ Location</button>
+          <button class="rowbtn" style="color:#f2a9a5" data-delete-biz="${b.tenant_id}" data-name="${esc(b.name || 'this business')}">Delete</button>
         </div>
       </div>
       <div class="muted" data-locs="${b.tenant_id}" style="margin-top:12px;font-size:13px">Loading locations…</div>
@@ -65,6 +66,23 @@ async function renderBusinesses() {
   wrap.querySelectorAll('[data-add]').forEach((btn) => btn.addEventListener('click', () => {
     $('lTenant').value = btn.dataset.add; $('lName').value = ''; $('lAddress').value = ''; $('lZip').value = '';
     $('locModal').style.display = 'flex'; $('lName').focus();
+  }));
+  // Delete an entire business (batch 5) — this is exactly what would have
+  // prevented needing a hand-run SQL script for the 2026-07-24 accidental
+  // duplicate-tenant incident. Type-the-name confirmation since this deletes
+  // every location, employee, and kiosk registration for the tenant.
+  wrap.querySelectorAll('[data-delete-biz]').forEach((btn) => btn.addEventListener('click', async () => {
+    const tenantId = btn.dataset.deleteBiz;
+    const name = btn.dataset.name;
+    const typed = prompt(`This permanently deletes "${name}" — every location, employee, and kiosk registration under it. This cannot be undone.\n\nType the business name exactly to confirm:`, '');
+    if (typed === null) return;
+    if (typed.trim() !== name) { toast('Name did not match — nothing was deleted', true); return; }
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    const r = await window.owner.deleteBusiness(tenantId);
+    if (!r.success) { btn.disabled = false; btn.textContent = 'Delete'; toast(r.error || 'Failed', true); return; }
+    toast(`"${name}" deleted`);
+    await loadBusinesses();
+    renderBusinesses();
   }));
   for (const b of bizList) loadLocations(b.tenant_id);
 }
@@ -482,14 +500,22 @@ async function renderBusinessDetail() {
         <div class="muted" style="font-size:12px">Online sales tax: <strong>${((l.tax_rate ?? 0) * 100).toFixed(2)}%</strong> (auto, from ZIP)</div>
         <button class="rowbtn" data-save-loc="${esc(l.id)}">Save</button>
       </div>
-      <div class="rowflex" style="justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft)">
-        <div class="fg" style="margin:0;max-width:160px">
-          <label>Merchant fee (%)</label>
-          <input data-loc-fee="${esc(l.id)}" type="number" min="0" max="100" step="0.01" placeholder="e.g. 2.9" />
+      <div class="rowflex" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft);flex-wrap:wrap;gap:10px">
+        <div class="fg" style="margin:0;max-width:120px">
+          <label>Credit rate (%)</label>
+          <input data-loc-fee-credit="${esc(l.id)}" type="number" min="0" max="100" step="0.01" placeholder="e.g. 2.9" />
         </div>
-        <button class="rowbtn" data-save-fee="${esc(l.id)}">Save fee</button>
+        <div class="fg" style="margin:0;max-width:120px">
+          <label>Debit rate (%)</label>
+          <input data-loc-fee-debit="${esc(l.id)}" type="number" min="0" max="100" step="0.01" placeholder="e.g. 1.5" />
+        </div>
+        <div class="fg" style="margin:0;max-width:120px">
+          <label>Flat fee ($/txn)</label>
+          <input data-loc-fee-flat="${esc(l.id)}" type="number" min="0" step="0.01" placeholder="e.g. 0.10" />
+        </div>
+        <button class="rowbtn" style="align-self:flex-end" data-save-fee="${esc(l.id)}">Save fee</button>
       </div>
-      <div class="muted" style="font-size:11px;margin-top:4px">Your actual card-processing rate — used for the tip-pool deduction and the revenue report's processing-cost estimate. Not shown here after saving (re-enter to change); check the SQL editor or ask if you need to confirm the current value.</div>
+      <div class="muted" style="font-size:11px;margin-top:4px">Your actual card-processing rates — used for the tip-pool deduction and the revenue report's processing-cost estimate. This build's terminal can't tell credit from debit on a transaction (card brand only), so the lower of the two rates is applied until that changes — never over-deducts from tips. Not shown here after saving (re-enter to change); ask if you need to confirm the current values.</div>
     </div>`).join('') : '<div class="muted">No locations yet.</div>';
 
   // FIX (item 9, address partial-save bug): this used to be two independent
@@ -518,14 +544,20 @@ async function renderBusinessDetail() {
   }));
   locWrap.querySelectorAll('[data-save-fee]').forEach((btn) => btn.addEventListener('click', async () => {
     const id = btn.dataset.saveFee;
-    const raw = document.querySelector(`[data-loc-fee="${id}"]`).value;
-    if (raw === '') return toast('Enter a merchant fee percentage first', true);
-    const pct = Math.max(0, Math.min(100, Number(raw)));
+    const creditRaw = document.querySelector(`[data-loc-fee-credit="${id}"]`).value;
+    const debitRaw = document.querySelector(`[data-loc-fee-debit="${id}"]`).value;
+    const flatRaw = document.querySelector(`[data-loc-fee-flat="${id}"]`).value;
+    if (creditRaw === '' && debitRaw === '' && flatRaw === '') return toast('Enter at least one fee value first', true);
+    const credit = Math.max(0, Math.min(100, Number(creditRaw) || 0));
+    const debit = Math.max(0, Math.min(100, Number(debitRaw) || 0));
+    const flatCents = Math.max(0, Math.round((Number(flatRaw) || 0) * 100));
     btn.disabled = true; btn.textContent = 'Saving…';
-    const r = await window.owner.setLocationMerchantFee(id, pct);
+    const r = await window.owner.setLocationMerchantFee(id, { merchant_fee_credit_pct: credit, merchant_fee_debit_pct: debit, merchant_fee_flat_cents: flatCents });
     btn.disabled = false; btn.textContent = 'Save fee';
     if (!r.success) return toast(r.error || 'Failed — has migration 052 been applied yet?', true);
-    document.querySelector(`[data-loc-fee="${id}"]`).value = '';
+    document.querySelector(`[data-loc-fee-credit="${id}"]`).value = '';
+    document.querySelector(`[data-loc-fee-debit="${id}"]`).value = '';
+    document.querySelector(`[data-loc-fee-flat="${id}"]`).value = '';
     toast('Merchant fee saved — flows down to the POS on its next sync');
   }));
   $('bizAddLoc').addEventListener('click', () => {
@@ -613,6 +645,12 @@ $('mgrCreate').addEventListener('click', async () => {
   $('mcUser').textContent = r.username || username;
   $('mcPassLabel').textContent = isCashier ? 'PIN (one-time)' : 'Password (one-time)';
   $('mcPass').textContent = (isCashier ? r.pin : r.password) || '—';
+  // A manager needs BOTH — the temp PIN is what they enter to complete their
+  // first sign-in at all (must_change_pin forces a real one right after), same
+  // as a cashier's PIN. Only cashiers are PIN-only, so only managers get this
+  // extra row (their PIN already shows in the row above via mcPass).
+  $('mcPinWrap').style.display = isCashier ? 'none' : '';
+  if (!isCashier) $('mcPin').textContent = r.pin || '—';
   $('mgrCredsModal').style.display = 'flex';
   if (currentTab === 'business') renderBusinessDetail();
 });

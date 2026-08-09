@@ -649,6 +649,59 @@ html, body {
   transition: all 0.2s;
 }
 
+/* ========== ON-SCREEN KEYBOARD (touchscreen kiosks, POS Settings toggle) ========== */
+/* margin-top, NOT transform: `.osk` below is position:fixed and a child of
+   <body> (shared.js appends it there). A CSS transform on ANY ancestor makes
+   that ancestor the containing block for fixed-position descendants (this is
+   spec behavior, not a bug in Chromium) — so if body itself were transformed
+   to shift content up for the keyboard, `.osk` would stop being fixed to the
+   viewport and start sliding around WITH the body's own transform instead,
+   which is what made the keyboard visibly drift on every keystroke that
+   re-triggered a shift. margin-top shifts the same content up without
+   creating a containing block, so `.osk` stays correctly pinned to the
+   screen regardless of what body's margin is doing. */
+body { transition: margin-top 0.22s ease; }
+.osk {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background: #23262b;
+  border-top: 1px solid #3a3d44;
+  padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+  transform: translateY(105%);
+  transition: transform 0.22s ease;
+  box-shadow: 0 -6px 24px rgba(0,0,0,0.35);
+  user-select: none;
+  /* Belt-and-suspenders on top of the visibility fix in shared.js: closed
+     (translated fully off-screen) never intercepts clicks meant for the real
+     UI underneath, even for a frame during/before the slide transition. */
+  pointer-events: none;
+}
+.osk.open { transform: translateY(0); pointer-events: auto; }
+.osk-row { display: flex; gap: 6px; margin-bottom: 6px; justify-content: center; }
+.osk-key {
+  flex: 1;
+  min-width: 0;
+  max-width: 52px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #33373f;
+  color: #f2f2f2;
+  border: 1px solid #45494f;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+}
+.osk-key:active { background: #45494f; }
+.osk-key.osk-wide { max-width: 90px; flex: 1.6; font-size: 13px; }
+.osk-key.osk-space { max-width: none; flex: 6; }
+.osk-key.osk-active { background: #b01d2e; border-color: #b01d2e; }
+.osk-key.osk-done { max-width: 100px; flex: 1.8; background: #b01d2e; border-color: #b01d2e; font-size: 13px; }
+
 .drop-zone.drag-over {
   border-color: #b01d2e;
   background: #f4f4ec;

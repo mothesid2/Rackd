@@ -158,7 +158,7 @@ export function registerAuthHandlers(): void {
   // First-login credential change (forced, cannot skip). Admin/managers set a new
   // password AND PIN; cashiers set a new PIN. Clears the flags and syncs the new
   // credentials so they apply on every kiosk + the portal.
-  ipcMain.handle('auth:completeFirstLogin', (_event, args: { newPassword?: string; newPin?: string }) => {
+  ipcMain.handle('auth:completeFirstLogin', async (_event, args: { newPassword?: string; newPin?: string }) => {
     try {
       if (!currentSession) return { success: false, error: 'Not signed in' };
       const db = getDb();
@@ -183,6 +183,13 @@ export function registerAuthHandlers(): void {
           if (u.uid) enqueueEmployee('update', u.uid, db);
         } catch { /* offline — syncs later */ }
       })();
+      // Push now instead of waiting up to 60s for the background cycle. This is the
+      // fix for a real multi-kiosk bug: without it, if the kiosk goes offline or the
+      // app closes in that window, the cleared must_change_password/must_change_pin
+      // flags never reach the cloud — a second kiosk then pulls the stale "still
+      // needs to change" row and wrongly re-forces this employee through the forced
+      // first-login flow, even though they already completed it here.
+      try { await triggerSyncNow(); } catch { /* offline — will retry on the next cycle */ }
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -249,13 +256,21 @@ export function registerAuthHandlers(): void {
       const uid = randomUUID();
       const name = username.trim();
       const hash = isCashier ? null : bcrypt.hashSync(password, 10);
-      const pin = isCashier ? genUniquePin(db) : null;
-      const pinHash = pin ? bcrypt.hashSync(pin, 10) : null;
+      // FIX: a manager created here (POS Settings > User Management) never got a
+      // PIN at all — only the cashier branch generated one. Same class of bug as
+      // Owner Console's createStaffUser (already fixed): permanently invisible
+      // from every kiosk's "who's signing in" list (auth:listPinUsers requires a
+      // non-empty pin_hash), forever, with no way to get one via the normal
+      // forced-first-login flow. Managers get a real generated PIN now too,
+      // matching perms:saveEmployee (Staff & Permissions screen), the other
+      // local creation path, which already did this correctly.
+      const pin = genUniquePin(db);
+      const pinHash = bcrypt.hashSync(pin, 10);
       db.transaction(() => {
         db.prepare(
           `INSERT INTO users (uid, username, name, password_hash, pin_hash, role, is_active, must_change_password, must_change_pin)
            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`
-        ).run(uid, name, name, hash, pinHash, role, isCashier ? 0 : 1, isCashier ? 1 : 0);
+        ).run(uid, name, name, hash, pinHash, role, isCashier ? 0 : 1, 1);
         enqueueEmployee('insert', uid, db);
       })();
       // Managers sign into the Manager Portal against the cloud copy — push now

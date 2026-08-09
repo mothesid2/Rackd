@@ -39,12 +39,6 @@ function nowCTDateString() {
   });
 }
 
-function fmtDateFull(d) {
-  return d.toLocaleDateString('en-US', {
-    weekday: 'short', month: 'long', day: 'numeric', year: 'numeric', timeZone: TZ
-  });
-}
-
 // Update status bar
 let _lastStatusDateStr = null;
 async function updateStatusBar() {
@@ -55,7 +49,7 @@ async function updateStatusBar() {
 
   if (leftEl) {
     leftEl.innerHTML = session
-      ? `Logged in: <span class="status-role">${session.name || session.username}</span> &nbsp;|&nbsp; <strong>${fmtDateFull(new Date())}</strong>`
+      ? `Logged in: <span class="status-role">${session.name || session.username}</span>`
       : 'Not logged in';
   }
 
@@ -347,4 +341,181 @@ document.addEventListener('DOMContentLoaded', updateStatusBar);
   setInterval(check, 20000);
   document.addEventListener('DOMContentLoaded', check);
   check();
+})();
+
+// ── On-screen keyboard for touchscreen kiosks (off by default; POS Settings ──
+// > Touchscreen toggle). Attaches to any focused text input/textarea and slides
+// up from the bottom. Virtual keys use pointerdown + preventDefault so pressing
+// one never steals focus away from the field being typed into.
+(function () {
+  let enabled = false;
+  let target = null;
+  let shift = false;
+  let mode = 'letters'; // 'letters' | 'symbols'
+  let el = null;
+
+  const ROWS_LETTERS = [
+    ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+    ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+    ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
+    ['⇧', 'z', 'x', 'c', 'v', 'b', 'n', 'm', '⌫'],
+  ];
+  const ROWS_SYMBOLS = [
+    ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+    ['@', '#', '$', '%', '&', '*', '-', '+', '(', ')'],
+    ['!', '"', "'", ':', ';', '/', '?', ',', '.'],
+    ['⇧', '_', '=', '[', ']', '{', '}', '\\', '⌫'],
+  ];
+
+  // Several screens keep a REAL <input> permanently focused off-screen so a
+  // physical barcode scanner can "type" into it without a click (e.g. POS's
+  // #barcodeInput: opacity:0, left:-9999px) — disabled/readOnly don't catch
+  // this, so without an actual visibility check the keyboard popped up (and
+  // stayed up, since the input never loses focus) on every screen that has
+  // one of these, blocking real buttons underneath it.
+  function isVisible(node) {
+    const cs = getComputedStyle(node);
+    if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
+    const rect = node.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
+    if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= window.innerWidth || rect.top >= window.innerHeight) return false;
+    return true;
+  }
+
+  function eligible(node) {
+    if (!node || !node.tagName) return false;
+    if (node.disabled || node.readOnly) return false;
+    if (node.closest && node.closest('[data-no-osk]')) return false;
+    const tag = node.tagName.toLowerCase();
+    if (tag !== 'textarea' && tag !== 'input') return false;
+    if (tag === 'input') {
+      const type = (node.type || 'text').toLowerCase();
+      if (!['text', 'search', 'email', 'tel', 'number', 'password', 'url'].includes(type)) return false;
+    }
+    return isVisible(node);
+  }
+
+  function insert(ch) {
+    if (!target) return;
+    const val = target.value ?? '';
+    const start = target.selectionStart ?? val.length;
+    const end = target.selectionEnd ?? val.length;
+    target.value = val.slice(0, start) + ch + val.slice(end);
+    const pos = start + ch.length;
+    try { target.setSelectionRange(pos, pos); } catch { /* some input types don't support it */ }
+    target.dispatchEvent(new Event('input', { bubbles: true }));
+    if (shift) { shift = false; render(); }
+  }
+
+  function backspace() {
+    if (!target) return;
+    const val = target.value ?? '';
+    const start = target.selectionStart ?? val.length;
+    const end = target.selectionEnd ?? val.length;
+    if (start !== end) {
+      target.value = val.slice(0, start) + val.slice(end);
+      try { target.setSelectionRange(start, start); } catch { /* ignore */ }
+    } else if (start > 0) {
+      target.value = val.slice(0, start - 1) + val.slice(start);
+      try { target.setSelectionRange(start - 1, start - 1); } catch { /* ignore */ }
+    }
+    target.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function key(label, cls, handler) {
+    const b = document.createElement('div');
+    b.className = 'osk-key' + (cls ? ' ' + cls : '');
+    b.textContent = label;
+    b.addEventListener('pointerdown', (e) => { e.preventDefault(); handler(); });
+    return b;
+  }
+
+  function build() {
+    el = document.createElement('div');
+    el.className = 'osk';
+    document.body.appendChild(el);
+    render();
+  }
+
+  function render() {
+    if (!el) return;
+    el.innerHTML = '';
+    const rows = mode === 'symbols' ? ROWS_SYMBOLS : ROWS_LETTERS;
+    rows.forEach((row, i) => {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'osk-row';
+      row.forEach((k) => {
+        if (k === '⇧') {
+          rowEl.appendChild(key('⇧', 'osk-wide' + (shift ? ' osk-active' : ''), () => { shift = !shift; render(); }));
+        } else if (k === '⌫') {
+          rowEl.appendChild(key('⌫', 'osk-wide', backspace));
+        } else {
+          const ch = shift ? k.toUpperCase() : k;
+          rowEl.appendChild(key(ch, '', () => insert(ch)));
+        }
+      });
+      el.appendChild(rowEl);
+    });
+    const bottom = document.createElement('div');
+    bottom.className = 'osk-row';
+    bottom.appendChild(key(mode === 'symbols' ? 'ABC' : '123', 'osk-wide', () => { mode = mode === 'symbols' ? 'letters' : 'symbols'; render(); }));
+    bottom.appendChild(key('', 'osk-key osk-space', () => insert(' ')));
+    bottom.appendChild(key('Done', 'osk-done', hide));
+    el.appendChild(bottom);
+  }
+
+  // Shift the page up (via body's margin-top, not scrolling — most kiosk
+  // screens are fixed-height with overflow:hidden, so window scrolling
+  // wouldn't reach, and NOT via transform — transform on body would make
+  // body the containing block for `.osk` below, since `.osk` is a
+  // position:fixed child of body; that breaks `.osk`'s fixed-to-viewport
+  // positioning and makes it drift along with body's own shift instead of
+  // staying put, which is what made the keyboard visibly reposition itself
+  // instead of staying anchored to the bottom of the screen). The keyboard's
+  // own box height is stable regardless of its slide transform, so the final
+  // open position can be computed immediately without waiting for the
+  // transition to finish.
+  function adjustForKeyboard() {
+    if (!target || !el) return;
+    const kbTopWhenOpen = window.innerHeight - el.offsetHeight;
+    const rect = target.getBoundingClientRect();
+    const margin = 16;
+    const overlap = rect.bottom + margin - kbTopWhenOpen;
+    document.body.style.marginTop = overlap > 0 ? `-${Math.round(overlap)}px` : '';
+  }
+
+  function show(node) {
+    target = node;
+    if (!el) build();
+    el.classList.add('open');
+    adjustForKeyboard();
+  }
+  function hide() {
+    const prev = target;
+    target = null;
+    if (el) el.classList.remove('open');
+    document.body.style.marginTop = '';
+    if (prev && prev.blur) prev.blur();
+  }
+
+  document.addEventListener('focusin', (e) => {
+    if (!enabled) return;
+    if (eligible(e.target)) show(e.target);
+  });
+  document.addEventListener('focusout', (e) => {
+    if (!enabled) return;
+    setTimeout(() => {
+      const active = document.activeElement;
+      if (!eligible(active) && !(el && el.contains(active))) hide();
+    }, 80);
+  });
+
+  async function init() {
+    try {
+      const r = await window.api.getSettings();
+      enabled = !!(r && r.success && r.settings && r.settings.onscreen_keyboard_enabled === '1');
+    } catch { enabled = false; }
+  }
+  document.addEventListener('DOMContentLoaded', init);
+  init();
 })();

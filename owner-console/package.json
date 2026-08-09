@@ -1,6 +1,6 @@
 {
   "name": "rackd-owner-console",
-  "version": "1.0.5",
+  "version": "1.0.11",
   "description": "Rackd Owner Console — private cockpit: provisioning, kiosks, online orders, and publishing updates.",
   "main": "main.js",
   "author": "Rackd",
