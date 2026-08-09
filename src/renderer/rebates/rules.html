@@ -91,6 +91,7 @@
   <script>
     let manufacturers = [];
     let skuChips = [];
+    let rules = [];
 
     document.addEventListener('DOMContentLoaded', async () => {
       const session = (await window.api.getSession()).session;
@@ -117,7 +118,11 @@
       const tb = document.getElementById('ruleBody');
       const r = await window.api.listRebateRules();
       if (!r.success) { tb.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#b01d2e;padding:24px">${esc(r.error || 'Failed')}</td></tr>`; return; }
-      const rules = r.rules || [];
+      rules = r.rules || [];
+      renderRulesTable();
+    }
+    function renderRulesTable() {
+      const tb = document.getElementById('ruleBody');
       if (!rules.length) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#aaa;padding:24px">No rebate rules yet. Click “New Rule”.</td></tr>'; return; }
       tb.innerHTML = rules.map(rule => {
         const disc = rule.discount_type === 'percent' ? `${rule.discount_amount}%` : fmt(rule.discount_amount);
@@ -163,13 +168,24 @@
       openModal('ruleModal');
     }
 
+    // Optimistic (batch 6): a manager authoring a promo/rebate rule has a
+    // clear expected outcome, so the modal closes and the table reflects the
+    // save immediately instead of sitting on "Saving…" — reconciled against
+    // the server's copy (real uid, any server-side normalization) once the
+    // write actually confirms, or rolled back to the pre-edit table with a
+    // clear error if it fails. Manufacturer scan-data reporting only reads
+    // CONFIRMED applied_rebates rows written at checkout, never rule edits
+    // directly, so briefly showing an optimistic (not-yet-saved) rule row
+    // has no compliance/reporting side effect — it's purely a local list view.
     async function saveRule() {
       const input = document.getElementById('rSkuInput');
       if (input.value.trim()) { addSku(input.value); input.value = ''; }
+      const isNew = !document.getElementById('rUid').value;
       const rule = {
-        uid: document.getElementById('rUid').value || undefined,
+        uid: document.getElementById('rUid').value || ('__pending__' + Date.now()),
         name: document.getElementById('rName').value.trim(),
         manufacturer_uid: document.getElementById('rMfr').value || null,
+        manufacturer_name: mfrName(document.getElementById('rMfr').value),
         rule_type: document.getElementById('rType').value,
         qualifying_skus: skuChips,
         qualifying_quantity: parseInt(document.getElementById('rQty').value, 10) || 1,
@@ -180,20 +196,35 @@
         active_end_date: document.getElementById('rEnd').value || null,
         is_active: document.getElementById('rActive').checked,
       };
-      const btn = document.getElementById('ruleSaveBtn'); btn.disabled = true; btn.textContent = 'Saving…';
-      const r = await window.api.saveRebateRule(rule);
-      btn.disabled = false; btn.textContent = 'Save Rule';
-      if (!r.success) { showToast(r.error || 'Save failed', 'error'); return; }
-      closeModal('ruleModal');
-      showToast('Rebate rule saved', 'success');
-      loadRules();
+      if (!rule.name) { showToast('Rule name is required', 'warning'); return; }
+      if (!rule.qualifying_skus.length) { showToast('Add at least one qualifying SKU', 'warning'); return; }
+
+      const snapshot = rules.slice();
+      const payload = { ...rule, uid: isNew ? undefined : rule.uid };
+
+      await RackdUI.optimistic(
+        null,
+        () => {
+          if (isNew) rules = [rule, ...rules];
+          else rules = rules.map((x) => (x.uid === rule.uid ? rule : x));
+          renderRulesTable();
+          closeModal('ruleModal');
+        },
+        () => window.api.saveRebateRule(payload),
+        () => { rules = snapshot; renderRulesTable(); },
+        'Could not save that rule — change was undone'
+      ).then(() => { showToast('Rebate rule saved', 'success'); loadRules(); }).catch(() => {});
     }
 
     async function toggleRule(uid, active) {
-      const r = await window.api.setRebateRuleActive(uid, !!active);
-      if (!r.success) { showToast(r.error || 'Failed', 'error'); return; }
-      showToast(active ? 'Rule activated' : 'Rule deactivated', 'success');
-      loadRules();
+      const snapshot = rules.slice();
+      await RackdUI.optimistic(
+        null,
+        () => { rules = rules.map((x) => (x.uid === uid ? { ...x, is_active: !!active } : x)); renderRulesTable(); },
+        () => window.api.setRebateRuleActive(uid, !!active),
+        () => { rules = snapshot; renderRulesTable(); },
+        'Could not update that rule — change was undone'
+      ).then(() => showToast(active ? 'Rule activated' : 'Rule deactivated', 'success')).catch(() => {});
     }
   </script>
 </body>

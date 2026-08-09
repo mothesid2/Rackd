@@ -902,14 +902,18 @@ async function renderOrders() {
   await drawOrders();
   orderTimer = setInterval(() => { if (curTab === 'orders') drawOrders(); }, 20000);
 }
+let currentOrders = []; // hoisted so advanceOrder can update+re-render one card optimistically without a full re-fetch
 async function drawOrders() {
   // Item 9: scope to the selected store (the backend already supports this filter).
   const r = await window.portal.orders({ location_id: currentStoreId || undefined });
   if (!r.success) { view.innerHTML = `<div class="card">Couldn't load: ${esc(r.error)}</div>`; return; }
-  const orders = r.orders;
+  currentOrders = r.orders;
+  renderOrdersList();
+}
+function renderOrdersList() {
   view.innerHTML = `
     <div class="h2">Online orders <span class="muted" style="font-weight:400;font-size:13px">— pickup queue at ${currentStoreId ? esc(nameOf[currentStoreId] || 'this store') : 'all locations'} · refreshes automatically</span></div>
-    ${orders.length ? `<div class="hgrid">${orders.map(orderCard).join('')}</div>`
+    ${currentOrders.length ? `<div class="hgrid">${currentOrders.map(orderCard).join('')}</div>`
       : '<div class="card muted">No open online orders.</div>'}`;
 }
 function orderCard(o) {
@@ -935,11 +939,27 @@ function orderCard(o) {
       </div>
     </div>`;
 }
+// Optimistic (batch 6): the manager's expected outcome here is unambiguous
+// ("Start preparing" -> preparing, "Mark ready" -> ready) and the card
+// updates instantly instead of waiting on a network round trip, with a
+// clean rollback + toast if the write actually fails. NOT used for
+// cancel/refund (confirmCancel above) — that's money moving back to the
+// customer and stays wait-for-real-confirmation.
 async function advanceOrder(id, status) {
-  const r = await window.portal.orderStatus({ order_id: id, status });
-  if (!r.success) { toast(r.error || 'Failed', true); return; }
-  toast(status === 'ready' ? 'Marked ready — customer texted' : 'Order updated');
-  drawOrders();
+  const order = currentOrders.find((o) => o.id === id);
+  if (!order) return;
+  const prevStatus = order.status;
+  // No `el` passed — renderOrdersList() below replaces the whole card's DOM
+  // node on every call (applyFn AND rollbackFn both trigger a re-render), so
+  // any element reference captured beforehand would go stale immediately;
+  // the status text/pill changing IS the visual feedback here.
+  await RackdUI.optimistic(
+    null,
+    () => { order.status = status; renderOrdersList(); },
+    () => window.portal.orderStatus({ order_id: id, status }),
+    () => { order.status = prevStatus; renderOrdersList(); },
+    'Could not update that order — change was undone'
+  ).then(() => { if (status === 'ready') toast('Marked ready — customer texted'); }).catch(() => {});
 }
 function openCancel(id, number) {
   document.getElementById('xOrder').value = id;

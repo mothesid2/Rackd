@@ -177,13 +177,31 @@
         }).join('');
     }
 
+    // Optimistic (batch 6): the checkbox already flips instantly on click
+    // (native browser behavior) regardless of what this function does — the
+    // bug that made "fix" instead of "add" the right word here is that the
+    // OLD code never reverted it on failure, so a rejected permission change
+    // (e.g. a stale session, a revoked manager) left the switch showing
+    // "granted" indefinitely while nothing was actually saved. Using the
+    // shared optimistic helper gets the rollback (and the toast) for free.
     async function toggle(uid, key, on) {
       const e = employees.find(x => x.uid === uid);
       const cap = key === 'apply_discount' ? (e.permissions[key]?.value ?? null) : null;
-      const r = await window.api.permsSetPermission(uid, key, on, cap);
-      if (!r.success) { showToast(r.error||'Failed','error'); return; }
-      (e.permissions[key] ||= {}).is_granted = on;
-      renderPerms();
+      const prev = e.permissions[key]?.is_granted;
+      // No element passed to the helper — renderPerms() below replaces this
+      // checkbox's DOM node on every call, so a captured reference to it
+      // would be stale before the helper could style it; the checked state
+      // itself (driven by is_granted through the re-render) is the feedback.
+      await RackdUI.optimistic(
+        null,
+        // Re-render on the optimistic apply too, not just on rollback: for
+        // apply_discount specifically, granting/revoking also enables/disables
+        // the cap-% input next to it, which needs the same immediate update.
+        () => { (e.permissions[key] ||= {}).is_granted = on; renderPerms(); },
+        () => window.api.permsSetPermission(uid, key, on, cap),
+        () => { (e.permissions[key] ||= {}).is_granted = prev; renderPerms(); },
+        'Could not update that permission — reverted'
+      ).catch(() => {});
     }
     async function setCap(uid, val) {
       const v = val === '' ? null : Math.max(0, Math.min(100, parseFloat(val)||0));
