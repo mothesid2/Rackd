@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Archivo, Instrument_Sans } from 'next/font/google';
 import './globals.css';
 import { CartProvider } from '@/lib/cart';
+import { AppQueryProvider } from '@/lib/queryClient';
 import Link from 'next/link';
 
 // Display: Archivo (heavy, industrial — retail loudness without the Inter/Grotesk default).
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             DEMO
           </div>
         )}
+        <AppQueryProvider>
         <CartProvider>
           <header className="sticky top-0 z-30 bg-char text-white">
             <div className="max-w-3xl mx-auto flex items-center gap-3 px-4 h-16">
@@ -62,6 +64,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </footer>
         </CartProvider>
+        </AppQueryProvider>
       </body>
     </html>
   );

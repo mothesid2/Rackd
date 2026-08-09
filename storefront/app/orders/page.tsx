@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { fmt } from '@/lib/config';
+import { useOrders } from '@/lib/queries';
+import { SkeletonOrderCard } from '@/components/ui/Skeleton';
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   pending_payment: { label: 'Awaiting payment', cls: 'bg-neutral-100 text-neutral-600' },
@@ -14,22 +16,16 @@ const STATUS: Record<string, { label: string; cls: string }> = {
 };
 
 export default function Orders() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [orders, setOrders] = useState<any[]>([]);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
 
   useEffect(() => { (async () => {
     const { data: { session } } = await supabase().auth.getSession();
     setSignedIn(!!session);
-    if (!session) return;
-    const { data } = await supabase()
-      .from('online_orders')
-      .select('id, order_number, status, total, created_at, ready_at, online_order_items(name, qty)')
-      .order('created_at', { ascending: false }).limit(50);
-    setOrders(data || []);
   })(); }, []);
 
-  if (signedIn === null) return <p className="text-neutral-400">Loading…</p>;
+  const { data: orders = [], isLoading } = useOrders(signedIn);
+
+  if (signedIn === null) return <div className="grid gap-3">{[0, 1].map((i) => <SkeletonOrderCard key={i} />)}</div>;
   if (!signedIn) return (
     <div><h1 className="text-2xl font-extrabold mb-2">Your orders</h1>
       <div className="bg-white rounded-xl border p-4"><Link href="/account" className="text-accent font-semibold">Sign in</Link> to see your orders.</div></div>
@@ -38,8 +34,10 @@ export default function Orders() {
   return (
     <div>
       <h1 className="text-2xl font-extrabold mb-4">Your orders</h1>
-      {orders.length === 0 ? <p className="text-neutral-400">No orders yet.</p> :
-        <div className="grid gap-3">
+      {isLoading ? (
+        <div className="grid gap-3">{[0, 1, 2].map((i) => <SkeletonOrderCard key={i} />)}</div>
+      ) : orders.length === 0 ? <p className="text-neutral-400">No orders yet.</p> :
+        <div className="grid gap-3 fade-in">
           {orders.map((o) => {
             const s = STATUS[o.status] || STATUS.new;
             return (

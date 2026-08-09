@@ -7,6 +7,7 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 import { supabase, callFn } from '@/lib/supabase';
 import { useCart } from '@/lib/cart';
 import { fmt, STRIPE_PUBLISHABLE_KEY, ONLINE_FEE_RATE } from '@/lib/config';
+import { useInvalidateOrders } from '@/lib/queries';
 
 const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
@@ -124,12 +125,16 @@ function PayForm() {
   const elements = useElements();
   const router = useRouter();
   const cart = useCart();
+  const invalidateOrders = useInvalidateOrders();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function pay() {
     if (!stripe || !elements) return;
     setBusy(true); setErr(null);
+    // Deliberately NOT optimistic — this is the actual payment confirmation.
+    // The UI waits for Stripe's real response; a false-positive "paid" here
+    // would be unacceptable.
     const { error } = await stripe.confirmPayment({
       elements,
       confirmParams: { return_url: window.location.origin + '/orders?ok=1' },
@@ -137,6 +142,9 @@ function PayForm() {
     });
     if (error) { setErr(error.message || 'Payment failed'); setBusy(false); return; }
     cart.clear();
+    // The order just landed server-side — don't make /orders wait out its
+    // own staleTime to show it.
+    invalidateOrders();
     router.push('/orders?ok=1');
   }
 

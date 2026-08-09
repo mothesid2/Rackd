@@ -1,17 +1,16 @@
 'use client';
-import { Suspense, useEffect, useState, useCallback } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
 import { useCart } from '@/lib/cart';
 import { fmt } from '@/lib/config';
-
-interface MenuItem { barcode: string; name: string; category: string | null; price: number; available: number; stock_status: 'in' | 'low' | 'out'; image_url: string | null }
+import { useStoreMenu } from '@/lib/queries';
+import { SkeletonMenuRow } from '@/components/ui/Skeleton';
 
 // A static export can't pre-render a dynamic /store/[id] path, so the store is a
 // static /store route that reads ?id=<location> at runtime (client-side).
 export default function StorePage() {
   return (
-    <Suspense fallback={<p className="text-smoke">Loading…</p>}>
+    <Suspense fallback={<div className="grid gap-3">{[0, 1, 2].map((i) => <SkeletonMenuRow key={i} />)}</div>}>
       <StoreInner />
     </Suspense>
   );
@@ -23,26 +22,18 @@ function StoreInner() {
   const locationId = String(search.get('id') || '');
   const cart = useCart();
 
-  const [storeName, setStoreName] = useState('');
-  const [menu, setMenu] = useState<MenuItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading } = useStoreMenu(locationId);
+  const storeName = data?.store?.name || '';
+  const menu = data?.menu || [];
 
-  const load = useCallback(async () => {
-    if (!locationId) { setLoading(false); return; }
-    const [{ data: loc }, { data: items }] = await Promise.all([
-      supabase().from('locations').select('name, tenant_id').eq('id', locationId).maybeSingle(),
-      supabase().rpc('storefront_menu', { p_location: locationId }),
-    ]);
-    if (loc) { setStoreName(loc.name); cart.setStore(loc.tenant_id, locationId); }
-    setMenu((items as MenuItem[]) || []);
-    setLoading(false);
-  }, [locationId]); // eslint-disable-line react-hooks/exhaustive-deps
-
+  // Cart is scoped to whichever store's menu just loaded — switching stores
+  // clears it (cart.setStore's own guard), so this only needs to run once
+  // the location's tenant_id is known.
   useEffect(() => {
-    load();
-    const t = setInterval(load, 25000); // poll for near-real-time stock (see 033 note)
-    return () => clearInterval(t);
-  }, [load]);
+    if (data?.store) cart.setStore(data.store.tenant_id, locationId);
+  }, [data?.store, locationId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loading = isLoading;
 
   const qtyInCart = (b: string) => cart.lines.find((l) => l.barcode === b)?.qty || 0;
 
@@ -58,11 +49,11 @@ function StoreInner() {
       <h1 className="font-display font-extrabold text-3xl tracking-tight mb-5 mt-1">{storeName || 'Menu'}</h1>
 
       {loading ? (
-        <div className="grid gap-3">{[0, 1, 2].map((i) => <div key={i} className="h-[76px] rounded-2xl bg-black/[0.04] animate-pulse" />)}</div>
+        <div className="grid gap-3">{[0, 1, 2].map((i) => <SkeletonMenuRow key={i} />)}</div>
       ) : menu.length === 0 ? (
         <div className="rounded-2xl border border-black/10 bg-white p-8 text-center text-smoke">Nothing available online right now — check back soon.</div>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-3 fade-in">
           {menu.map((it) => {
             const inCart = qtyInCart(it.barcode);
             const canAdd = it.stock_status !== 'out' && inCart < it.available;

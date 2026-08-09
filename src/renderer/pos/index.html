@@ -1066,6 +1066,10 @@
         () => (query ? window.api.searchProducts(query) : window.api.getProducts({})),
         (res) => {
           if (!res || !res.success) return '';
+          // The empty-query call already IS the full catalog — reuse it for
+          // _productsCache below instead of a second, separately-fired
+          // getProducts({}) call doing the exact same read a moment later.
+          if (!query && res.products) _productsCache = res.products;
           const products = res.products || [];
           if (products.length === 0) return '<div class="no-results">No products found</div>';
           return products.slice(0, 30).map(p => {
@@ -1086,7 +1090,6 @@
     }
 
     let _productsCache = [];
-    window.api.getProducts({}).then(r => { if (r.success) _productsCache = r.products; });
 
     async function addToCartById(id) {
       let product = _productsCache.find(p => p.id === id);

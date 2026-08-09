@@ -90,7 +90,12 @@ async function renderBusinesses() {
 async function loadLocations(tenantId) {
   const el = document.querySelector(`[data-locs="${tenantId}"]`);
   if (!el) return;
-  const r = await window.owner.locations(tenantId);
+  // renderBusinesses() re-fetches every business's locations unconditionally
+  // on every visit to this tab — cache it per-tenant so bouncing back to
+  // "Businesses" without having changed anything doesn't re-hit the network
+  // for every single business card again. Invalidated wherever a location
+  // changes (rename, add) below.
+  const r = await RackdUI.cache.get('owner:locations:' + tenantId, () => window.owner.locations(tenantId), 30000);
   if (!r.success) { el.textContent = r.error || 'Could not load locations'; return; }
   const locs = r.locations || [];
   el.innerHTML = locs.length
@@ -104,7 +109,7 @@ async function loadLocations(tenantId) {
     const name = prompt('Rename location', btn.dataset.name);
     if (!name || name === btn.dataset.name) return;
     const r = await window.owner.renameLocation(btn.dataset.rename, name.trim());
-    if (r.success) { toast('Location renamed'); loadLocations(tenantId); } else toast(r.error, true);
+    if (r.success) { toast('Location renamed'); RackdUI.cache.invalidate('owner:locations:' + tenantId); loadLocations(tenantId); } else toast(r.error, true);
   }));
 }
 
@@ -621,6 +626,7 @@ $('lCreate').addEventListener('click', async () => {
   btn.disabled = false; btn.textContent = 'Add';
   if (!r.success) { toast(r.error, true); return; }
   $('locModal').style.display = 'none'; toast('Location added');
+  RackdUI.cache.invalidate('owner:locations:' + $('lTenant').value);
   if (currentTab === 'business') renderBusinessDetail(); else loadLocations($('lTenant').value);
 });
 function updateUserModalRole() {

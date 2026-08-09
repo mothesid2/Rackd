@@ -506,9 +506,15 @@ async function openLocation(id, name) {
 
 // ── inventory (item 5: edit, not just view) ───────────────────────────────────
 let invCache = [];
+// Within-session cache (see shared-ui-kit.js RackdUI.cache): switching tabs
+// re-runs render(), and unlike the read-only-local-SQLite POS screens, this
+// portal's data is a real network round trip to Supabase every time — a
+// manager bouncing between Dashboard/Inventory/Settings shouldn't re-pay
+// that on every click. Explicitly invalidated wherever this data can change
+// (see saveAdjustment below) rather than just waiting out the TTL.
 async function renderInventory() {
   view.innerHTML = '<table class="grid"><tbody>' + RackdUI.skeleton.tableRowsHtml(7, 8) + '</tbody></table>';
-  const r = await window.portal.inventory();
+  const r = await RackdUI.cache.get('portal:inventory', () => window.portal.inventory(), 30000);
   if (!r.success) { view.innerHTML = `<div class="card">Couldn't load: ${esc(r.error)}</div>`; return; }
   // Item 9: scope to the selected store.
   invCache = currentStoreId ? r.items.filter((i) => i.location_id === currentStoreId) : r.items;
@@ -553,6 +559,7 @@ function drawInventory() {
     btn.disabled = false; btn.textContent = 'Apply';
     if (!r.success) { toast(r.error || 'Failed', true); return; }
     item.quantity = r.quantity;
+    RackdUI.cache.invalidate('portal:inventory'); // stale otherwise until TTL if the user tabs away and back
     input.value = '';
     document.getElementById(`qty-${id}`).textContent = r.quantity;
     toast(`${delta > 0 ? '+' : ''}${delta} applied — syncs to the register on its next check-in`);
@@ -637,7 +644,10 @@ async function saveNewCustomer() {
 async function renderStoreSettings() {
   view.innerHTML = RackdUI.skeleton.cardsHtml(5);
   if (!currentStoreId) { view.innerHTML = '<div class="card muted">No stores on this business yet.</div>'; return; }
-  const r = await window.portal.storefrontLocations();
+  // Same cache entry the Storefront tab uses below (renderStorefront) — the
+  // two tabs read the exact same locations list, so switching between them
+  // shouldn't double the network calls.
+  const r = await RackdUI.cache.get('portal:storefrontLocations', () => window.portal.storefrontLocations(), 30000);
   if (!r.success) { view.innerHTML = `<div class="card">Couldn't load: ${esc(r.error)}</div>`; return; }
   const l = (r.locations || []).find((x) => x.id === currentStoreId);
   if (!l) { view.innerHTML = '<div class="card muted">Store not found.</div>'; return; }
@@ -679,8 +689,8 @@ let menuCache = [];     // current location's menu items
 let menuLoc = null;     // selected location for the menu builder
 
 async function renderStorefront() {
-  view.innerHTML = '<div class="spin">Loading storefront settings…</div>';
-  const r = await window.portal.storefrontLocations();
+  view.innerHTML = RackdUI.skeleton.cardsHtml(3);
+  const r = await RackdUI.cache.get('portal:storefrontLocations', () => window.portal.storefrontLocations(), 30000);
   if (!r.success) { view.innerHTML = `<div class="card">Couldn't load: ${esc(r.error)}</div>`; return; }
   sfLocs = r.locations;
   // Default the online-menu picker to the currently selected store (item 9),
@@ -755,6 +765,7 @@ async function toggleStore(id, enable) {
     toast(msg, true); return;
   }
   toast(enable ? 'Store is live online' : 'Store taken offline');
+  RackdUI.cache.invalidate('portal:storefrontLocations');
   renderStorefront();
 }
 
@@ -771,6 +782,7 @@ async function stripeRefresh(id) {
   const r = await window.portal.stripeConnect({ action: 'status', location_id: id });
   if (!r.success) { toast(r.error || 'Could not refresh', true); return; }
   toast(r.onboarded ? 'Payouts ready' : 'Onboarding still incomplete', !r.onboarded);
+  RackdUI.cache.invalidate('portal:storefrontLocations');
   renderStorefront();
 }
 
@@ -793,7 +805,7 @@ function uploadLogo(id) {
       toast('Uploading logo…');
       const r = await window.portal.uploadLocationLogo({ location_id: id, base64, ext, contentType: file.type });
       if (!r.success) { toast(r.error || 'Upload failed', true); return; }
-      toast('Logo updated'); renderStorefront();
+      toast('Logo updated'); RackdUI.cache.invalidate('portal:storefrontLocations'); renderStorefront();
     };
     reader.readAsDataURL(file);
   };
