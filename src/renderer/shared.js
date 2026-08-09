@@ -353,6 +353,7 @@ document.addEventListener('DOMContentLoaded', updateStatusBar);
   let shift = false;
   let mode = 'letters'; // 'letters' | 'symbols'
   let el = null;
+  let valueAtFocus = '';
 
   const ROWS_LETTERS = [
     ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
@@ -486,6 +487,7 @@ document.addEventListener('DOMContentLoaded', updateStatusBar);
 
   function show(node) {
     target = node;
+    valueAtFocus = node.value ?? '';
     if (!el) build();
     el.classList.add('open');
     adjustForKeyboard();
@@ -495,7 +497,19 @@ document.addEventListener('DOMContentLoaded', updateStatusBar);
     target = null;
     if (el) el.classList.remove('open');
     document.body.style.marginTop = '';
-    if (prev && prev.blur) prev.blur();
+    if (prev) {
+      // Every key press only dispatches 'input' (see insert/backspace above) —
+      // setting .value programmatically never sets the browser's internal
+      // "user edited this" flag, so a native 'change' never fires on blur()
+      // below no matter what. Any screen that listens for onchange to detect
+      // an edit (e.g. a Save button gated on a dirty flag) never sees typing
+      // done through this keyboard as a change at all — only a real click,
+      // like a checkbox toggle, produces one. Dispatching it here ourselves,
+      // once, only when the value actually moved, reproduces that same
+      // fire-on-commit semantics for keyboard-driven edits too.
+      if (prev.value !== valueAtFocus) prev.dispatchEvent(new Event('change', { bubbles: true }));
+      if (prev.blur) prev.blur();
+    }
   }
 
   document.addEventListener('focusin', (e) => {

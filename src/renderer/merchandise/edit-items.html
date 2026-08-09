@@ -193,8 +193,8 @@
           <td><input type="text" data-field="name" value="${esc(p.name)}" onchange="markDirty(${p.id})" /></td>
           <td><input type="text" data-field="category" list="categoryList" value="${esc(p.category || '')}" onchange="markDirty(${p.id})" /></td>
           <td><input type="text" data-field="vendor" value="${esc(p.vendor || '')}" onchange="markDirty(${p.id})" /></td>
-          <td><input type="number" step="0.01" data-field="price" value="${Number(p.price).toFixed(2)}" onchange="markDirty(${p.id})" /></td>
-          <td><input type="number" step="0.01" data-field="cost" value="${Number(p.cost).toFixed(2)}" onchange="markDirty(${p.id})" /></td>
+          <td><input type="text" inputmode="decimal" data-field="price" value="${Number(p.price).toFixed(2)}" onchange="markDirty(${p.id})" /></td>
+          <td><input type="text" inputmode="decimal" data-field="cost" value="${Number(p.cost).toFixed(2)}" onchange="markDirty(${p.id})" /></td>
           <td><input type="number" data-field="stock_qty" value="${p.stock_qty}" onchange="markDirty(${p.id})" /></td>
           <td><input type="number" data-field="low_stock_threshold" value="${p.low_stock_threshold}" onchange="markDirty(${p.id})" /></td>
           <td style="text-align:center"><input type="checkbox" data-field="age_restricted" style="width:auto" ${p.age_restricted ? 'checked' : ''} onchange="markDirty(${p.id})" /></td>

@@ -57,10 +57,10 @@
 
           <div class="form-row">
             <div class="form-group"><label>SKU prefix</label><input type="text" id="skuPrefix" /></div>
-            <div class="form-group"><label>Base price</label><input type="number" step="0.01" id="basePrice" /></div>
+            <div class="form-group"><label>Base price</label><input type="text" inputmode="decimal" id="basePrice" /></div>
           </div>
           <div class="form-row">
-            <div class="form-group"><label>Base cost</label><input type="number" step="0.01" id="baseCost" /></div>
+            <div class="form-group"><label>Base cost</label><input type="text" inputmode="decimal" id="baseCost" /></div>
             <div class="form-group"><label>Start stock</label><input type="number" id="baseStock" value="0" /></div>
           </div>
 
@@ -99,8 +99,8 @@
           <td><input data-f="label" value="${esc(v.label)}" /></td>
           <td><input data-f="sku" value="${esc(v.sku || '')}" /></td>
           <td><input data-f="barcode" value="${esc(v.barcode || '')}" /></td>
-          <td><input class="short" type="number" step="0.01" data-f="price" value="${Number(v.price).toFixed(2)}" /></td>
-          <td><input class="short" type="number" step="0.01" data-f="cost" value="${Number(v.cost).toFixed(2)}" /></td>
+          <td><input class="short" type="text" inputmode="decimal" data-f="price" value="${Number(v.price).toFixed(2)}" /></td>
+          <td><input class="short" type="text" inputmode="decimal" data-f="cost" value="${Number(v.cost).toFixed(2)}" /></td>
           <td><input class="short" type="number" data-f="stock_qty" value="${v.stock_qty}" /></td>
           <td style="text-align:center"><input type="checkbox" data-f="is_active" ${v.is_active ? 'checked' : ''} /></td>
           <td style="white-space:nowrap">
