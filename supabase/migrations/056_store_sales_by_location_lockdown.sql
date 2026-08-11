@@ -1,0 +1,25 @@
+-- 056_store_sales_by_location_lockdown.sql
+-- CRITICAL security fix (audit finding, batch 8) — applied live immediately
+-- on discovery via `supabase db query --linked`, recorded here for the
+-- migration history.
+--
+-- 046_owner_console_expansion.sql defined store_sales_by_location() with a
+-- comment stating it's for "service-role, owner Revenue tab" and a matching
+-- `grant execute ... to service_role`, but the live database ALSO had
+-- EXECUTE granted to `anon` and `authenticated` (likely inherited from a
+-- schema-wide default at some point — the function's own migration never
+-- granted those roles, so this was drift, not something introduced
+-- intentionally in this repo's history). The function has no internal
+-- authorization check — it aggregates public.transactions_cloud by
+-- tenant_id/location_id with only a date-range WHERE clause, no tenant
+-- scoping at all.
+--
+-- Verified exploitable: an unauthenticated request with only the public
+-- anon key against POST /rest/v1/rpc/store_sales_by_location returned
+-- revenue/transaction/refund totals for every tenant in the database.
+--
+-- Fix: revoke anon + authenticated, leaving only postgres/service_role (the
+-- Owner Console's "Revenue" tab reads this exclusively through the `admin`
+-- edge function, which already uses the service-role key — no application
+-- code change needed).
+revoke execute on function public.store_sales_by_location(timestamptz, timestamptz) from anon, authenticated, public;
