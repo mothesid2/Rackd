@@ -92,19 +92,56 @@ export default function Home() {
 
   return (
     <div>
-      <section className="relative overflow-hidden rounded-3xl bg-char text-white px-6 py-10 sm:px-9 sm:py-12 mb-8">
+      <section className="relative overflow-hidden rounded-3xl bg-char text-white px-6 py-10 sm:px-9 sm:py-14 mb-6">
         <div className="pointer-events-none absolute -right-16 -top-24 w-80 h-80 rounded-full blur-3xl" style={{ background: 'radial-gradient(circle, rgba(176,29,46,0.55), rgba(176,29,46,0) 70%)' }} />
         <div className="relative">
           <span className="eyebrow text-ember">Order ahead · Pickup in store</span>
           <h1 className="font-display font-extrabold text-4xl sm:text-5xl leading-[0.98] tracking-[-0.01em] mt-3 text-balance">Skip the counter.<br />Grab it off the rack.</h1>
-          <p className="mt-4 text-white/70 max-w-md text-[15px] leading-relaxed">Reserve what you want from your local shop, pay online, and pick it up ready at the register. 21+ with valid ID.</p>
+          <p className="mt-4 text-white/70 max-w-md text-[15px] leading-relaxed">Reserve what you want from your local shop, pay online, and pick it up ready at the register.</p>
           <a href="#stores" className="mt-6 inline-flex items-center gap-2 rounded-full bg-accent hover:bg-ember transition-colors font-semibold text-white pl-5 pr-6 py-3"><span className="text-lg leading-none">+</span> Start a new order</a>
+
+          {/* Compliance/trust strip — stated plainly instead of buried in a sentence.
+              No badge/shield iconography (that reads as a marketing trust-seal, which
+              is the wrong register for a legal requirement) — a plain divider row. */}
+          <div className="mt-8 pt-6 border-t border-white/10 flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-white/60">
+            <span className="inline-flex items-center gap-1.5">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/40 shrink-0"><path d="M12 2 3 6v6c0 5 3.8 8.7 9 10 5.2-1.3 9-5 9-10V6l-9-4Z" /></svg>
+              21+ only, valid ID required at pickup
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/40 shrink-0"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V9.5Z" /></svg>
+              In-store pickup only — no shipping
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/40 shrink-0"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 10h18" /></svg>
+              Pay online, nothing charged until reserved
+            </span>
+          </div>
         </div>
       </section>
 
-      <div id="stores" className="flex items-baseline justify-between mb-3">
-        <h2 className="font-display font-extrabold text-2xl tracking-tight">Pick your shop</h2>
-        <span className="text-sm text-smoke">{locs.length ? `${locs.length} ${locs.length === 1 ? 'store' : 'stores'}` : ''}</span>
+      {/* How it works — closes the gap between "reserve for pickup" in the hero
+          and being dropped straight into a shop list with no context. */}
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
+        {[
+          { n: '01', t: 'Reserve online', d: 'Browse your shop’s menu and reserve what you want.' },
+          { n: '02', t: 'We hold it', d: 'Your order is set aside the moment checkout completes.' },
+          { n: '03', t: 'Show ID, pick up', d: 'Bring a valid photo ID and grab it at the register.' },
+        ].map((s) => (
+          <div key={s.n} className="rounded-2xl border border-black/10 bg-white p-4">
+            <span className="font-display font-extrabold text-sm text-accent/70">{s.n}</span>
+            <div className="font-display font-bold text-[15px] mt-1">{s.t}</div>
+            <p className="text-[13px] text-smoke mt-1 leading-relaxed">{s.d}</p>
+          </div>
+        ))}
+      </section>
+
+      <div id="stores" className="mb-3">
+        <span className="eyebrow text-accent">Get started</span>
+        <div className="flex items-baseline justify-between mt-1.5">
+          <h2 className="font-display font-extrabold text-2xl tracking-tight">Pick your shop</h2>
+          <span className="text-sm text-smoke">{locs.length ? `${locs.length} ${locs.length === 1 ? 'store' : 'stores'}` : ''}</span>
+        </div>
       </div>
 
       {/* Search by name, ZIP, or address. */}
