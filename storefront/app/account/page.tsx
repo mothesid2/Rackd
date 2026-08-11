@@ -150,32 +150,27 @@ export default function Account() {
   const verified = !!profile?.age_verified;
   return (
     <div className="grid gap-4">
-      {welcomeBack && (
-        <div className="rounded-xl border border-accent/30 bg-accent/5 px-4 py-3">
-          <div className="text-lg font-extrabold">Welcome back, {welcomeBack}</div>
-        </div>
-      )}
-      <h1 className="text-2xl font-extrabold">Account</h1>
-      <div className="bg-white rounded-xl border p-4">
-        <div className="text-sm text-smoke">Signed in as</div>
-        <div className="font-semibold">{session.user.email || session.user.phone}</div>
+      <div>
+        <h1 className="font-display font-extrabold text-2xl tracking-tight">{welcomeBack ? `Hey, ${welcomeBack}` : 'Account'}</h1>
+        <p className="text-sm text-smoke mt-0.5">{session.user.email || session.user.phone}</p>
       </div>
 
-      <div className="bg-white rounded-xl border p-4">
-        <div className="font-semibold mb-2">Age verification (21+)</div>
-        {verified ? (
-          <div className="text-green-700">✓ Verified{profile.age_verified_at ? ` on ${new Date(profile.age_verified_at).toLocaleDateString()}` : ''}</div>
-        ) : (
-          <>
-            <p className="text-sm text-smoke mb-3">Required before checkout. Enter your date of birth to confirm you are 21 or older. <strong>Bring a valid government photo ID to pick up your order</strong> — staff verify it in person.</p>
-            <div className="flex gap-2 items-center">
-              <input className="border rounded-lg px-3 py-2" type="date" value={dob} onChange={(e) => setDob(e.target.value)} max={new Date().toISOString().slice(0, 10)} />
-              <button className="rounded-lg bg-accent text-white px-4 py-2.5 font-semibold disabled:opacity-40" disabled={busy} onClick={attestAge}>Confirm I&apos;m 21+</button>
-            </div>
-            {ageErr && <div role="alert" className="text-red-600 text-sm mt-2">{ageErr}</div>}
-          </>
-        )}
-      </div>
+      {verified ? (
+        <div className="flex items-center gap-2 text-sm text-green-700 -mt-1">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6 9 17l-5-5"/></svg>
+          21+ verified{profile.age_verified_at ? ` · ${new Date(profile.age_verified_at).toLocaleDateString()}` : ''}
+        </div>
+      ) : (
+        <div className="bg-accent/5 rounded-xl border border-accent/25 p-4">
+          <div className="font-semibold mb-2 text-accent">Verify you&apos;re 21+</div>
+          <p className="text-sm text-smoke mb-3">Required before checkout. Enter your date of birth to confirm. <strong>Bring a valid government photo ID to pick up your order</strong> — staff verify it in person.</p>
+          <div className="flex gap-2 items-center">
+            <input className="border rounded-lg px-3 py-2" type="date" value={dob} onChange={(e) => setDob(e.target.value)} max={new Date().toISOString().slice(0, 10)} />
+            <button className="rounded-lg bg-accent text-white px-4 py-2.5 font-semibold disabled:opacity-40" disabled={busy} onClick={attestAge}>Confirm I&apos;m 21+</button>
+          </div>
+          {ageErr && <div role="alert" className="text-red-600 text-sm mt-2">{ageErr}</div>}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border p-4">
         <div className="font-semibold mb-2">Mobile number</div>
