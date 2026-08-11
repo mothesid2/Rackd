@@ -15,6 +15,25 @@ function normalizePhone(raw: string): string | null {
   return null;
 }
 
+// Password policy (audit batch 8, item 5): length is the primary real-world
+// factor (NIST 800-63B) — 8+ chars plus a letter and a number catches the
+// weakest passwords (all-digit, single dictionary word) without the
+// diminishing-returns complexity rules (forced symbols, etc.) that mostly
+// just push people to write passwords down. This is defense-in-depth on
+// the client only — the actual enforcement authority is Supabase Auth's
+// own project-level password settings (Dashboard -> Authentication ->
+// Policies), which also has the "leaked password" HaveIBeenPwned check;
+// a client-side check alone can't stop someone calling the Auth API
+// directly with a weak password, so that Dashboard setting should be
+// turned on too (not done here — changing project-level Auth config via
+// the CLI's `config push` risks clobbering unrelated settings, like OAuth
+// redirect URLs, that can't be safely diffed from this environment).
+function passwordIssue(pw: string): string | null {
+  if (pw.length < 8) return 'Password must be at least 8 characters.';
+  if (!/[A-Za-z]/.test(pw) || !/[0-9]/.test(pw)) return 'Password must include both a letter and a number.';
+  return null;
+}
+
 // Whole years between dob (YYYY-MM-DD) and today; NaN if unparseable.
 function ageFrom(dob: string): number {
   const b = new Date(dob + 'T00:00:00');
@@ -219,7 +238,9 @@ function AuthPanel() {
     const age = ageFrom(dob);
     if (isNaN(age)) return setErr('That date of birth isn’t valid.');
     if (age < 21) return setErr('You must be 21 or older to create an account.');
-    if (!email || password.length < 6) return setErr('Enter an email and a password (6+ characters).');
+    if (!email) return setErr('Enter an email address.');
+    const pwIssue = passwordIssue(password);
+    if (pwIssue) return setErr(pwIssue);
     const normPhone = phone.trim() ? normalizePhone(phone) : '';
     if (phone.trim() && !normPhone) return setErr('Enter a valid 10-digit US phone number.');
     stash();
@@ -295,7 +316,10 @@ function AuthPanel() {
             </div>
             <input className={input} type="tel" placeholder="Phone number" aria-label="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} />
             <input className={input} type="email" placeholder="Email" aria-label="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <input className={input} type="password" placeholder="Password" aria-label="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <div>
+              <input className={input} type="password" placeholder="Password" aria-label="Password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+              <p className="text-xs text-smoke mt-1">At least 8 characters, with a letter and a number.</p>
+            </div>
             <label className="text-xs text-smoke">Date of birth (must be 21+)
               <input className={input + ' mt-1'} type="date" value={dob} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setDob(e.target.value)} />
             </label>
