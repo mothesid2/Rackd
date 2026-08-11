@@ -793,21 +793,56 @@ async function toggleLogo(id, show) {
   const l = sfLocs.find((x) => x.id === id); if (l) l.show_logo = show;
   toast(show ? 'Logo shown on listing' : 'Using default icon');
 }
+// Image optimization (audit batch 8, item 2): these uploads end up served
+// to every storefront visitor at ~40-56px display size (drawMenu's thumb,
+// the storefront product grid, the store-picker logo), but nothing capped
+// the SOURCE resolution beyond a 5MB file-size guard — a modern phone photo
+// easily clears 3000px+ per side while staying under 5MB, so every page
+// load was downloading full-resolution originals to show a thumbnail.
+// `next/image` isn't available here (this is a vanilla Electron renderer,
+// not the Next.js storefront) — resize client-side via Canvas instead,
+// before the base64 ever reaches the upload IPC call. 800px longest-side
+// keeps real quality margin for anywhere the image might get shown larger
+// later, while cutting typical uploads by 80-95%.
+function resizeImageFile(file, maxDim = 800, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob((blob) => {
+        if (!blob) { reject(new Error('resize failed')); return; }
+        const reader = new FileReader();
+        reader.onload = () => resolve({ base64: String(reader.result).split(',')[1], contentType: 'image/jpeg', ext: 'jpg' });
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('could not read image')); };
+    img.src = url;
+  });
+}
+
 function uploadLogo(id) {
   const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*';
   input.onchange = () => {
     const file = input.files && input.files[0]; if (!file) return;
     if (file.size > 5 * 1024 * 1024) { toast('Image too large (max 5MB)', true); return; }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64 = String(reader.result).split(',')[1];
-      const ext = (file.name.split('.').pop() || 'png');
+    (async () => {
       toast('Uploading logo…');
-      const r = await window.portal.uploadLocationLogo({ location_id: id, base64, ext, contentType: file.type });
+      let base64, ext, contentType;
+      try { ({ base64, ext, contentType } = await resizeImageFile(file)); }
+      catch { toast('Could not process that image', true); return; }
+      const r = await window.portal.uploadLocationLogo({ location_id: id, base64, ext, contentType });
       if (!r.success) { toast(r.error || 'Upload failed', true); return; }
       toast('Logo updated'); RackdUI.cache.invalidate('portal:storefrontLocations'); renderStorefront();
-    };
-    reader.readAsDataURL(file);
+    })();
   };
   input.click();
 }
@@ -848,18 +883,17 @@ function uploadImage(barcode) {
     const file = input.files && input.files[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) { toast('Image too large (max 5MB)', true); return; }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64 = String(reader.result).split(',')[1];
-      const ext = (file.name.split('.').pop() || 'jpg');
+    (async () => {
       toast('Uploading photo…');
-      const r = await window.portal.uploadProductImage({ barcode, base64, ext, contentType: file.type });
+      let base64, ext, contentType;
+      try { ({ base64, ext, contentType } = await resizeImageFile(file)); }
+      catch { toast('Could not process that image', true); return; }
+      const r = await window.portal.uploadProductImage({ barcode, base64, ext, contentType });
       if (!r.success) { toast(r.error || 'Upload failed', true); return; }
       const item = menuCache.find((i) => i.barcode === barcode);
       if (item) item.image_url = r.image_url;
       toast('Photo updated'); drawMenu();
-    };
-    reader.readAsDataURL(file);
+    })();
   };
   input.click();
 }

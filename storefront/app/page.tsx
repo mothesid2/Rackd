@@ -199,7 +199,7 @@ export default function Home() {
               <Link key={l.id} href={`/store?id=${l.id}&t=${l.tenant_id}`} className="tap group flex items-center gap-4 bg-white rounded-2xl border border-black/10 shadow-tag p-4 hover:border-accent/40">
                 {l.show_logo && l.logo_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={l.logo_url} alt="" className="w-11 h-11 rounded-xl object-cover bg-black/5 shrink-0" />
+                  <img src={l.logo_url} alt="" loading="lazy" decoding="async" width={44} height={44} className="w-11 h-11 rounded-xl object-cover bg-black/5 shrink-0" />
                 ) : (
                   <span className="grid place-items-center w-11 h-11 rounded-xl bg-accent/10 text-accent shrink-0" aria-hidden="true">
                     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" /><path d="M3 6h18" /><path d="M16 10a4 4 0 0 1-8 0" /></svg>

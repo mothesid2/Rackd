@@ -63,7 +63,7 @@ function StoreInner() {
               <div key={it.barcode} className={`bg-white rounded-2xl border border-black/10 shadow-tag p-4 flex items-center gap-3 ${out ? 'opacity-60' : ''}`}>
                 {it.image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={it.image_url} alt="" className="w-14 h-14 rounded-xl object-cover bg-black/5 shrink-0" />
+                  <img src={it.image_url} alt="" loading="lazy" decoding="async" width={56} height={56} className="w-14 h-14 rounded-xl object-cover bg-black/5 shrink-0" />
                 ) : (
                   <div className="w-14 h-14 rounded-xl bg-black/[0.04] grid place-items-center shrink-0 text-black/20" aria-hidden="true">
                     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
