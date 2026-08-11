@@ -131,7 +131,7 @@ async function renderTimesheet() {
           <td>${esc(e.name)}</td>
           <td class="num muted">${e.shifts}</td>
           <td class="num" style="font-weight:700">${e.hours.toFixed(1)}</td>
-          <td>${e.openSince ? `<span class="pill" style="background:#1f3a25;color:#7fdca0">Clocked in since ${new Date(e.openSince).toLocaleString()}</span>` : ''}</td>
+          <td>${e.openSince ? `<span class="pill solid-good">Clocked in since ${new Date(e.openSince).toLocaleString()}</span>` : ''}</td>
           <td class="num"><button class="rowbtn" data-adjust="${esc(e.uid)}" data-name="${esc(e.name)}">Adjust</button></td>
         </tr>`).join('') : '<tr><td colspan="5" class="muted" style="padding:24px;text-align:center">No punches in this range.</td></tr>'}
       </tbody>
@@ -195,7 +195,7 @@ function openTimesheetAdjust(employeeUid, name) {
       </div>
       <div class="row" style="justify-content:space-between;margin-top:4px">
         <button class="rowbtn" data-save-punch="${esc(p.uid)}">Save</button>
-        <button class="rowbtn" style="color:#f2a9a5" data-delete-punch="${esc(p.uid)}">Delete shift</button>
+        <button class="rowbtn" style="color:var(--bad)" data-delete-punch="${esc(p.uid)}">Delete shift</button>
       </div>
     </div>`).join('') : '<div class="muted">No punches for this employee in range.</div>';
   wrap.querySelectorAll('[data-save-punch]').forEach((btn) => btn.addEventListener('click', async () => {
@@ -269,7 +269,7 @@ async function renderStaff() {
       <td class="num" style="width:260px">${isAdmin ? '<span class="muted" style="font-size:12px">managed on the POS</span>' : `
         <button class="rowbtn" data-edit='${JSON.stringify(s).replace(/'/g, "&#39;")}'>Edit</button>
         <button class="rowbtn" data-reset="${esc(s.uid)}" data-name="${esc(s.name || '')}" data-role="${esc(s.role)}">Reset ${isCashier ? 'PIN' : 'password'}</button>
-        <button class="rowbtn" style="color:#f2a9a5" data-delete="${esc(s.uid)}" data-name="${esc(s.name || '')}">Delete</button>
+        <button class="rowbtn" style="color:var(--bad)" data-delete="${esc(s.uid)}" data-name="${esc(s.name || '')}">Delete</button>
       `}</td></tr>`;
     }).join('') : '<tr><td class="muted">No staff yet.</td></tr>'
   }</tbody></table></div>`;
@@ -596,7 +596,7 @@ function drawCustomers() {
       <td class="muted">${esc(c.phone || '—')}</td>
       <td class="muted">${esc(c.email || '—')}</td>
       <td class="num">${c.loyalty_points ?? 0}</td>
-      <td>${c.gold_member ? '<span class="pill" style="background:#3a331a;color:#e2be6a">Gold</span>' : ''}</td>
+      <td>${c.gold_member ? '<span class="pill solid-gold">Gold</span>' : ''}</td>
       <td class="num"><button class="rowbtn" onclick='editCustomer(${JSON.stringify(c).replace(/'/g, "&#39;")})'>Edit</button></td>
     </tr>`).join('') : '<tr><td colspan="6" class="muted" style="padding:24px;text-align:center">No customers.</td></tr>';
 }
@@ -665,12 +665,12 @@ async function renderStoreSettings() {
       </div>
       <div class="card">
         <div class="muted" style="font-size:11px;margin-bottom:4px">Online store</div>
-        <div>${l.is_storefront_enabled ? '<span class="pill" style="background:#1f3a25;color:#7fdca0">Live</span>' : '<span class="pill flag">Off</span>'}
+        <div>${l.is_storefront_enabled ? '<span class="pill solid-good">Live</span>' : '<span class="pill flag">Off</span>'}
           <button class="rowbtn" ${onboarded ? '' : 'disabled title="Complete Stripe payouts setup first"'} onclick="toggleStore('${esc(l.id)}', ${l.is_storefront_enabled ? 'false' : 'true'})" style="margin-left:8px">${l.is_storefront_enabled ? 'Turn off' : 'Turn on'}</button></div>
       </div>
       <div class="card">
         <div class="muted" style="font-size:11px;margin-bottom:4px">Stripe payouts</div>
-        <div>${onboarded ? '<span class="pill" style="background:#1f3a25;color:#7fdca0">Ready</span>' : (l.stripe_account_id ? '<span class="pill flag">Incomplete</span>' : '<span class="pill flag">Not set up</span>')}
+        <div>${onboarded ? '<span class="pill solid-good">Ready</span>' : (l.stripe_account_id ? '<span class="pill flag">Incomplete</span>' : '<span class="pill flag">Not set up</span>')}
           <button class="rowbtn" onclick="stripeOnboard('${esc(l.id)}')" style="margin-left:8px">${onboarded ? 'Manage' : 'Set up'}</button></div>
       </div>
       <div class="card">
@@ -705,7 +705,7 @@ async function renderStorefront() {
         ${sfLocs.length ? sfLocs.map((l) => {
           const onboarded = !!l.stripe_onboarding_complete;
           const payoutCell = onboarded
-            ? '<span class="pill" style="background:#1f3a25;color:#7fdca0">Ready</span>'
+            ? '<span class="pill solid-good">Ready</span>'
             : (l.stripe_account_id ? '<span class="pill flag">Incomplete</span>' : '<span class="pill flag">Not set up</span>');
           return `
           <tr>
@@ -714,7 +714,7 @@ async function renderStorefront() {
               <button class="rowbtn" onclick="stripeOnboard('${esc(l.id)}')">${onboarded ? 'Manage' : 'Set up'}</button>
               <button class="rowbtn" onclick="stripeRefresh('${esc(l.id)}')">Refresh</button>
             </td>
-            <td>${l.is_storefront_enabled ? '<span class="pill" style="background:#1f3a25;color:#7fdca0">Live</span>' : '<span class="pill flag">Off</span>'}</td>
+            <td>${l.is_storefront_enabled ? '<span class="pill solid-good">Live</span>' : '<span class="pill flag">Off</span>'}</td>
             <td class="num" title="Set automatically from the store's address — not manager-editable">${((l.tax_rate ?? 0) * 100).toFixed(2)}%</td>
             <td class="num">
               <button class="rowbtn" ${onboarded ? '' : 'disabled title="Complete Stripe payouts setup first"'} onclick="toggleStore('${esc(l.id)}', ${l.is_storefront_enabled ? 'false' : 'true'})">${l.is_storefront_enabled ? 'Turn off' : 'Turn on'}</button>

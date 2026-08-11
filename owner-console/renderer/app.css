@@ -33,6 +33,7 @@
   --good: #46b45f;
   --warn: #e0a13a;
   --bad:  #e5544e;
+  --bad-bright: #f2a9a5; /* on-dark text tint of --bad, for .err text and inline danger labels */
 
   --radius: 12px;
   --radius-sm: 8px;
@@ -124,7 +125,8 @@ input:focus, select:focus { border-color: var(--accent-line); box-shadow: 0 0 0 
   outline: 2px solid var(--accent-bright); outline-offset: 2px;
 }
 
-.err { background: rgba(229, 84, 78, 0.12); color: #f2a9a5; border: 1px solid rgba(229, 84, 78, 0.3); border-radius: var(--radius-sm); padding: 10px 13px; font-size: 13px; margin-top: 14px; display: none; }
+.err { background: rgba(229, 84, 78, 0.12); color: var(--bad-bright); border: 1px solid rgba(229, 84, 78, 0.3); border-radius: var(--radius-sm); padding: 10px 13px; font-size: 13px; margin-top: 14px; display: none; }
+.rowbtn.danger { color: var(--bad-bright); }
 
 /* ============================================================================
    Shell

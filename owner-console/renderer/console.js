@@ -58,7 +58,7 @@ async function renderBusinesses() {
         <div class="rowflex">
           ${b.businessKey ? `<span class="keycode" title="Business key">${esc(b.businessKey)}</span>` : `<span class="badge warn">no business key</span>`}
           <button class="rowbtn" data-add="${b.tenant_id}">+ Location</button>
-          <button class="rowbtn" style="color:#f2a9a5" data-delete-biz="${b.tenant_id}" data-name="${esc(b.name || 'this business')}">Delete</button>
+          <button class="rowbtn danger" data-delete-biz="${b.tenant_id}" data-name="${esc(b.name || 'this business')}">Delete</button>
         </div>
       </div>
       <div data-locs="${b.tenant_id}" style="margin-top:12px">${RackdUI.skeleton.rowsHtml(2)}</div>
