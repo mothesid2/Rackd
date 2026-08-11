@@ -13,8 +13,15 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import bcrypt from 'https://esm.sh/bcryptjs@2.4.3';
 import { create, getNumericDate } from 'https://deno.land/x/djwt@v3.0.2/mod.ts';
+import { rateLimited, clientIp } from '../_shared/rateLimit.ts';
 
 const TOKEN_TTL_SECONDS = 12 * 60 * 60; // 12h portal session
+// A password-verification endpoint with no limit at all is a standing
+// brute-force target (audit batch 8, item 9) — two limits, since an
+// attacker either hammers one known account from anywhere, or sprays many
+// accounts from one IP.
+const IP_LIMIT = 20, IP_WINDOW_MS = 5 * 60 * 1000;
+const ACCOUNT_LIMIT = 8, ACCOUNT_WINDOW_MS = 5 * 60 * 1000;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -33,6 +40,11 @@ Deno.serve(async (req: Request) => {
   const username = body.username?.trim();
   const password = body.password ?? '';
   if (!licenseKey || !username || !password) return json({ error: 'license_key, username and password are required' }, 400);
+
+  if (rateLimited(clientIp(req), IP_LIMIT, IP_WINDOW_MS)) return json({ error: 'Too many attempts. Try again in a few minutes.' }, 429);
+  if (rateLimited(`${licenseKey}:${username.toLowerCase()}`, ACCOUNT_LIMIT, ACCOUNT_WINDOW_MS)) {
+    return json({ error: 'Too many attempts for this account. Try again in a few minutes.' }, 429);
+  }
 
   const url = Deno.env.get('SUPABASE_URL');
   const serviceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');

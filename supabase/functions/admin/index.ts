@@ -11,10 +11,17 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import bcrypt from 'https://esm.sh/bcryptjs@2.4.3';
+import { rateLimited, clientIp } from '../_shared/rateLimit.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 }
+
+// ADMIN_SECRET is a single shared secret (not a per-user credential) that
+// grants full service-role access to every tenant — worth rate-limiting
+// against brute-force even though it's normally high-entropy (audit batch
+// 8, item 9).
+const IP_LIMIT = 30, IP_WINDOW_MS = 5 * 60 * 1000;
 
 // Readable random password for the delivered admin credential (bcrypt-hashed to
 // employees_cloud; the admin must change it on first login).
@@ -68,6 +75,8 @@ Deno.serve(async (req: Request) => {
   } catch {
     return json({ error: 'invalid JSON body' }, 400);
   }
+
+  if (rateLimited(clientIp(req), IP_LIMIT, IP_WINDOW_MS)) return json({ error: 'Too many requests. Try again shortly.' }, 429);
 
   const adminSecret = Deno.env.get('ADMIN_SECRET');
   if (!adminSecret) return json({ error: 'admin not configured' }, 500);

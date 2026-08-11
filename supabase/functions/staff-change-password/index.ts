@@ -6,10 +6,16 @@
 // unified across the POS and the portal.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import bcrypt from 'https://esm.sh/bcryptjs@2.4.3';
+import { rateLimited, clientIp } from '../_shared/rateLimit.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 }
+
+// Same brute-force target as staff-login (requires knowing/guessing
+// old_password) — same two-limit shape (audit batch 8, item 9).
+const IP_LIMIT = 20, IP_WINDOW_MS = 5 * 60 * 1000;
+const ACCOUNT_LIMIT = 8, ACCOUNT_WINDOW_MS = 5 * 60 * 1000;
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
@@ -20,7 +26,14 @@ Deno.serve(async (req: Request) => {
   const oldPassword = body.old_password ?? '';
   const newPassword = body.new_password ?? '';
   if (!licenseKey || !username) return json({ error: 'license_key and username are required' }, 400);
-  if (newPassword.length < 6) return json({ error: 'Password must be at least 6 characters.' }, 400);
+  if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+    return json({ error: 'Password must be at least 8 characters and include a letter and a number.' }, 400);
+  }
+
+  if (rateLimited(clientIp(req), IP_LIMIT, IP_WINDOW_MS)) return json({ error: 'Too many attempts. Try again in a few minutes.' }, 429);
+  if (rateLimited(`${licenseKey}:${username.toLowerCase()}`, ACCOUNT_LIMIT, ACCOUNT_WINDOW_MS)) {
+    return json({ error: 'Too many attempts for this account. Try again in a few minutes.' }, 429);
+  }
 
   const url = Deno.env.get('SUPABASE_URL');
   const serviceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');

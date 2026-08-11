@@ -8,10 +8,19 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@14';
 import { CORS, json } from '../_shared/notify.ts';
+import { rateLimited, clientIp } from '../_shared/rateLimit.ts';
+
+// Repeated reservation attempts create real Stripe API calls and briefly
+// hold stock (reserve_online_order deducts availability for the order's
+// lifetime) — a scripted loop could both rack up Stripe API usage and deny
+// stock to real customers (audit batch 8, item 9).
+const IP_LIMIT = 12, IP_WINDOW_MS = 60 * 1000;
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+
+  if (rateLimited(clientIp(req), IP_LIMIT, IP_WINDOW_MS)) return json({ error: 'Too many requests. Try again shortly.' }, 429);
 
   const url = Deno.env.get('SUPABASE_URL')!;
   const anon = Deno.env.get('SUPABASE_ANON_KEY')!;
