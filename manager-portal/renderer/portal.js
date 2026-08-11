@@ -447,7 +447,7 @@ async function renderDashboard() {
 
   view.innerHTML = `
     <div class="kpi-row">
-      <div class="kpi"><div class="lbl">Business revenue</div><div class="val green">${fmt(totRev)}</div>${totFee ? `<div class="muted" style="font-size:11.5px;margin-top:2px">after ${fmt(totFee)} processing fees</div>` : ''}</div>
+      <div class="kpi kpi-primary"><div class="lbl">Business revenue</div><div class="val green">${fmt(totRev)}</div>${totFee ? `<div class="muted" style="font-size:11.5px;margin-top:2px">after ${fmt(totFee)} processing fees</div>` : ''}</div>
       <div class="kpi"><div class="lbl">Transactions</div><div class="val">${totTxn}</div></div>
       <div class="kpi"><div class="lbl">Avg sale</div><div class="val">${fmt(totTxn ? totRev / totTxn : 0)}</div></div>
       <div class="kpi"><div class="lbl">Locations</div><div class="val">${locs.length}</div></div>

@@ -207,6 +207,10 @@ input:focus, select:focus { border-color: var(--accent-line); box-shadow: 0 0 0 
 /* Money reads as data, not prose — the one deliberately "financial
    dashboard" typographic choice, echoing Stripe's tabular figures. */
 .kpi .val { font-family: var(--font-mono); font-size: 24px; font-weight: 700; margin-top: 7px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+/* The one metric a manager actually opens the dashboard to check gets
+   real weight instead of matching the other three 1-in-4 boxes. */
+.kpi.kpi-primary { grid-column: span 2; background: var(--panel-2); }
+.kpi.kpi-primary .val { font-size: 34px; }
 .val.green { color: var(--good); } .val.amber { color: var(--warn); } .val.red { color: var(--bad); }
 
 .hgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 14px; }
