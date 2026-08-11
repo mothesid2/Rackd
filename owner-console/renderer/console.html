@@ -13,7 +13,7 @@
     .rowflex { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .keycode { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 3px 8px; }
     .sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-    .badge { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+    .badge { display: inline-block; border-radius: var(--radius-sm); padding: 3px 10px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
     .badge.on { background: rgba(70,180,95,0.14); color: var(--good); }
     .badge.warn { background: rgba(224,161,58,0.15); color: var(--warn); }
     .badge.dim { background: var(--panel-2); color: var(--muted); }
@@ -25,7 +25,7 @@
     /* Business page: each area (Revenue, Business Info, Ads, Users, Locations,
        Kiosks) is its own visually distinct section — a bordered panel with an
        icon + title bar, not a small stat card. */
-    .section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 22px; overflow: hidden; }
+    .section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 22px; overflow: hidden; }
     .section-head {
       display: flex; align-items: center; gap: 10px; padding: 14px 18px;
       border-bottom: 1px solid var(--line); background: var(--panel-2);
