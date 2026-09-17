@@ -1,0 +1,32 @@
+# Dependencies (rebuilt per-machine with `npm install`)
+node_modules/
+
+# Build output
+dist/
+release/
+
+# Logs / OS cruft
+*.log
+.DS_Store
+Thumbs.db
+
+# Local databases / runtime artifacts
+*.db
+*.db-shm
+*.db-wal
+
+# Secrets / local env (keep .env.example tracked)
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/
+.idea/
+
+# Ad-hoc script compile output
+.tmp/
+supabase/.temp/
+
+# Local development notes — not part of the shipped app
+handoff.md

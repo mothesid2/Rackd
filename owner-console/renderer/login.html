@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rackd — Owner Console</title>
+  <link rel="stylesheet" href="app.css" />
+  <link rel="stylesheet" href="shared-ui-kit.css" />
+  <script src="shared-ui-kit.js"></script>
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-brand">
+        <img src="../assets/logo-mark.svg" alt="Rackd" />
+        <div>
+          <div class="wordmark" style="font-size:30px">Rack<span class="d">D</span></div>
+          <div class="tag">Owner Console</div>
+        </div>
+      </div>
+
+      
+      <div id="activatePane">
+        <h1>Set up this console</h1>
+        <div class="sub">Enter your owner key once. From then on this console opens straight in — no sign-in required.</div>
+        <label for="secret">Owner key</label>
+        <input id="secret" placeholder="Owner / admin key" autocomplete="off" spellcheck="false" autofocus />
+        <button class="btn btn-accent" id="activateBtn" style="width:100%;margin-top:16px">Activate console</button>
+        <div class="err" id="aErr"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    async function init() {
+      const s = await window.owner.status();
+      
+      
+      if (s.activated) { window.location.href = 'console.html'; return; }
+      $('secret').focus();
+    }
+    async function activate() {
+      $('aErr').style.display = 'none';
+      const btn = $('activateBtn'); btn.disabled = true; btn.textContent = 'Verifying…';
+      const r = await window.owner.activate({ secret: $('secret').value });
+      btn.disabled = false; btn.textContent = 'Activate console';
+      if (r.success) { window.location.href = 'console.html'; return; }
+      $('aErr').textContent = r.error || 'Activation failed.'; $('aErr').style.display = 'block';
+    }
+    $('activateBtn').addEventListener('click', activate);
+    $('secret').addEventListener('keydown', (e) => { if (e.key === 'Enter') activate(); });
+    init();
+  </script>
+</body>
+</html>

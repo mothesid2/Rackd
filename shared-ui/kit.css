@@ -1,0 +1,161 @@
+/* ============================================================================
+ * Rackd shared UI kit — CSS half.
+ *
+ * SOURCE OF TRUTH: edit this file, then run `node scripts/sync-shared-ui.js`
+ * (or `npm run build` / `npm run release:all`, which run it for you) to copy
+ * it into src/renderer/, manager-portal/renderer/, and owner-console/renderer/.
+ * Those three copies exist because manager-portal and owner-console are
+ * packaged as SEPARATE electron-builder apps whose `files` config only
+ * includes their own renderer/**\/* — a file living outside that folder
+ * would silently never ship in their installers. Don't hand-edit the copies.
+ *
+ * Tokens below are pulled from the values already in production use across
+ * the fleet (src/renderer/shared.css, storefront/tailwind.config.ts's
+ * ink/paper/accent) — this file doesn't invent a new palette, it names the
+ * one that already exists so new components stay visually consistent with
+ * it instead of drifting toward a generic library look.
+ * ==========================================================================*/
+
+:root {
+  --ru-accent: #b01d2e;
+  --ru-accent-hover: #cf2436;
+  --ru-navy-1: #2f343c;
+  --ru-navy-2: #23272d;
+  --ru-success: #1e5c2c;
+  --ru-warning: #8a5a00;
+  --ru-danger: #8b1a1a;
+  --ru-text: #1a1a1a;
+  --ru-text-muted: #666;
+  --ru-text-faint: #999;
+  --ru-border: #ddd;
+  --ru-border-light: #f0f0f0;
+  --ru-card-bg: #fff;
+  --ru-hover-tint: #f4f4ec;
+  --ru-radius-sm: 5px;
+  --ru-radius-md: 8px;
+  --ru-radius-lg: 12px;
+  --ru-shadow-card: 0 3px 12px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  --ru-skel-base: #e9e7e1;
+  --ru-skel-shine: #f6f5f1;
+}
+
+/* ── Skeleton loaders ────────────────────────────────────────────────────
+ * Shape-matched placeholders, not a generic spinner. Appear immediately (no
+ * mount delay) and get removed the instant real content is ready — the
+ * fade is handled by .ru-fade-in on the real content, not by the skeleton
+ * lingering.
+ */
+@keyframes ru-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.ru-skel {
+  background: linear-gradient(90deg, var(--ru-skel-base) 25%, var(--ru-skel-shine) 50%, var(--ru-skel-base) 75%);
+  background-size: 200% 100%;
+  animation: ru-shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--ru-radius-sm);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ru-skel { animation: none; background: var(--ru-skel-base); }
+}
+
+.ru-skel-text { height: 12px; margin: 6px 0; border-radius: 4px; }
+.ru-skel-text.ru-w-40 { width: 40%; }
+.ru-skel-text.ru-w-60 { width: 60%; }
+.ru-skel-text.ru-w-80 { width: 80%; }
+.ru-skel-text.ru-w-100 { width: 100%; }
+
+.ru-skel-circle { border-radius: 50%; flex-shrink: 0; }
+
+.ru-skel-card {
+  background: var(--ru-card-bg);
+  border-radius: var(--ru-radius-lg);
+  box-shadow: var(--ru-shadow-card);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ru-skel-card .ru-skel { height: 90px; border-radius: var(--ru-radius-md); margin-bottom: 4px; }
+
+.ru-skel-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--ru-border-light);
+}
+.ru-skel-row .ru-skel-text { margin: 0; }
+
+/* Skeleton <tr> rows shouldn't pick up a data-table's own hover/zebra rules. */
+tr.ru-no-hover:hover td, tr.ru-no-hover:nth-child(even) td { background: transparent !important; cursor: default !important; }
+
+.ru-skel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+/* Real content crossfades in instead of hard-cutting from its skeleton. */
+.ru-fade-in {
+  animation: ru-fade-in 180ms ease-out;
+}
+@keyframes ru-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ru-fade-in { animation: none; }
+}
+
+/* ── Tooltips ────────────────────────────────────────────────────────────
+ * One reused bubble, repositioned per-target (see kit.js). Edge-awareness is
+ * applied via inline position (JS), not these classes — these just style the
+ * bubble + arrow and handle the fade.
+ */
+.ru-tooltip {
+  position: fixed;
+  z-index: 9999;
+  background: #1b1d21;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  padding: 6px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  max-width: 220px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+.ru-tooltip.ru-tooltip-visible { opacity: 1; transform: translateY(0); }
+
+.ru-tooltip::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: inherit;
+  transform: rotate(45deg);
+}
+.ru-tooltip[data-ru-side='top']::after { bottom: -4px; left: var(--ru-arrow-x, 50%); margin-left: -4px; }
+.ru-tooltip[data-ru-side='bottom']::after { top: -4px; left: var(--ru-arrow-x, 50%); margin-left: -4px; }
+.ru-tooltip[data-ru-side='left']::after { right: -4px; top: var(--ru-arrow-y, 50%); margin-top: -4px; }
+.ru-tooltip[data-ru-side='right']::after { left: -4px; top: var(--ru-arrow-y, 50%); margin-top: -4px; }
+
+/* Optimistic-UI states — a control mid-flight or rolled back after a failed
+ * background commit (see kit.js RackdUI.optimistic). Subtle, not a spinner
+ * overlay, since the whole point is the UI already looks "done".
+ */
+.ru-optimistic-pending { opacity: 0.6; transition: opacity 120ms ease-out; }
+.ru-optimistic-rollback {
+  animation: ru-rollback-flash 500ms ease-out;
+}
+@keyframes ru-rollback-flash {
+  0% { background-color: rgba(139, 26, 26, 0.18); }
+  100% { background-color: transparent; }
+}

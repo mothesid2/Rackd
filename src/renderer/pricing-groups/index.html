@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Pricing Groups</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    .page-layout { padding: 24px; padding-bottom: 72px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    .split { display: grid; grid-template-columns: 320px 1fr; gap: 16px; flex: 1; overflow: hidden; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: auto; }
+    .grp-row { padding: 12px 14px; border-bottom: 1px solid var(--panel-2); cursor: pointer; }
+    .grp-row:hover { background: var(--panel-2); } .grp-row.sel { background: var(--info-dim); }
+    .grp-row .name { font-weight: 700; }
+    .grp-row .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .pill { display: inline-block; border-radius: var(--radius-sm); padding: 2px 9px; font-size: 11px; font-weight: 700; }
+    .pill.on { background: var(--good-dim); color: var(--good); } .pill.off { background: var(--panel-2); color: var(--muted); }
+    .member-row, .promo-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 4px; border-bottom: 1px solid var(--panel-2); font-size: 14px; }
+    .rowbtn { background: var(--line-soft); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 5px 10px; font-size: 12px; cursor: pointer; }
+    .rowbtn.danger { color: var(--bad); }
+    .sec-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 18px 0 8px; }
+    .sec-title:first-child { margin-top: 0; }
+    .empty-hint { color: var(--faint); font-size: 13px; padding: 8px 4px; }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('merchandise')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Pricing Groups</h1>
+      <div class="spacer"></div>
+      <button class="btn btn-navy" onclick="openGroup(null)">+ New Group</button>
+    </div>
+
+    <div id="mgrBlock" class="mgr-block" style="display:none;background:var(--bad-dim);color:var(--bad);border-radius:8px;padding:14px">
+      Pricing groups are restricted to management.
+    </div>
+
+    <div id="body" class="split">
+      <div class="panel" id="groupList"></div>
+      <div class="panel" id="detailPanel" style="padding:18px">
+        <div style="color:var(--faint)">Select a pricing group, or create a new one.</div>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="groupModal" style="display:none">
+    <div class="modal" style="max-width:420px">
+      <button class="modal-close" onclick="closeModal('groupModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title" id="groupTitle">New Pricing Group</div>
+      <input type="hidden" id="gUid" />
+      <div class="form-group"><label>Group name *</label><input type="text" id="gName" placeholder="Disposables — $14.99 tier" /></div>
+      <div class="form-group">
+        <label>Price ($) <span style="text-transform:none;color:var(--muted);font-weight:400">— leave blank to manage tax only, not price</span></label>
+        <input type="text" inputmode="decimal" data-money id="gPrice" placeholder="14.99" />
+      </div>
+      <div class="form-group"><label style="display:flex;align-items:center;gap:8px;text-transform:none"><input type="checkbox" id="gTaxable" checked style="width:auto" /> Taxable</label></div>
+      <p style="font-size:12px;color:var(--muted);margin-top:-4px">Saving applies the price (if set) and taxable status to every item currently in this group.</p>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('groupModal')">Cancel</button>
+        <button class="btn btn-navy" onclick="saveGroup()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="addItemModal" style="display:none">
+    <div class="modal" style="max-width:460px">
+      <button class="modal-close" onclick="closeModal('addItemModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title">Add items to group</div>
+      <div class="search-wrap" style="margin-bottom:10px">
+        <input type="text" id="itemSearch" placeholder="Search unassigned products…" oninput="searchUnassigned(this.value)" />
+      </div>
+      <div id="itemResults" style="max-height:280px;overflow-y:auto"></div>
+      <div class="modal-actions">
+        <span id="itemSelectedCount" class="muted" style="margin-right:auto;font-size:12.5px;align-self:center"></span>
+        <button class="btn btn-gray" onclick="closeModal('addItemModal')">Cancel</button>
+        <button class="btn btn-navy" id="addSelectedBtn" onclick="addSelectedToGroup()" disabled>Add Selected</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="promoModal" style="display:none">
+    <div class="modal" style="max-width:440px">
+      <button class="modal-close" onclick="closeModal('promoModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title">New Group Promo</div>
+      <input type="hidden" id="pUid" />
+      <input type="hidden" id="pGroupUid" />
+      <div class="form-group"><label>Promo name *</label><input type="text" id="pName" placeholder="Buy 2, 50% off the 2nd" /></div>
+      <div class="form-row">
+        <div class="form-group"><label>Buy this many from the group</label><input type="number" id="pBuyQty" min="2" value="2" /></div>
+        <div class="form-group"><label>…this many get discounted</label><input type="number" id="pDiscQty" min="1" value="1" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Discount</label><input type="text" inputmode="decimal" id="pAmt" value="50" /></div>
+        <div class="form-group"><label>Type</label><select id="pDType"><option value="percent">% percent</option><option value="flat">$ flat</option></select></div>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin-top:-4px">The cheapest qualifying item(s) in each set get the discount — the customer can't game which one by adding order.</p>
+      <div class="form-row">
+        <div class="form-group"><label>Active from</label><input type="date" id="pStart" /></div>
+        <div class="form-group"><label>Active to</label><input type="date" id="pEnd" /></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('promoModal')">Cancel</button>
+        <button class="btn btn-navy" onclick="savePromo()">Save Promo</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar"><div class="status-left">Pricing Groups</div><div class="status-right"></div></div>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script>
+    let groups = [];
+    let promos = [];
+    let selected = null; 
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const s = (await window.api.getSession()).session;
+      if (s?.role !== 'manager') {
+        document.getElementById('mgrBlock').style.display = 'block';
+        document.getElementById('body').style.display = 'none';
+        return;
+      }
+      await loadAll();
+    });
+
+    async function loadAll() {
+      const [g, p] = await Promise.all([window.api.listPricingGroups(), window.api.listPricingGroupPromos()]);
+      groups = (g.success && g.groups) || [];
+      promos = (p.success && p.promos) || [];
+      renderGroupList();
+      if (selected) renderDetail(); else document.getElementById('detailPanel').innerHTML = '<div style="color:var(--faint)">Select a pricing group, or create a new one.</div>';
+    }
+
+    function renderGroupList() {
+      const el = document.getElementById('groupList');
+      el.innerHTML = groups.length
+        ? groups.map(g => `
+          <div class="grp-row ${selected === g.uid ? 'sel' : ''}" onclick="selectGroup('${esc(g.uid)}')">
+            <div class="name">${esc(g.name)}</div>
+            <div class="meta">${g.price != null ? fmt(g.price) : 'no fixed price'} · ${g.member_count} item${g.member_count !== 1 ? 's' : ''} · <span class="pill ${g.is_taxable ? 'on' : 'off'}">${g.is_taxable ? 'Taxable' : 'Non-taxable'}</span></div>
+          </div>`).join('')
+        : '<div class="empty-hint">No pricing groups yet.</div>';
+    }
+
+    function selectGroup(uid) { selected = uid; renderGroupList(); renderDetail(); }
+
+    async function renderDetail() {
+      const g = groups.find(x => x.uid === selected);
+      const panel = document.getElementById('detailPanel');
+      if (!g) { panel.innerHTML = '<div style="color:var(--faint)">Select a pricing group.</div>'; return; }
+
+      const membersRes = await window.api.listPricingGroupMembers(g.uid);
+      const members = (membersRes.success && membersRes.products) || [];
+      const groupPromos = promos.filter(p => p.pricing_group_uid === g.uid);
+
+      panel.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px">
+          <div>
+            <div style="font-weight:800;font-size:18px">${esc(g.name)}</div>
+            <div style="font-size:13px;color:var(--muted);margin-top:2px">${g.price != null ? fmt(g.price) + ' per item' : 'No fixed price — tax setting only'} · <span class="pill ${g.is_taxable ? 'on' : 'off'}">${g.is_taxable ? 'Taxable' : 'Non-taxable'}</span></div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="rowbtn" onclick='openGroup(${JSON.stringify(g).replace(/'/g, "&#39;")})'>Edit</button>
+            <button class="rowbtn danger" onclick="deleteGroup('${esc(g.uid)}')">Delete</button>
+          </div>
+        </div>
+
+        <div class="sec-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Items in this group (${members.length})</span>
+          <button class="rowbtn" onclick="openAddItem('${esc(g.uid)}')">+ Add item</button>
+        </div>
+        <div id="memberList">
+          ${members.length ? members.map(p => `
+            <div class="member-row">
+              <div><strong>${esc(p.name)}</strong> <span style="color:var(--faint);font-size:12px">${p.barcode ? esc(p.barcode) : ''}</span></div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="font-variant-numeric:tabular-nums">${fmt(p.price)}</span>
+                <button class="rowbtn danger" onclick="removeFromGroup(${p.id})">Remove</button>
+              </div>
+            </div>`).join('') : '<div class="empty-hint">No items assigned yet — add one above.</div>'}
+        </div>
+
+        <div class="sec-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Group promos</span>
+          <button class="rowbtn" onclick="openPromo('${esc(g.uid)}')">+ New promo</button>
+        </div>
+        <div id="promoList">
+          ${groupPromos.length ? groupPromos.map(p => `
+            <div class="promo-row">
+              <div>
+                <strong>${esc(p.name)}</strong>
+                <div style="font-size:12px;color:var(--muted)">Buy ${p.buy_qty}, ${p.discount_qty} discounted ${p.discount_type === 'percent' ? p.discount_amount + '%' : fmt(p.discount_amount)} off</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <span class="pill ${p.is_active ? 'on' : 'off'}">${p.is_active ? 'Active' : 'Off'}</span>
+                <button class="rowbtn" onclick="togglePromo('${esc(p.uid)}', ${p.is_active ? 0 : 1})">${p.is_active ? 'Turn off' : 'Turn on'}</button>
+              </div>
+            </div>`).join('') : '<div class="empty-hint">No promos on this group yet.</div>'}
+        </div>
+      `;
+    }
+
+    
+    function openGroup(g) {
+      document.getElementById('groupTitle').textContent = g ? 'Edit Pricing Group' : 'New Pricing Group';
+      document.getElementById('gUid').value = g ? g.uid : '';
+      document.getElementById('gName').value = g ? g.name : '';
+      document.getElementById('gPrice').value = g && g.price != null ? Number(g.price).toFixed(2) : '';
+      document.getElementById('gTaxable').checked = g ? !!g.is_taxable : true;
+      openModal('groupModal');
+    }
+    async function saveGroup() {
+      const priceVal = document.getElementById('gPrice').value.trim();
+      const group = {
+        uid: document.getElementById('gUid').value || undefined,
+        name: document.getElementById('gName').value.trim(),
+        price: priceVal === '' ? null : parseFloat(priceVal),
+        is_taxable: document.getElementById('gTaxable').checked,
+      };
+      if (!group.name) { showToast('Group name is required', 'warning'); return; }
+      const res = await window.api.savePricingGroup(group);
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      selected = res.uid;
+      closeModal('groupModal');
+      showToast('Pricing group saved — attributes applied to its items', 'success');
+      await loadAll();
+    }
+    async function deleteGroup(uid) {
+      if (!confirm('Delete this pricing group? Items keep their current price/tax setting but stop being managed as a group.')) return;
+      const res = await window.api.deletePricingGroup(uid);
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      selected = null;
+      showToast('Pricing group deleted', 'success');
+      await loadAll();
+    }
+
+    
+    let addItemGroupUid = null;
+    let selectedItemIds = new Set();
+    function openAddItem(groupUid) {
+      addItemGroupUid = groupUid;
+      selectedItemIds = new Set();
+      document.getElementById('itemSearch').value = '';
+      document.getElementById('itemResults').innerHTML = '';
+      updateSelectedCount();
+      openModal('addItemModal');
+      setTimeout(() => document.getElementById('itemSearch').focus(), 60);
+      searchUnassigned('');
+    }
+    async function searchUnassigned(q) {
+      const res = await window.api.listUnassignedProducts(q);
+      const el = document.getElementById('itemResults');
+      const products = (res.success && res.products) || [];
+      el.innerHTML = products.length
+        ? products.map(p => `
+          <label class="member-row" style="cursor:pointer" for="item-${p.id}">
+            <span style="display:flex;align-items:center;gap:10px">
+              <input type="checkbox" id="item-${p.id}" style="width:auto" ${selectedItemIds.has(p.id) ? 'checked' : ''} onchange="toggleItem(${p.id}, this.checked)" />
+              <span><strong>${esc(p.name)}</strong> <span style="color:var(--faint);font-size:12px">${p.barcode ? esc(p.barcode) : ''}</span></span>
+            </span>
+            <span style="font-variant-numeric:tabular-nums">${fmt(p.price)}</span>
+          </label>`).join('')
+        : '<div class="empty-hint">No unassigned products match.</div>';
+    }
+    function toggleItem(id, checked) {
+      if (checked) selectedItemIds.add(id); else selectedItemIds.delete(id);
+      updateSelectedCount();
+    }
+    function updateSelectedCount() {
+      const n = selectedItemIds.size;
+      document.getElementById('itemSelectedCount').textContent = n ? `${n} selected` : '';
+      document.getElementById('addSelectedBtn').disabled = n === 0;
+    }
+    async function addSelectedToGroup() {
+      const ids = [...selectedItemIds];
+      if (!ids.length) return;
+      const res = await window.api.assignPricingGroupProducts(ids, addItemGroupUid);
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      closeModal('addItemModal');
+      showToast(`${ids.length} item${ids.length !== 1 ? 's' : ''} added to group`, 'success');
+      await loadAll();
+    }
+    async function removeFromGroup(productId) {
+      const res = await window.api.assignPricingGroup(productId, null);
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      await loadAll();
+    }
+
+    
+    function openPromo(groupUid) {
+      document.getElementById('pUid').value = '';
+      document.getElementById('pGroupUid').value = groupUid;
+      document.getElementById('pName').value = '';
+      document.getElementById('pBuyQty').value = 2;
+      document.getElementById('pDiscQty').value = 1;
+      document.getElementById('pAmt').value = 50;
+      document.getElementById('pDType').value = 'percent';
+      document.getElementById('pStart').value = '';
+      document.getElementById('pEnd').value = '';
+      openModal('promoModal');
+    }
+    async function savePromo() {
+      const promo = {
+        pricing_group_uid: document.getElementById('pGroupUid').value,
+        name: document.getElementById('pName').value.trim(),
+        buy_qty: parseInt(document.getElementById('pBuyQty').value, 10) || 2,
+        discount_qty: parseInt(document.getElementById('pDiscQty').value, 10) || 1,
+        discount_type: document.getElementById('pDType').value,
+        discount_amount: parseFloat(document.getElementById('pAmt').value) || 0,
+        active_start_date: document.getElementById('pStart').value || null,
+        active_end_date: document.getElementById('pEnd').value || null,
+      };
+      if (!promo.name) { showToast('Promo name is required', 'warning'); return; }
+      if (promo.discount_qty >= promo.buy_qty) { showToast('Discounted quantity must be less than buy quantity', 'warning'); return; }
+      const res = await window.api.savePricingGroupPromo(promo);
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      closeModal('promoModal');
+      showToast('Promo saved', 'success');
+      await loadAll();
+    }
+    async function togglePromo(uid, active) {
+      const res = await window.api.setPricingGroupPromoActive(uid, !!active);
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      await loadAll();
+    }
+  </script>
+</body>
+</html>

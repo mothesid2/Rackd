@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rackd — Management Portal</title>
+  <link rel="stylesheet" href="app.css" />
+  <link rel="stylesheet" href="shared-ui-kit.css" />
+  <script src="shared-ui-kit.js"></script>
+  <style>
+    .store-list { display: grid; gap: 10px; margin-top: 4px; }
+    .store-opt {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+      padding: 13px 16px; font-size: 15px; color: var(--ink); cursor: pointer;
+      transition: border-color 0.14s, background 0.14s;
+    }
+    .store-opt:hover { border-color: var(--accent-line); background: var(--panel-3); }
+    .store-opt svg { width: 18px; height: 18px; color: var(--muted); flex: 0 0 auto; }
+  </style>
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-brand">
+        <img src="../assets/logo-mark.svg" alt="Rackd" />
+        <div>
+          <div class="wordmark" style="font-size:30px">Rack<span class="d">D</span></div>
+          <div class="tag">Management Portal</div>
+        </div>
+      </div>
+      
+      <div id="bizPane" style="display:none">
+        <h1>Set up the portal</h1>
+        <div class="sub">Enter your business key once. After this, your managers sign in with their username and password.</div>
+        <label for="code">Business key</label>
+        <input id="code" placeholder="RACKD-XXXX-XXXX-XXXX" autocapitalize="characters" spellcheck="false" />
+        <button class="btn btn-accent" id="bizGo" style="width:100%;margin-top:16px">Continue</button>
+      </div>
+
+      
+      <div id="loginPane" style="display:none">
+        <h1>Sign in</h1>
+        <div class="sub">Use the same username and password you use on the POS.</div>
+        <label for="user">Username</label>
+        <input id="user" autocomplete="username" spellcheck="false" />
+        <div style="height:12px"></div>
+        <label for="pass">Password</label>
+        <input id="pass" type="password" autocomplete="current-password" />
+        <button class="btn btn-accent" id="loginGo" style="width:100%;margin-top:16px">Sign in</button>
+        <div style="text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid var(--line)">
+          <a href="#" id="changeBusinessLink" style="font-size:12px;color:var(--bad);text-decoration:none">Disconnect this portal / enter a new business key</a>
+        </div>
+      </div>
+
+      
+      <div id="changePane" style="display:none">
+        <h1>Set a new password</h1>
+        <div class="sub">For security, change your password before continuing.</div>
+        <label for="newPass">New password</label>
+        <input id="newPass" type="password" autocomplete="new-password" placeholder="At least 6 characters" />
+        <div style="height:12px"></div>
+        <label for="newPass2">Confirm password</label>
+        <input id="newPass2" type="password" autocomplete="new-password" />
+        <button class="btn btn-accent" id="changeGo" style="width:100%;margin-top:16px">Save &amp; sign in</button>
+      </div>
+
+      
+      <div id="storePane" style="display:none">
+        <h1>Choose your store</h1>
+        <div class="sub">You'll see this store's data across the portal. Switch anytime from the topbar.</div>
+        <div class="store-list" id="storeList"></div>
+      </div>
+
+      <div class="err" id="err"></div>
+    </div>
+  </div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const errEl = $('err');
+    const fail = (m) => { errEl.textContent = m; errEl.style.display = 'block'; };
+    const PANES = ['bizPane', 'loginPane', 'changePane', 'storePane'];
+    const show = (id) => { PANES.forEach((p) => { $(p).style.display = p === id ? 'block' : 'none'; }); errEl.style.display = 'none'; };
+
+    async function init() {
+      const s = await window.portal.status();
+      if (s && s.session) { showStorePicker(); return; } 
+      if (s && s.hasBusiness) { show('loginPane'); $('user').focus(); }
+      else { show('bizPane'); $('code').focus(); }
+    }
+
+    async function bindBusiness() {
+      const key = $('code').value.trim();
+      if (!key) return;
+      errEl.style.display = 'none';
+      $('bizGo').disabled = true; $('bizGo').textContent = 'Checking…';
+      const r = await window.portal.setBusiness(key);
+      $('bizGo').disabled = false; $('bizGo').textContent = 'Continue';
+      if (!r.success) return fail(r.error || 'Business key rejected.');
+      show('loginPane'); $('user').focus();
+    }
+
+    async function signIn() {
+      const username = $('user').value.trim();
+      const password = $('pass').value;
+      if (!username || !password) return;
+      errEl.style.display = 'none';
+      $('loginGo').disabled = true; $('loginGo').textContent = 'Signing in…';
+      const r = await window.portal.login({ username, password });
+      $('loginGo').disabled = false; $('loginGo').textContent = 'Sign in';
+      if (!r.success) return fail(r.error || 'Sign-in failed.');
+      if (r.must_change_password) { show('changePane'); $('newPass').focus(); return; }
+      showStorePicker();
+    }
+
+    async function changePassword() {
+      const newP = $('newPass').value, conf = $('newPass2').value;
+      if (newP !== conf) return fail('Passwords do not match.');
+      if (newP.length < 6) return fail('Password must be at least 6 characters.');
+      $('changeGo').disabled = true; $('changeGo').textContent = 'Saving…';
+      const r = await window.portal.changePassword({ username: $('user').value.trim(), oldPassword: $('pass').value, newPassword: newP });
+      $('changeGo').disabled = false; $('changeGo').textContent = 'Save & sign in';
+      if (!r.success) return fail(r.error || 'Could not change password.');
+      
+      const r2 = await window.portal.login({ username: $('user').value.trim(), password: newP });
+      if (!r2.success) { show('loginPane'); return fail('Password changed — please sign in.'); }
+      showStorePicker();
+    }
+
+    async function showStorePicker() {
+      show('storePane');
+      const list = $('storeList');
+      list.innerHTML = '<div class="muted" style="font-size:13px">Loading stores…</div>';
+      const r = await window.portal.locations();
+      if (!r.success) { list.innerHTML = ''; fail(r.error || 'Could not load stores.'); return; }
+      const locs = r.locations || [];
+      if (locs.length <= 1) { pickStore(locs[0]?.id || null); return; } 
+      list.innerHTML = locs.map((l) => `
+        <div class="store-opt" data-loc="${l.id}">
+          <span>${l.name}</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+        </div>`).join('');
+      list.querySelectorAll('[data-loc]').forEach((el) => el.addEventListener('click', () => pickStore(el.dataset.loc)));
+    }
+
+    async function pickStore(locationId) {
+      await window.portal.setCurrentLocation(locationId);
+      window.location.href = 'portal.html';
+    }
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    $('changeBusinessLink').addEventListener('click', async (e) => {
+      e.preventDefault();
+      const username = $('user').value.trim();
+      const password = $('pass').value;
+      if (!username || !password) {
+        fail('Enter your manager username and password above, then click Disconnect.');
+        $('user').focus();
+        return;
+      }
+      if (!confirm('Disconnect from this business and enter a new business key?')) return;
+      const r = await window.portal.login({ username, password });
+      if (!r.success) { fail(r.error || 'Invalid manager credentials.'); return; }
+      await window.portal.clearBusiness();
+      show('bizPane'); $('code').focus();
+    });
+
+    $('bizGo').addEventListener('click', bindBusiness);
+    $('loginGo').addEventListener('click', signIn);
+    $('changeGo').addEventListener('click', changePassword);
+    $('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') bindBusiness(); });
+    $('pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') signIn(); });
+    $('newPass2').addEventListener('keydown', (e) => { if (e.key === 'Enter') changePassword(); });
+    init();
+  </script>
+</body>
+</html>

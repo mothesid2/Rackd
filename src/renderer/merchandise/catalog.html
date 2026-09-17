@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Distributor Catalog</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    .page-layout { padding: 24px; padding-bottom: 80px; max-width: 900px; margin: 0 auto;
+      height: calc(100vh - 32px); overflow-y: auto; display: flex; flex-direction: column; }
+    .src-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(150px,1fr)); gap: 10px; margin-bottom: 16px; }
+    .src { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+    .src .n { font-size: 22px; font-weight: 800; }
+    .src .l { font-size: 12px; color: var(--muted); text-transform: capitalize; }
+    .map-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+    .map-row label { width: 150px; color: var(--ink-2); }
+    .map-row select { flex: 1; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+    table.rep { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+    table.rep th, table.rep td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line-soft); }
+    .warn { background: var(--warn-dim); color: var(--warn); border-radius: 8px; padding: 10px; font-size: 13px; }
+    .ok { background: var(--good-dim); color: var(--good); border-radius: 8px; padding: 10px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('merchandise')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Distributor Catalog</h1>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Loaded SKUs</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+        When receiving stock, scans check this catalog first and auto-fill product details.
+        Load a distributor invoice (CSV or JSON) below. Priority on conflicts:
+        <strong>Local &gt; Dojo &gt; Verus &gt; McLane &gt; Core-Mark</strong>.
+      </p>
+      <div class="src-grid" id="srcGrid"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Import a distributor file</div>
+      <div class="form-row">
+        <div class="form-group" style="max-width:220px">
+          <label>Source</label>
+          <select id="src">
+            <option value="mclane">McLane</option>
+            <option value="coremark">Core-Mark</option>
+            <option value="verus">Verus</option>
+            <option value="dojo">Dojo Vapes</option>
+            <option value="local">Local (store)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>File (.csv / .json)</label>
+          <input type="file" id="file" accept=".csv,.json,.txt" onchange="onFile()" />
+        </div>
+      </div>
+
+      <div id="mapBlock" style="display:none;border-top:1px solid var(--line);padding-top:12px;margin-top:6px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px">Column mapping <span id="rowCount" style="color:var(--muted);font-weight:400"></span></div>
+        <div id="mapRows"></div>
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button class="btn btn-navy" data-write-action="inventory_edit" onclick="runMerge()">Import into catalog</button>
+        </div>
+      </div>
+
+      <div id="result" style="margin-top:14px"></div>
+    </div>
+  </div>
+
+  <div class="status-bar"><div class="status-left" id="status-left">Loading…</div><div class="status-right" id="status-right"></div></div>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script src="../lib/writeGuard.js"></script>
+  <script>
+    const CANON = ['barcode','product_name','brand','category','variant_label','suggested_retail_price','unit_cost'];
+    let fileText = '', fileFormat = 'csv', headers = [], suggested = {};
+
+    async function loadStats() {
+      const r = await window.api.catalogStats();
+      const grid = document.getElementById('srcGrid');
+      if (!r.success) { grid.innerHTML = `<div style="color:var(--bad)">${esc(r.error)}</div>`; return; }
+      grid.innerHTML = r.sources.map(s =>
+        `<div class="src"><div class="n">${r.by_source[s] || 0}</div><div class="l">${esc(s)}</div></div>`).join('') +
+        `<div class="src" style="background:var(--info-dim);border-color:var(--info-dim)"><div class="n">${r.total}</div><div class="l">total</div></div>`;
+    }
+
+    async function onFile() {
+      const f = document.getElementById('file').files[0];
+      if (!f) return;
+      fileText = await f.text();
+      fileFormat = f.name.toLowerCase().endsWith('.json') ? 'json' : 'csv';
+      const prev = await window.api.catalogPreview({ data: fileText, format: fileFormat });
+      const result = document.getElementById('result');
+      if (!prev.success) { result.innerHTML = `<div class="warn">${esc(prev.error)}</div>`; return; }
+      headers = prev.headers; suggested = prev.suggested_mapping || {};
+      document.getElementById('rowCount').textContent = `— ${prev.row_count} rows, ${headers.length} columns`;
+
+      document.getElementById('mapRows').innerHTML = CANON.map(field => {
+        const opts = ['<option value="">— not mapped —</option>'].concat(
+          headers.map(h => `<option value="${esc(h)}" ${suggested[field]===h?'selected':''}>${esc(h)}</option>`)).join('');
+        const req = field === 'product_name' ? ' *' : '';
+        return `<div class="map-row"><label>${esc(field.replace(/_/g,' '))}${req}</label><select data-field="${field}">${opts}</select></div>`;
+      }).join('');
+      document.getElementById('mapBlock').style.display = 'block';
+      result.innerHTML = '';
+    }
+
+    async function runMerge() {
+      const mapping = {};
+      document.querySelectorAll('#mapRows select').forEach(sel => {
+        if (sel.value) mapping[sel.dataset.field] = sel.value;
+      });
+      if (!mapping.product_name) { showToast('Map the "product name" column', 'warning'); return; }
+      const res = await window.api.catalogMerge({
+        source: document.getElementById('src').value, data: fileText, format: fileFormat, mapping,
+      });
+      const result = document.getElementById('result');
+      if (!res.success) { result.innerHTML = `<div class="warn">${esc(res.error)}</div>`; return; }
+      let html = `<div class="ok"><strong>${res.added_count}</strong> added · <strong>${res.updated_count}</strong> updated · <strong>${res.skipped_count}</strong> unchanged/skipped</div>`;
+      if (res.conflict_list && res.conflict_list.length) {
+        html += `<div class="warn" style="margin-top:10px"><strong>${res.conflict_list.length} conflict(s)</strong> — same barcode, different product name (review manually):</div>` +
+          `<table class="rep"><thead><tr><th>Barcode</th><th>Incoming name</th><th>Existing (source)</th></tr></thead><tbody>` +
+          res.conflict_list.slice(0,50).map(c => `<tr><td>${esc(c.barcode)}</td><td>${esc(c.incoming)}</td><td>${esc(c.existing)} <span style="color:var(--muted)">(${esc(c.existing_source)})</span></td></tr>`).join('') +
+          `</tbody></table>`;
+      }
+      result.innerHTML = html;
+      showToast('Catalog updated', 'success');
+      loadStats();
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const session = (await window.api.getSession()).session;
+      if (session?.role !== 'manager') { showToast('Manager access required', 'error'); setTimeout(() => navigate('merchandise'), 1200); return; }
+      loadStats();
+      document.getElementById('status-left').textContent = 'Distributor catalog';
+    });
+  </script>
+</body>
+</html>

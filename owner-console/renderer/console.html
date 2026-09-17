@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rackd — Owner Console</title>
+  <link rel="stylesheet" href="app.css" />
+  <link rel="stylesheet" href="shared-ui-kit.css" />
+  <script src="shared-ui-kit.js"></script>
+  <style>
+    .topbar select { width: auto; min-width: 160px; padding: 7px 10px; font-size: 13px; background: var(--panel-2); }
+    .stack { display: grid; gap: 14px; }
+    .rowflex { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .keycode { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 3px 8px; }
+    .sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .badge { display: inline-block; border-radius: var(--radius-sm); padding: 3px 10px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+    .badge.on { background: rgba(70,180,95,0.14); color: var(--good); }
+    .badge.warn { background: rgba(224,161,58,0.15); color: var(--warn); }
+    .badge.dim { background: var(--panel-2); color: var(--muted); }
+    .permgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+    .permtog { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+    .permtog input { width: 15px; height: 15px; accent-color: var(--accent, #b01d2e); cursor: pointer; }
+    .permtog.locked { opacity: 0.65; cursor: default; }
+
+    
+    .section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 22px; overflow: hidden; }
+    .section-head {
+      display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+      border-bottom: 1px solid var(--line); background: var(--panel-2);
+    }
+    .section-head .s-ic {
+      width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+      background: var(--accent-dim); color: var(--accent-bright); flex: 0 0 auto;
+    }
+    .section-head .s-ic svg { width: 17px; height: 17px; }
+    .section-head .s-title { font-family: var(--font-display); font-size: 15px; font-weight: 500; letter-spacing: 0.03em; color: var(--ink); flex: 1; }
+    .section-head .s-sub { font-size: 12px; color: var(--muted); }
+    .section-body { padding: 18px; }
+
+    
+    .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line-soft); }
+    .switch-row:last-child { border-bottom: none; }
+    .switch-row .sw-label { font-size: 13.5px; color: var(--ink-2); }
+    .switch { position: relative; display: inline-block; width: 38px; height: 22px; flex: 0 0 auto; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch .slider { position: absolute; inset: 0; background: var(--panel-3); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; transition: background 0.15s; }
+    .switch .slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: var(--muted); border-radius: 50%; transition: transform 0.15s, background 0.15s; }
+    .switch input:checked + .slider { background: var(--accent-dim); border-color: var(--accent-line); }
+    .switch input:checked + .slider::before { transform: translateX(16px); background: var(--accent-bright); }
+
+    .ad-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .ad-row input { flex: 1; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <div class="brand-lockup">
+        <img src="../assets/logo-mark.svg" alt="Rackd" />
+        <span class="brand">Rack<span class="d">D</span></span>
+        <span class="biz">Owner Console</span>
+      </div>
+      <div class="spacer"></div>
+      <select id="bizSelect" aria-label="Business"></select>
+    </div>
+
+    <div class="side">
+      <div class="nav-label">Manage</div>
+      <button class="navbtn active" data-tab="business">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>
+        Business
+      </button>
+      <button class="navbtn" data-tab="businesses">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        All businesses
+      </button>
+      <button class="navbtn" data-tab="orders">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+        Web Orders
+      </button>
+      <div class="nav-label">Release</div>
+      <button class="navbtn" data-tab="publish">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+        Publish updates
+      </button>
+    </div>
+
+    <div class="content" id="view"><div class="spin">Loading…</div></div>
+  </div>
+
+  
+  <div class="overlay" id="bizModal">
+    <div class="modal">
+      <h3>New business</h3>
+      <div class="fg"><label>Business name</label><input id="bName" placeholder="e.g. Cloud Nine Vapes" /></div>
+      <div class="fg"><label>Admin username</label><input id="bAdminUser" placeholder="e.g. cloudnine" />
+        <div class="muted" style="font-size:11px;margin-top:4px">The client's admin login. A password is generated and shown once for you to deliver.</div></div>
+      <div class="fg"><label>Locations (one per line)</label>
+        <textarea id="bLocs" rows="3" style="width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:10px;color:var(--ink);font:inherit" placeholder="Downtown&#10;Westside"></textarea>
+        <div class="muted" style="font-size:11px;margin-top:4px">One business key is issued for all of them. Each POS picks its location once.</div>
+      </div>
+      <div class="fg"><label>Total kiosks allowed (seats)</label><input id="bSeats" type="number" min="1" value="3" /></div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('bizModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="bCreate">Create business</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="credsModal">
+    <div class="modal" style="width:460px">
+      <h3>Business created — deliver these</h3>
+      <div class="muted" style="font-size:12.5px;margin-bottom:14px">Give the client their admin login and the business key. The password is shown <strong>once</strong>; the admin must change it on first login.</div>
+      <div class="stack" style="gap:10px">
+        <div><div class="muted" style="font-size:11px">Business key (activates POS + Manager Portal)</div><div class="keycode" id="cKey" style="font-size:14px;display:inline-block;margin-top:3px"></div></div>
+        <div><div class="muted" style="font-size:11px">Admin username</div><div class="keycode" id="cUser" style="font-size:14px;display:inline-block;margin-top:3px"></div></div>
+        <div><div class="muted" style="font-size:11px">Admin password (one-time)</div><div class="keycode" id="cPass" style="font-size:14px;display:inline-block;margin-top:3px"></div></div>
+      </div>
+      <div class="row" style="justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-accent" onclick="document.getElementById('credsModal').style.display='none'">Done</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="locModal">
+    <div class="modal" style="width:420px">
+      <h3>Add location</h3>
+      <input type="hidden" id="lTenant" />
+      <div class="fg"><label>Location name</label><input id="lName" placeholder="e.g. Airport" /></div>
+      <div class="fg"><label>Address</label><input id="lAddress" placeholder="123 Main St, City ST" />
+        <div class="muted" style="font-size:11px;margin-top:4px">Set once here at setup — flows down to the POS and Manager Portal. Online sales tax is computed from the ZIP automatically.</div></div>
+      <div class="fg" style="max-width:140px"><label>ZIP</label><input id="lZip" placeholder="75751" maxlength="10" /></div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('locModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="lCreate">Add</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="mgrModal">
+    <div class="modal" style="width:400px">
+      <h3>New user</h3>
+      <input type="hidden" id="mgrTenant" />
+      <div class="fg">
+        <label>Role</label>
+        <select id="mgrRole">
+          <option value="manager">Manager — Manager Portal + POS access</option>
+          <option value="cashier">Cashier — register sign-in only</option>
+        </select>
+      </div>
+      <div class="fg"><label>Name</label><input id="mgrName" placeholder="e.g. Alex Rivera" /></div>
+      <div class="fg" id="mgrUsernameWrap"><label>Username</label><input id="mgrUsername" placeholder="e.g. arivera" />
+        <div class="muted" style="font-size:11px;margin-top:4px">Same username + password works at every kiosk's start-of-day and the Manager Portal.</div></div>
+      <div class="muted" style="font-size:11px;margin-top:-6px;margin-bottom:13px" id="mgrCashierNote">A 4-digit PIN is generated for register sign-in — no Manager Portal access.</div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('mgrModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="mgrCreate">Create</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="mgrCredsModal">
+    <div class="modal" style="width:440px">
+      <h3>User created — deliver these</h3>
+      <div class="muted" style="font-size:12.5px;margin-bottom:14px">Shown <strong>once</strong>; they must change it on first login.</div>
+      <div class="stack" style="gap:10px">
+        <div id="mcUserWrap"><div class="muted" style="font-size:11px">Username</div><div class="keycode" id="mcUser" style="font-size:14px;display:inline-block;margin-top:3px"></div></div>
+        <div id="mcPassWrap"><div class="muted" style="font-size:11px" id="mcPassLabel">Password (one-time)</div><div class="keycode" id="mcPass" style="font-size:14px;display:inline-block;margin-top:3px"></div></div>
+        <div id="mcPinWrap" style="display:none"><div class="muted" style="font-size:11px">PIN (one-time — also used for quick sign-in on the register)</div><div class="keycode" id="mcPin" style="font-size:14px;display:inline-block;margin-top:3px"></div></div>
+      </div>
+      <div class="row" style="justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-accent" onclick="document.getElementById('mgrCredsModal').style.display='none'">Done</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="resetModal">
+    <div class="modal" style="width:430px">
+      <h3>Reset this kiosk</h3>
+      <input type="hidden" id="rTenant" /><input type="hidden" id="rMachine" />
+      <div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:14px" id="rSub"></div>
+      <div class="muted" style="font-size:12px;line-height:1.5;margin-bottom:14px">The kiosk unlocks from its location and returns to setup on its next sync. It finishes syncing pending sales first and waits until the day is closed — it won't interrupt a shift. If it's offline, it applies when it reconnects.</div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('resetModal').style.display='none'">Cancel</button>
+        <button class="btn" style="background:#5a2323;color:#f2c7c7" id="rConfirm">Queue reset</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="tempPwModal">
+    <div class="modal" style="width:440px">
+      <h3 id="tpTitle">Password reset — deliver this</h3>
+      <div class="muted" style="font-size:12.5px;margin-bottom:14px">Give this temporary <span id="tpKind">password</span> to <strong id="tpWho"></strong>. It's shown <strong>once</strong>; they must change it on next login. This reset was recorded in the audit log.</div>
+      <div><div class="muted" style="font-size:11px" id="tpLabel">Temporary password</div><div class="keycode" id="tpPass" style="font-size:15px;display:inline-block;margin-top:3px"></div></div>
+      <div class="row" style="justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-accent" onclick="document.getElementById('tempPwModal').style.display='none'">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="console.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!-- Rackd — Supabase Auth "Confirm signup" template.
+     Paste into Supabase Dashboard → Authentication → Email Templates → Confirm signup.
+     Only used if "Confirm email" is enabled; the storefront's OTP flow primarily uses Magic Link. -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f2ed;margin:0;padding:24px 0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="440" cellpadding="0" cellspacing="0" style="width:440px;max-width:92%;background:#ffffff;border:1px solid #e7e2d9;border-radius:16px;overflow:hidden;">
+        <tr>
+          <td style="background:#101216;padding:22px 28px;">
+            <span style="font-size:24px;font-weight:800;letter-spacing:2px;color:#ffffff;">Rack<span style="color:#cf2436;">D</span></span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:30px 28px 8px;">
+            <h1 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#17191d;">Confirm your email</h1>
+            <p style="margin:0 0 22px;font-size:14px;line-height:1.55;color:#5b6169;">
+              Welcome to Rackd. Confirm this email to finish setting up your account and start ordering for pickup.
+            </p>
+            <table role="presentation" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="border-radius:999px;background:#b01d2e;">
+                  <a href="{{ .ConfirmationURL }}" target="_blank"
+                     style="display:inline-block;padding:13px 30px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;">
+                    Confirm email
+                  </a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:24px 28px 26px;">
+            <hr style="border:none;border-top:1px solid #eee7db;margin:0 0 16px;" />
+            <p style="margin:0;font-size:12px;line-height:1.5;color:#a2a8b0;">
+              If you didn’t create a Rackd account, you can ignore this email. Must be 21+ to order.
+            </p>
+            <p style="margin:10px 0 0;font-size:12px;color:#b8bec6;">© Rackd · Pickup only, bring valid ID.</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>

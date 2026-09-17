@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Previous Transactions</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    .page-layout {
+      padding: 24px;
+      padding-bottom: 68px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .results-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .table-wrap {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .bottom-actions {
+      position: fixed;
+      bottom: 44px;
+      right: 24px;
+      display: flex;
+      gap: 10px;
+      z-index: 10;
+    }
+
+    .receipt-modal .receipt-items { max-height: 260px; overflow-y: auto; margin: 12px 0; }
+    .receipt-item-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
+    .receipt-item-row:last-child { border: none; }
+    .receipt-totals { margin-top: 12px; border-top: 2px solid var(--line); padding-top: 12px; }
+    .receipt-line { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+    .receipt-line.total { font-weight: 700; font-size: 16px; border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px; }
+    .receipt-meta { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+    .data-table tbody tr.selected td { background: var(--info-dim) !important; }
+
+    .date-presets { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .date-preset-btn {
+      padding: 4px 10px; font-size: 12px; font-weight: 600; border-radius: 20px;
+      border: 1px solid var(--line); background: var(--panel); cursor: pointer; color: var(--ink-2);
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .date-preset-btn:hover { background: var(--line-soft); }
+    .date-preset-btn.active { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+
+    .confirm-body { font-size: 15px; margin-bottom: 18px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('main-menu')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Previous Transactions</h1>
+      <span class="page-header-hint">click any row to view full receipt</span>
+    </div>
+
+    
+    <div class="filter-bar" style="flex-wrap:wrap;gap:10px">
+      <div class="search-wrap" style="min-width:180px;max-width:240px">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="filterName" placeholder="Customer Name" />
+      </div>
+      <div class="date-presets" id="datePresets">
+        <button class="date-preset-btn active" data-preset="today">Today</button>
+        <button class="date-preset-btn" data-preset="yesterday">Yesterday</button>
+        <button class="date-preset-btn" data-preset="week">This Week</button>
+        <button class="date-preset-btn" data-preset="month">This Month</button>
+        <button class="date-preset-btn" data-preset="custom">Custom</button>
+      </div>
+      <button class="date-preset-btn" id="onlineToggle" title="Show only prepaid online orders" style="border-color:var(--accent-line)">Online orders</button>
+      <div class="scope-toggle" id="scopeToggle" role="group" aria-label="Receipt scope" style="display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden">
+        <button type="button" class="scope-btn active" data-scope="register" style="border:none;background:var(--ink);color:var(--panel);font-size:13px;font-weight:600;padding:7px 14px;cursor:pointer">This register</button>
+        <button type="button" class="scope-btn" data-scope="location" style="border:none;border-left:1px solid var(--line);background:var(--panel);color:var(--ink-2);font-size:13px;font-weight:600;padding:7px 14px;cursor:pointer">All kiosks</button>
+      </div>
+      <div id="customDateRow" style="display:none;align-items:center;gap:6px;font-size:13px;color:var(--muted)">
+        <label>From</label>
+        <input type="date" id="filterStart" style="width:140px" />
+        <label>To</label>
+        <input type="date" id="filterEnd" style="width:140px" />
+        <button class="btn btn-navy" id="filterBtn">Apply</button>
+      </div>
+    </div>
+
+    
+    <div class="card results-card">
+      <div class="table-wrap">
+        <table class="data-table" id="txnTable">
+          <thead>
+            <tr>
+              <th data-sort="id"># <span class="sort-icon">▲</span></th>
+              <th data-sort="cashier_name">Cashier <span class="sort-icon"></span></th>
+              <th data-sort="customer_name">Customer <span class="sort-icon"></span></th>
+              <th data-sort="payment_method">Method <span class="sort-icon"></span></th>
+              <th data-sort="total">Total <span class="sort-icon"></span></th>
+              <th data-sort="created_at_date">Date <span class="sort-icon"></span></th>
+              <th data-sort="created_at_time">Time <span class="sort-icon"></span></th>
+              <th id="actionsCol" style="display:none;width:50px"></th>
+            </tr>
+          </thead>
+          <tbody id="txnBody">
+            <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <span id="paginationInfo">Showing — results</span>
+        <div class="pagination-controls" id="paginationControls"></div>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="bottom-actions">
+    <button class="btn btn-navy" id="printBtn" disabled>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      Print Transaction
+    </button>
+    <button class="btn btn-green" onclick="navigate('pos')">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      New Transaction
+    </button>
+  </div>
+
+  
+  <div class="modal-overlay" id="txnModal" style="display:none">
+    <div class="modal receipt-modal" style="max-width:500px;width:95%">
+      <button class="modal-close" onclick="closeModal('txnModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title" id="txnModalTitle">Transaction #—</div>
+      <div class="receipt-meta" id="txnModalMeta"></div>
+      <div class="receipt-items" id="txnModalItems"></div>
+      <div class="receipt-totals" id="txnModalTotals"></div>
+      <div class="modal-actions">
+        <button class="btn btn-red" id="deleteTxnBtn" style="display:none;margin-right:auto" onclick="confirmDelete()">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          Delete
+        </button>
+        <button class="btn btn-gray" onclick="closeModal('txnModal')">Close</button>
+        
+        <button class="btn btn-navy" id="reprintBtn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Reprint Receipt
+        </button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="deleteConfirmModal" style="display:none">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header">
+        <div class="modal-title">Delete Transaction</div>
+        <button class="modal-close" onclick="closeModal('deleteConfirmModal')" data-tooltip="Close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="confirm-body">
+          Delete <strong id="deleteConfirmLabel">transaction #—</strong>?
+          This will permanently remove the record, <strong>restore inventory stock</strong>, and <strong>reverse shift revenue</strong>. This cannot be undone.
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="btn" onclick="closeModal('deleteConfirmModal')">Cancel</button>
+          <button class="btn btn-red" id="confirmDeleteBtn">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="status-bar">
+    <div class="status-left" id="status-left">Loading…</div>
+    <div class="status-right" id="status-right"></div>
+  </div>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script>
+    let currentPage = 1;
+    let totalResults = 0;
+    let selectedTxnId = null;
+    let sortKey = 'id';
+    let sortDir = -1;
+    let allTransactions = [];
+    let isManager = false;
+    let activePreset = 'today';
+    let onlineOnly = false;
+    let currentScope = 'register';
+
+    
+    
+    
+    function todayCT() {
+      return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    }
+
+    
+    
+    
+    
+    function labelAddDays(label, days) {
+      const [y, m, d] = label.split('-').map(Number);
+      const dt = new Date(Date.UTC(y, m - 1, d));
+      dt.setUTCDate(dt.getUTCDate() + days);
+      return dt.toISOString().slice(0, 10);
+    }
+    function weekStartFrom(label) {
+      const [y, m, d] = label.split('-').map(Number);
+      const dt = new Date(Date.UTC(y, m - 1, d));
+      dt.setUTCDate(dt.getUTCDate() - dt.getUTCDay()); 
+      return dt.toISOString().slice(0, 10);
+    }
+    function monthStartFrom(label) {
+      return label.slice(0, 8) + '01';
+    }
+
+    
+    
+    
+    
+    
+    
+    function getPresetDates(preset, businessDate) {
+      if (preset === 'today')     return { start: businessDate, end: businessDate };
+      if (preset === 'yesterday') { const y = labelAddDays(businessDate, -1); return { start: y, end: y }; }
+      if (preset === 'week')      return { start: weekStartFrom(businessDate), end: businessDate };
+      if (preset === 'month')     return { start: monthStartFrom(businessDate), end: businessDate };
+      return null; 
+    }
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    function anyModalOpen() {
+      return [...document.querySelectorAll('.modal-overlay')].some((el) => getComputedStyle(el).display !== 'none');
+    }
+    setInterval(() => { if (!anyModalOpen()) loadTransactions(); }, 30000);
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      if (!(await enforceMenuAccess('access_receipts'))) return;
+      const session = (await window.api.getSession()).session;
+      isManager = session?.role === 'manager';
+
+      if (isManager) {
+        document.getElementById('actionsCol').style.display = '';
+      }
+
+      
+      document.getElementById('datePresets').addEventListener('click', e => {
+        const btn = e.target.closest('.date-preset-btn');
+        if (!btn) return;
+        const preset = btn.dataset.preset;
+        document.querySelectorAll('.date-preset-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activePreset = preset;
+        if (preset === 'custom') {
+          document.getElementById('customDateRow').style.display = 'flex';
+        } else {
+          document.getElementById('customDateRow').style.display = 'none';
+          currentPage = 1;
+          loadTransactions();
+        }
+      });
+
+      document.getElementById('scopeToggle').addEventListener('click', (e) => {
+        const btn = e.target.closest('.scope-btn');
+        if (!btn) return;
+        currentScope = btn.dataset.scope;
+        document.querySelectorAll('.scope-btn').forEach(b => {
+          const active = b.dataset.scope === currentScope;
+          b.classList.toggle('active', active);
+          b.style.background = active ? 'var(--ink)' : 'var(--panel)';
+          b.style.color = active ? 'var(--panel)' : 'var(--ink-2)';
+        });
+        const nameInput = document.getElementById('filterName');
+        nameInput.disabled = currentScope === 'location';
+        nameInput.placeholder = currentScope === 'location' ? 'Not available across kiosks' : 'Customer Name';
+        currentPage = 1;
+        loadTransactions();
+      });
+
+      
+      document.getElementById('onlineToggle').addEventListener('click', () => {
+        onlineOnly = !onlineOnly;
+        const b = document.getElementById('onlineToggle');
+        b.style.background = onlineOnly ? 'var(--accent)' : '';
+        b.style.color = onlineOnly ? 'var(--panel)' : '';
+        currentPage = 1;
+        loadTransactions();
+      });
+
+      document.getElementById('filterBtn').addEventListener('click', () => {
+        currentPage = 1;
+        loadTransactions();
+      });
+
+      document.getElementById('filterName').addEventListener('keydown', e => {
+        if (e.key === 'Enter') { currentPage = 1; loadTransactions(); }
+      });
+
+      
+      
+      
+      
+      
+      document.getElementById('printBtn').addEventListener('click', async () => {
+        if (!selectedTxnData) return;
+        const res = await window.api.printReceiptData(selectedTxnData.transaction, selectedTxnData.items);
+        showToast(res.success ? (res.saved_to ? 'Receipt saved to file' : 'Receipt printed!') : (res.error || 'Print failed'), res.success ? 'success' : 'error');
+      });
+
+      document.getElementById('reprintBtn').addEventListener('click', async () => {
+        if (!selectedTxnData) return;
+        const res = await window.api.printReceiptData(selectedTxnData.transaction, selectedTxnData.items);
+        showToast(res.success ? (res.saved_to ? 'Receipt saved to file' : 'Receipt printed!') : (res.error || 'Print failed'), res.success ? 'success' : 'error');
+      });
+
+      document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+        if (!selectedTxnId) return;
+        try {
+          const res = await window.api.deleteTransaction(selectedTxnId);
+          if (!res.success) { showToast(res.error || 'Delete failed', 'error'); return; }
+          closeModal('deleteConfirmModal');
+          closeModal('txnModal');
+          showToast('Transaction deleted', 'success');
+          currentPage = 1;
+          loadTransactions();
+        } catch (e) {
+          showToast('Error: ' + e.message, 'error');
+        }
+      });
+
+      makeSortable(document.getElementById('txnTable'), (key, dir) => {
+        sortKey = key; sortDir = dir;
+        renderTable(allTransactions);
+      });
+
+      loadTransactions();
+    });
+
+    async function loadTransactions() {
+      let start, end, startTs, endTs;
+      if (activePreset === 'custom') {
+        start = document.getElementById('filterStart').value || undefined;
+        end = document.getElementById('filterEnd').value || undefined;
+      } else {
+        
+        
+        
+        
+        
+        
+        let win = null;
+        try { const r = await window.api.getBusinessDayWindow(); if (r.success) win = r; } catch {  }
+        const businessDate = win ? win.businessDate : todayCT();
+        if (activePreset === 'today' && win) {
+          startTs = currentScope === 'location' ? win.locationStart : win.registerStart;
+        } else {
+          const dates = getPresetDates(activePreset, businessDate);
+          start = dates.start;
+          end = dates.end;
+        }
+      }
+
+      const filters = {
+        customer_name: document.getElementById('filterName').value.trim() || undefined,
+        start_date: start,
+        end_date: end,
+        start_ts: startTs,
+        end_ts: endTs,
+        source: onlineOnly ? 'online' : undefined,
+        page: currentPage,
+        per_page: 50,
+      };
+
+      const tbody = document.getElementById('txnBody');
+      tbody.innerHTML = RackdUI.skeleton.tableRowsHtml(isManager ? 8 : 7, 8);
+
+      
+      
+      
+      
+      
+      const res = currentScope === 'location'
+        ? await window.api.getTransactionsLocation(filters)
+        : await window.api.getTransactions(filters);
+      if (!res.success) { showToast(res.error, 'error'); return; }
+
+      allTransactions = res.transactions;
+      totalResults = res.total;
+      renderTable(allTransactions);
+      renderPagination(res.total, currentPage, 50);
+    }
+
+    function renderTable(rows) {
+      const tbody = document.getElementById('txnBody');
+      RackdUI.fadeIn(tbody);
+      const colspan = isManager ? 8 : 7;
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${colspan}" style="text-align:center;color:var(--muted);padding:24px">No transactions found</td></tr>`;
+        return;
+      }
+
+      const sorted = [...rows].sort((a, b) => {
+        let av = a[sortKey] ?? '';
+        let bv = b[sortKey] ?? '';
+        if (sortKey === 'created_at_date') { av = (a.created_at || '').split('T')[0]; bv = (b.created_at || '').split('T')[0]; }
+        if (sortKey === 'created_at_time') { av = (a.created_at || '').split('T')[1] || ''; bv = (b.created_at || '').split('T')[1] || ''; }
+        if (sortKey === 'total') return (parseFloat(av) - parseFloat(bv)) * sortDir;
+        return String(av).localeCompare(String(bv)) * sortDir;
+      });
+
+      tbody.innerHTML = sorted.map(t => `
+        <tr data-id="${t.id}" data-register="${esc(t.register_id || '')}" onclick="openTxnDetail(${t.id}, ${t.register_id ? `'${esc(t.register_id)}'` : 'null'})" style="cursor:pointer">
+          <td><strong>#${t.id}</strong></td>
+          <td>${esc(t.cashier_name || '—')}</td>
+          <td>${esc(t.customer_name || '—')}</td>
+          <td>${t.order_source === 'online'
+            ? '<span style="background:var(--accent-dim);color:var(--accent);font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap">Online — Prepaid</span>'
+            : esc(t.payment_method || '—')}</td>
+          <td><strong>${fmt(t.total)}</strong></td>
+          <td>${fmtDate(t.created_at)}</td>
+          <td>${fmtTime(t.created_at)}</td>
+          ${isManager ? `<td onclick="event.stopPropagation()">
+            ${currentScope === 'register' ? `<button class="btn btn-red" style="padding:4px 8px;font-size:12px" onclick="confirmDeleteRow(${t.id})">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+            </button>` : ''}
+          </td>` : ''}
+        </tr>
+      `).join('');
+    }
+
+    function renderPagination(total, page, perPage) {
+      const pages = Math.ceil(total / perPage);
+      const start = (page - 1) * perPage + 1;
+      const end = Math.min(page * perPage, total);
+      document.getElementById('paginationInfo').textContent =
+        total === 0 ? 'No results' : `Showing ${start}–${end} of ${total}`;
+
+      const controls = document.getElementById('paginationControls');
+      let html = '';
+      for (let i = 1; i <= pages; i++) {
+        if (i === 1 || i === pages || Math.abs(i - page) <= 2) {
+          html += `<button class="${i === page ? 'active' : ''}" onclick="goPage(${i})">${i}</button>`;
+        } else if (Math.abs(i - page) === 3) {
+          html += `<button disabled>…</button>`;
+        }
+      }
+      controls.innerHTML = html;
+    }
+
+    function goPage(p) { currentPage = p; loadTransactions(); }
+
+    function confirmDeleteRow(id) {
+      selectedTxnId = id;
+      document.getElementById('deleteConfirmLabel').textContent = `transaction #${id}`;
+      openModal('deleteConfirmModal');
+    }
+
+    function confirmDelete() {
+      if (!selectedTxnId) return;
+      document.getElementById('deleteConfirmLabel').textContent = `transaction #${selectedTxnId}`;
+      openModal('deleteConfirmModal');
+    }
+
+    let selectedTxnRegister = null;
+    let selectedTxnData = null; 
+    async function openTxnDetail(id, registerId) {
+      selectedTxnId = id;
+      selectedTxnRegister = registerId || null;
+      selectedTxnData = null;
+      
+      
+      
+      
+      
+      
+      
+      const isOwnRegister = !selectedTxnRegister;
+      document.getElementById('printBtn').disabled = false;
+      document.getElementById('reprintBtn').disabled = false;
+
+      document.querySelectorAll('#txnBody tr').forEach(r => r.classList.remove('selected'));
+      const row = document.querySelector(`#txnBody tr[data-id="${id}"]`);
+      if (row) row.classList.add('selected');
+
+      const res = isOwnRegister
+        ? await window.api.getTransaction(id)
+        : await window.api.getTransactionLocation(id, selectedTxnRegister);
+      if (!res.success) { showToast(res.error, 'error'); return; }
+
+      const t = res.transaction;
+      const items = res.items;
+      selectedTxnData = { transaction: t, items };
+
+      document.getElementById('deleteTxnBtn').style.display = (isManager && isOwnRegister) ? '' : 'none';
+      document.getElementById('txnModalTitle').textContent = `Transaction #${t.id}`;
+      document.getElementById('txnModalMeta').innerHTML = `
+        <span>${fmtDate(t.created_at)} at ${fmtTime(t.created_at)}</span> &nbsp;·&nbsp;
+        <span>Cashier: ${esc(t.cashier_name || 'N/A')}</span>
+        ${t.customer_name ? ` &nbsp;·&nbsp; <span>Customer: ${esc(t.customer_name)}</span>` : ''}
+      `;
+
+      document.getElementById('txnModalItems').innerHTML = items.map(item => `
+        <div class="receipt-item-row">
+          <div>
+            <div style="font-weight:600">${esc(item.product_name || 'Item')}</div>
+            <div style="font-size:12px;color:var(--muted)">${item.qty} × ${fmt(item.unit_price)}</div>
+          </div>
+          <div style="font-weight:600">${fmt(item.line_total)}</div>
+        </div>
+      `).join('');
+
+      document.getElementById('txnModalTotals').innerHTML = `
+        <div class="receipt-line"><span>Subtotal</span><span>${fmt(t.subtotal)}</span></div>
+        <div class="receipt-line"><span>Tax (${((t.tax_rate || 0) * 100).toFixed(2)}%)</span><span>${fmt(t.tax_amount)}</span></div>
+        ${t.discount_amount > 0 ? `<div class="receipt-line"><span>Discount</span><span>-${fmt(t.discount_amount)}</span></div>` : ''}
+        <div class="receipt-line total"><span>TOTAL</span><span>${fmt(t.total)}</span></div>
+        <div class="receipt-line" style="margin-top:8px;color:var(--muted)">
+          <span>Payment</span>
+          <span>${t.payment_method === 'cash'
+            ? `Cash — Change: ${fmt(t.change_given)}`
+            : t.payment_method === 'card'
+            ? `Card ${t.last4 ? `····${t.last4}` : ''} ${t.auth_code ? `(Auth: ${t.auth_code})` : ''}`
+            : t.payment_method || '—'
+          }</span>
+        </div>
+      `;
+
+      openModal('txnModal');
+    }
+  </script>
+</body>
+</html>

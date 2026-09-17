@@ -1,0 +1,50 @@
+<!-- Rackd — Supabase Auth "Magic Link" template (used by signInWithOtp on the storefront).
+     Paste into Supabase Dashboard → Authentication → Email Templates → Magic Link.
+     Email-client-safe: table layout + inline styles only. No external CSS/fonts. -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f2ed;margin:0;padding:24px 0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="440" cellpadding="0" cellspacing="0" style="width:440px;max-width:92%;background:#ffffff;border:1px solid #e7e2d9;border-radius:16px;overflow:hidden;">
+        <!-- Brand header -->
+        <tr>
+          <td style="background:#101216;padding:22px 28px;">
+            <span style="font-size:24px;font-weight:800;letter-spacing:2px;color:#ffffff;">Rack<span style="color:#cf2436;">D</span></span>
+          </td>
+        </tr>
+        <!-- Body -->
+        <tr>
+          <td style="padding:30px 28px 8px;">
+            <h1 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#17191d;">Sign in to Rackd</h1>
+            <p style="margin:0 0 22px;font-size:14px;line-height:1.55;color:#5b6169;">
+              Tap the button below to sign in and pick up where you left off. This link works once and expires shortly.
+            </p>
+            <table role="presentation" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="border-radius:999px;background:#b01d2e;">
+                  <a href="{{ .ConfirmationURL }}" target="_blank"
+                     style="display:inline-block;padding:13px 30px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;">
+                    Sign in to Rackd
+                  </a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:22px 0 0;font-size:13px;line-height:1.5;color:#8a9099;">
+              Prefer a code? Enter this when asked:
+              <span style="display:inline-block;margin-top:6px;font-size:22px;font-weight:800;letter-spacing:4px;color:#17191d;">{{ .Token }}</span>
+            </p>
+          </td>
+        </tr>
+        <!-- Footer -->
+        <tr>
+          <td style="padding:24px 28px 26px;">
+            <hr style="border:none;border-top:1px solid #eee7db;margin:0 0 16px;" />
+            <p style="margin:0;font-size:12px;line-height:1.5;color:#a2a8b0;">
+              You’re receiving this because someone entered this email at Rackd. If that wasn’t you, you can ignore it — no account changes were made. Must be 21+ to order.
+            </p>
+            <p style="margin:10px 0 0;font-size:12px;color:#b8bec6;">© Rackd · Pickup only, bring valid ID.</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>

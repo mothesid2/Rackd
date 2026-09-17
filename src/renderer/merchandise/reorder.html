@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Reorder Report</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    .page-layout {
+      padding: 24px;
+      padding-bottom: 56px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .top-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .summary { font-size: 13px; color: var(--muted); }
+    .summary strong { color: var(--ink); }
+
+    .report-card { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .table-wrap { flex: 1; overflow-y: auto; }
+
+    .rp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .rp-table th {
+      text-align: left; padding: 8px 10px; font-size: 12px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-2);
+      border-bottom: 2px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1;
+    }
+    .rp-table td { padding: 8px 10px; border-bottom: 1px solid var(--line-soft); }
+    .rp-table td.num { text-align: right; }
+    .rp-table tbody tr:hover td { background: var(--panel-2); }
+
+    .pri { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+    .pri.CRITICAL { background: var(--bad-dim); color: var(--bad); }
+    .pri.URGENT   { background: var(--warn-dim); color: var(--warn); }
+    .pri.NORMAL   { background: var(--loyalty-dim); color: var(--loyalty); }
+
+    .section-title { font-size: 13px; font-weight: 700; color: var(--ink-2); margin: 16px 0 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .dead-list { font-size: 13px; color: var(--muted); }
+    .dead-list .chip { display:inline-block; background:var(--line-soft); border:1px solid var(--line); border-radius:6px; padding:3px 8px; margin:0 6px 6px 0; }
+    .empty { text-align: center; color: var(--muted); padding: 28px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('merchandise')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Reorder Report</h1>
+    </div>
+
+    <div class="top-bar">
+      <label style="font-size:14px;color:var(--ink-2)">Sales window:</label>
+      <select id="windowSel" style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:14px">
+        <option value="30">Last 30 days</option>
+        <option value="60">Last 60 days</option>
+        <option value="90">Last 90 days</option>
+      </select>
+      <div class="summary" id="summary"></div>
+      <div class="spacer"></div>
+      <button class="btn btn-gray" onclick="window.api.printPage()">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Print
+      </button>
+    </div>
+
+    <div class="card report-card">
+      <div class="table-wrap">
+        <table class="rp-table" id="reorderTable">
+          <thead>
+            <tr>
+              <th>Priority</th>
+              <th style="min-width:180px">Product</th>
+              <th>Vendor</th>
+              <th class="num">In Stock</th>
+              <th class="num">Sold</th>
+              <th class="num">Units/Day</th>
+              <th class="num">Days Left</th>
+              <th class="num">Suggested Order</th>
+            </tr>
+          </thead>
+          <tbody id="reorderBody">
+            <tr><td colspan="8" class="empty">Loading…</td></tr>
+          </tbody>
+        </table>
+
+        <div class="section-title" id="deadTitle" style="display:none">Dead stock — no sales in window</div>
+        <div class="dead-list" id="deadList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-left" id="status-left">Loading…</div>
+    <div class="status-right" id="status-right"></div>
+  </div>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('windowSel').addEventListener('change', load);
+      load();
+    });
+
+    async function load() {
+      const days = parseInt(document.getElementById('windowSel').value, 10) || 30;
+      const body = document.getElementById('reorderBody');
+      body.innerHTML = '<tr><td colspan="8" class="empty">Loading…</td></tr>';
+
+      const res = await window.api.getReorderReport(days);
+      if (!res.success) {
+        body.innerHTML = `<tr><td colspan="8" class="empty">Error: ${esc(res.error || 'failed')}</td></tr>`;
+        return;
+      }
+
+      const { reorder, deadStock } = res;
+      const crit = reorder.filter(r => r.priority === 'CRITICAL').length;
+      const urg = reorder.filter(r => r.priority === 'URGENT').length;
+      document.getElementById('summary').innerHTML =
+        `<strong>${reorder.length}</strong> to reorder · ` +
+        `<strong>${crit}</strong> critical · <strong>${urg}</strong> urgent · ` +
+        `<strong>${deadStock.length}</strong> dead-stock items`;
+
+      if (reorder.length === 0) {
+        body.innerHTML = '<tr><td colspan="8" class="empty">Nothing needs reordering in this window 🎉</td></tr>';
+      } else {
+        body.innerHTML = reorder.map(r => `
+          <tr>
+            <td><span class="pri ${r.priority}">${r.priority}</span></td>
+            <td><strong>${esc(r.name)}</strong>${r.category ? `<div style="font-size:11px;color:var(--faint)">${esc(r.category)}</div>` : ''}</td>
+            <td>${esc(r.vendor || '—')}</td>
+            <td class="num">${r.current_stock}</td>
+            <td class="num">${r.sold_30d}</td>
+            <td class="num">${r.daily_velocity.toFixed(2)}</td>
+            <td class="num">${r.days_remaining == null ? '—' : r.days_remaining}</td>
+            <td class="num"><strong>${r.suggested_qty}</strong></td>
+          </tr>
+        `).join('');
+      }
+
+      const deadTitle = document.getElementById('deadTitle');
+      const deadList = document.getElementById('deadList');
+      if (deadStock.length) {
+        deadTitle.style.display = 'block';
+        deadList.innerHTML = deadStock
+          .map(d => `<span class="chip">${esc(d.name)} <span style="color:var(--faint)">· ${d.stock_qty} on hand</span></span>`)
+          .join('');
+      } else {
+        deadTitle.style.display = 'none';
+        deadList.innerHTML = '';
+      }
+
+      document.getElementById('status-left').textContent =
+        `Reorder report · last ${days} days`;
+    }
+  </script>
+</body>
+</html>

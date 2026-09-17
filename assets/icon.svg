@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 360 360" width="360" height="360" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#33486b"/>
+      <stop offset="1" stop-color="#192a40"/>
+    </linearGradient>
+  </defs>
+  <rect x="24" y="24" width="312" height="312" rx="74" fill="url(#tile)"
+        stroke="#ffffff" stroke-opacity="0.12" stroke-width="2"/>
+  <!-- bag handle -->
+  <path d="M138 152 C138 104 222 104 222 152" fill="none"
+        stroke="#ffffff" stroke-width="18" stroke-linecap="round"/>
+  <!-- bag body -->
+  <path d="M118 146 H242 a16 16 0 0 1 15.9 14.2 l10.8 104 a18 18 0 0 1 -17.9 20 H109.2
+           a18 18 0 0 1 -17.9 -20 l10.8 -104 A16 16 0 0 1 118 146 Z" fill="#ffffff"/>
+</svg>

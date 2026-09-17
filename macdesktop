@@ -1,0 +1,8 @@
+cat > ~/Desktop/Rackd-POS.command << 'EOF'
+#!/bin/bash
+cd ~/rackd-pos || { echo "Project folder not found"; exit 1; }
+echo "Updating…"
+git pull || echo "(offline or pull failed — launching current version)"
+npm start
+EOF
+chmod +x ~/Desktop/Rackd-POS.command

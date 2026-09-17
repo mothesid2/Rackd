@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd — Tenant Admin</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    body { overflow: hidden; }
+    .admin-layout { padding: 18px 22px 56px; height: 100vh; overflow-y: auto; }
+    .admin-head { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+    .admin-head h1 { font-size: 22px; font-weight: 800; }
+    .t-table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+    .t-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 10px 12px; background: var(--panel-2); }
+    .t-table td { padding: 10px 12px; border-top: 1px solid var(--panel-2); font-size: 14px; vertical-align: middle; }
+    .keycell { font-family: ui-monospace,Consolas,monospace; font-size: 13px; }
+    .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .pill.on { background: var(--good-dim); color: var(--good); } .pill.off { background: var(--bad-dim); color: var(--bad); }
+    .pill.tier { background: var(--loyalty-dim); color: var(--loyalty); text-transform: capitalize; }
+    .chip { display: inline-block; background: var(--panel-2); color: var(--ink-2); border-radius: 6px; padding: 1px 7px; font-size: 11px; margin: 1px; }
+    .rowbtn { padding: 4px 9px; font-size: 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; margin-left: 4px; }
+    .rowbtn:hover { background: var(--panel-2); }
+    .rowbtn.danger { color: var(--accent); border-color: var(--accent-line); }
+    
+    .overlay { position: fixed; inset: 0; background: rgba(12,14,17,0.75); display: flex; align-items: center; justify-content: center; z-index: 500; }
+    .panel { background: var(--panel); border-radius: 14px; padding: 26px; width: 460px; max-width: 94vw; max-height: 90vh; overflow-y: auto; }
+    .panel h2 { font-size: 18px; font-weight: 800; margin-bottom: 14px; }
+    .fg { margin-bottom: 12px; } .fg label { display:block; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:5px; }
+    .fg input, .fg select { width: 100%; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 9px; font-size: 15px; }
+    .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .feat-grid label { display: flex; align-items: center; gap: 7px; font-size: 13px; text-transform: none; font-weight: 500; color: var(--ink-2); cursor: pointer; }
+    .feat-grid input { width: auto; }
+  </style>
+</head>
+<body>
+  <div class="admin-layout">
+    <div class="admin-head">
+      <button class="btn btn-back" onclick="navigate('main-menu')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1>Tenant Admin</h1>
+      <button class="btn btn-navy" style="margin-left:auto" onclick="openStores()">📊 All Stores</button>
+      <button class="btn btn-navy" onclick="openEdit(null)">+ New Location</button>
+      <button class="btn btn-navy" onclick="openManager()">+ Manager Code</button>
+      <button class="btn btn-gray" onclick="loadTenants()">Refresh</button>
+    </div>
+    <table class="t-table">
+      <thead><tr><th>Location</th><th>License Key</th><th>Tier</th><th>Registers</th><th>Status</th><th>Permissions</th><th></th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="7" style="text-align:center;color:var(--faint);padding:24px">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  
+  <div class="overlay" id="gate">
+    <div class="panel">
+      <h2 id="gateTitle">Owner access</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px" id="gateMsg">Enter your Owner PIN.</p>
+      <div class="fg" id="pinFg"><label>Owner PIN</label><input type="password" id="gatePin" /></div>
+      <div class="fg" id="secretFg" style="display:none"><label>Admin secret</label><input type="password" id="gateSecret" placeholder="the ADMIN_SECRET set on the admin function" /></div>
+      <button class="btn btn-navy" style="width:100%" id="gateBtn" onclick="gateSubmit()">Unlock</button>
+      <div class="msg error" id="gateErr" style="display:none;background:var(--bad-dim);color:var(--bad);border-radius:8px;padding:9px 12px;font-size:13px;margin-top:10px"></div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="editModal" style="display:none">
+    <div class="panel">
+      <h2 id="editTitle">New Location</h2>
+      <input type="hidden" id="editKey" />
+      <div class="fg" id="bizFg"><label>Business</label>
+        <select id="fBusiness"><option value="">➕ New business</option></select>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Attach this location to an existing business so it rolls up in that business's reports, or start a new one. Locations stay isolated from each other — only the registers <em>within</em> a location share customers &amp; inventory.</div>
+      </div>
+      <div class="fg"><label>Location name</label><input type="text" id="fName" placeholder="Acme Vape — Main St" /></div>
+      <div class="fg"><label>Tier</label><select id="fTier"><option>core</option><option selected>standard</option><option>pro</option><option>enterprise</option></select></div>
+      <div class="fg"><label>Machines (seats)</label><input type="number" id="fSeats" min="1" value="1" /></div>
+      <div class="fg"><label style="margin-bottom:8px">Permissions</label><div class="feat-grid" id="featGrid"></div></div>
+      <div class="fg"><label style="display:flex;align-items:center;gap:8px;text-transform:none"><input type="checkbox" id="fActive" checked style="width:auto" /> Active</label></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-gray" onclick="document.getElementById('editModal').style.display='none'">Cancel</button>
+        <button class="btn btn-navy" id="editSave" onclick="saveTenant()">Save</button>
+      </div>
+      <div id="createdKey" style="display:none;margin-top:14px;background:var(--good-dim);color:var(--good);border-radius:8px;padding:12px;font-size:14px"></div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="managerModal" style="display:none">
+    <div class="panel">
+      <h2>New Manager Code</h2>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">A manager code is tenant-wide: it opens the Manager Portal for a whole business (all its locations) — reports, inventory &amp; customers across every store. It is not a POS and uses no register seat.</p>
+      <div class="fg"><label>Business</label>
+        <select id="mgrBusiness"></select>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">The manager oversees every location in this business.</div>
+      </div>
+      <div class="fg"><label>Label (optional)</label><input type="text" id="mgrName" placeholder="e.g. District Manager" /></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-gray" onclick="document.getElementById('managerModal').style.display='none'">Cancel</button>
+        <button class="btn btn-navy" id="mgrSave" onclick="saveManager()">Create code</button>
+      </div>
+      <div id="mgrCreatedKey" style="display:none;margin-top:14px;background:var(--loyalty-dim);color:var(--loyalty);border-radius:8px;padding:12px;font-size:14px"></div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="mfrModal" style="display:none">
+    <div class="panel" style="max-width:640px">
+      <h2>Rebate SFTP — <span id="mfrBiz"></span></h2>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">SFTP endpoints the weekly scan-data files are delivered to, per manufacturer. Passwords/keys are stored encrypted in Vault — leave the password blank to keep the existing one.</p>
+      <input type="hidden" id="mfrTenant" />
+      <div id="mfrList"><div style="color:var(--faint);padding:16px">Loading…</div></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px">
+        <button class="btn btn-gray" onclick="document.getElementById('mfrModal').style.display='none'">Close</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="adsModal" style="display:none">
+    <div class="panel">
+      <h2 id="adsTitle">Ads</h2>
+      <input type="hidden" id="adsKey" />
+      <div class="fg"><label style="display:flex;align-items:center;gap:8px;text-transform:none"><input type="checkbox" id="adsEnabled" style="width:auto" /> Show ads on this tenant's customer display</label></div>
+      <div class="fg"><label>Ad images / GIFs (each fills the whole screen)</label><div id="adsList"></div><button type="button" class="rowbtn" style="margin-top:6px" onclick="addAdSlide()">+ Add image</button></div>
+      <div class="fg" style="max-width:200px"><label>Rotate every (seconds)</label><input type="number" id="adsInterval" min="3" max="60" value="8" /></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-gray" onclick="document.getElementById('adsModal').style.display='none'">Cancel</button>
+        <button class="btn btn-navy" id="adsSave" onclick="saveAds()">Save Ads</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="storesModal" style="display:none">
+    <div class="modal" style="max-width:920px;width:96%;max-height:88vh;overflow-y:auto">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <h2 style="margin:0">All Stores</h2>
+        <select id="stRange" onchange="loadStores()" style="margin-left:auto;border:1px solid var(--line);border-radius:6px;padding:6px 10px">
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="1">Today</option>
+        </select>
+        <button class="btn btn-gray" onclick="document.getElementById('storesModal').style.display='none'">Close</button>
+      </div>
+      <div id="stCombined" style="margin:8px 0 14px"></div>
+      <div id="stStores"></div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="billModal" style="display:none">
+    <div class="modal" style="max-width:520px;width:96%">
+      <h2 id="billTitle" style="margin:0 0 6px">Billing</h2>
+      <input type="hidden" id="billKey" />
+      <div id="billStatus" style="font-size:13px;color:var(--ink-2);margin-bottom:14px">Loading…</div>
+
+      <div style="border-top:1px solid var(--line);padding-top:12px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px">Start / change subscription</div>
+        <div class="fg" style="display:flex;gap:10px">
+          <select id="billPlan" style="flex:1"><option value="core">Core — $99/mo · $990/yr</option><option value="standard" selected>Standard — $149/mo · $1,490/yr</option><option value="pro">Pro — $199/mo · $1,990/yr</option></select>
+          <select id="billCycle" style="width:140px"><option value="monthly">Monthly</option><option value="annual">Annual (save 2 mo)</option></select>
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin:4px 0 12px">14-day free trial, card required. Opens Stripe Checkout in your browser.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-navy" id="billCheckoutBtn" onclick="billCheckout()">Start / Change plan →</button>
+          <button class="btn btn-gray" onclick="billPortal()">Manage billing (portal)</button>
+          <div style="flex:1"></div>
+          <button class="btn btn-gray" onclick="document.getElementById('billModal').style.display='none'">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script>
+    const FEATURES = [
+      ['cloud_access','Cloud access'],['ad_free','Ad-free'],['inventory_management','Inventory management'],
+      ['rebate_reporting','Automated rebate reporting'],['sms_marketing','SMS marketing'],['loyalty','Loyalty & rewards'],
+      ['promotions','Promotions'],['advanced_reports','Advanced reports'],['reports_app','Phone reports app'],['web_store','Online store'],
+    ];
+    const FEATLABEL = Object.fromEntries(FEATURES);
+    let ownerPin = null;
+
+    
+    document.getElementById('featGrid').innerHTML = FEATURES.map(([id,label]) =>
+      `<label><input type="checkbox" class="feat" value="${id}" /> ${label}</label>`).join('');
+
+    
+    async function gateSubmit() {
+      const err = document.getElementById('gateErr'); err.style.display = 'none';
+      const pin = document.getElementById('gatePin').value.trim();
+      if (!ownerPin) {
+        const v = await window.api.ownerVerifyPin(pin);
+        if (!v.success) { err.textContent = 'Incorrect Owner PIN.'; err.style.display='block'; return; }
+        ownerPin = pin;
+        const hs = await window.api.adminHasSecret();
+        if (!hs.hasSecret) {
+          document.getElementById('gateTitle').textContent = 'Admin secret';
+          document.getElementById('gateMsg').textContent = 'Enter the ADMIN_SECRET you set on the admin function (one time).';
+          document.getElementById('pinFg').style.display = 'none';
+          document.getElementById('secretFg').style.display = 'block';
+          document.getElementById('gateBtn').textContent = 'Save & Unlock';
+          return;
+        }
+        return unlock();
+      }
+      
+      const secret = document.getElementById('gateSecret').value.trim();
+      if (!secret) { err.textContent = 'Enter the admin secret.'; err.style.display='block'; return; }
+      const r = await window.api.adminSetSecret(ownerPin, secret);
+      if (!r.success) { err.textContent = r.error || 'Failed.'; err.style.display='block'; return; }
+      unlock();
+    }
+    function unlock() { document.getElementById('gate').style.display = 'none'; loadTenants(); }
+
+    
+    const FLAG_LABEL = { revenue_down_wow: '📉 Revenue down >20% WoW', high_void_rate: '⚠ Void rate >5%', no_sales_24h: '💤 No sales in 24h' };
+    
+    async function openBilling(key, name) {
+      document.getElementById('billKey').value = key;
+      document.getElementById('billTitle').textContent = 'Billing — ' + name;
+      document.getElementById('billStatus').innerHTML = 'Loading…';
+      document.getElementById('billModal').style.display = 'flex';
+      const r = await window.api.billingStatus(key);
+      const el = document.getElementById('billStatus');
+      if (!r.success) { el.innerHTML = `<span style="color:var(--bad)">${esc(r.error)}</span>`; return; }
+      const b = r.billing || {};
+      if (!b.subscription_status) { el.innerHTML = 'No subscription yet — start one below.'; return; }
+      const badge = { active:'var(--good)', trialing:'var(--loyalty)', past_due:'var(--warn)', suspended:'var(--accent)', canceled:'var(--muted)' }[b.subscription_status] || 'var(--ink-2)';
+      el.innerHTML =
+        `Status: <strong style="color:${badge}">${esc(b.subscription_status)}</strong>` +
+        (b.plan ? ` · Plan: <strong>${esc(b.plan)}</strong>${b.billing_cycle ? ' ('+esc(b.billing_cycle)+')' : ''}` : '') +
+        (b.current_period_end ? `<br>Renews: ${new Date(b.current_period_end).toLocaleDateString()}` : '') +
+        (b.trial_ends_at ? ` · Trial ends: ${new Date(b.trial_ends_at).toLocaleDateString()}` : '') +
+        (b.grace_until ? `<br><span style="color:var(--warn)">Past due — grace until ${new Date(b.grace_until).toLocaleDateString()}</span>` : '') +
+        (b.active === false ? `<br><span style="color:var(--bad)">POS is read-only until billing is resolved.</span>` : '');
+    }
+    async function billCheckout() {
+      const btn = document.getElementById('billCheckoutBtn'); btn.disabled = true;
+      const r = await window.api.billingCheckout({
+        license_key: document.getElementById('billKey').value,
+        plan: document.getElementById('billPlan').value,
+        cycle: document.getElementById('billCycle').value,
+      });
+      btn.disabled = false;
+      showToast(r.success ? 'Opening Stripe Checkout in your browser…' : (r.error || 'Failed'), r.success ? 'success' : 'error');
+    }
+    async function billPortal() {
+      const r = await window.api.billingPortal(document.getElementById('billKey').value);
+      showToast(r.success ? 'Opening billing portal…' : (r.error || 'Failed'), r.success ? 'success' : 'error');
+    }
+
+    function openStores() { document.getElementById('storesModal').style.display = 'flex'; loadStores(); }
+    async function loadStores() {
+      const days = parseInt(document.getElementById('stRange').value, 10) || 7;
+      const end = new Date();
+      const start = new Date(Date.now() - days * 86400000);
+      document.getElementById('stStores').innerHTML = '<div style="color:var(--faint);padding:20px;text-align:center">Loading…</div>';
+      const r = await window.api.adminAggregate({ start: start.toISOString(), end: end.toISOString() });
+      if (!r.success) { document.getElementById('stStores').innerHTML = `<div style="color:var(--bad);padding:16px">${esc(r.error)}</div>`; return; }
+
+      const c = r.combined || {};
+      document.getElementById('stCombined').innerHTML =
+        `<div style="display:flex;gap:12px;flex-wrap:wrap">
+          <div style="background:var(--info-dim);border:1px solid var(--info-dim);border-radius:10px;padding:12px 18px"><div style="font-size:22px;font-weight:800">$${(c.revenue||0).toFixed(2)}</div><div style="font-size:12px;color:var(--muted)">Combined revenue</div></div>
+          <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:12px 18px"><div style="font-size:22px;font-weight:800">${c.transaction_count||0}</div><div style="font-size:12px;color:var(--muted)">Transactions</div></div>
+          <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:12px 18px"><div style="font-size:22px;font-weight:800">$${(c.avg_transaction_value||0).toFixed(2)}</div><div style="font-size:12px;color:var(--muted)">Avg ticket</div></div>
+          <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:12px 18px"><div style="font-size:22px;font-weight:800">${c.store_count||0}</div><div style="font-size:12px;color:var(--muted)">Stores</div></div>
+        </div>`;
+
+      const stores = r.stores || [];
+      document.getElementById('stStores').innerHTML = stores.length === 0
+        ? '<div style="color:var(--faint);padding:20px;text-align:center">No stores / no cloud data yet.</div>'
+        : stores.map(s => {
+            const flags = (s.flags || []).map(f => `<span style="display:inline-block;font-size:11px;font-weight:700;background:var(--bad-dim);color:var(--bad);border-radius:10px;padding:2px 8px;margin:2px 4px 0 0">${esc(FLAG_LABEL[f] || f)}</span>`).join('');
+            const top = (s.top_5_skus || []).map(p => `<div style="font-size:12px;color:var(--ink-2)">${esc(p.name || 'Item')} <span style="color:var(--faint)">×${p.units}</span></div>`).join('') || '<div style="font-size:12px;color:var(--faint)">—</div>';
+            return `<div style="border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;${s.active?'':'opacity:.6'}">
+              <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+                <strong style="font-size:16px">${esc(s.store_name)}</strong>
+                ${s.active ? '' : '<span style="font-size:11px;color:var(--bad)">inactive</span>'}
+                <span style="margin-left:auto;font-size:20px;font-weight:800">$${(s.revenue||0).toFixed(2)}</span>
+              </div>
+              <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:6px;font-size:13px;color:var(--muted)">
+                <span>${s.transaction_count} sales</span><span>avg $${(s.avg_transaction_value||0).toFixed(2)}</span>
+                <span>${s.refund_count} refunds</span>
+                <span>last sale: ${s.last_txn_at ? new Date(s.last_txn_at).toLocaleString() : '—'}</span>
+              </div>
+              <div style="margin-top:8px;display:flex;gap:24px;flex-wrap:wrap">
+                <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Top SKUs</div>${top}</div>
+              </div>
+              ${flags ? `<div style="margin-top:8px">${flags}</div>` : ''}
+            </div>`;
+          }).join('');
+    }
+
+    
+    async function loadTenants() {
+      const tb = document.getElementById('tbody');
+      tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:24px">Loading…</td></tr>';
+      const r = await window.api.adminList();
+      if (!r.success) { tb.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--bad);padding:24px">${esc(r.error||'Failed')}</td></tr>`; return; }
+      const list = r.licenses || [];
+      if (!list.length) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:24px">No locations yet. Click “New Location”.</td></tr>'; return; }
+
+      
+      
+      const byTenant = {};
+      for (const l of list) { if (l.kind === 'manager') continue; (byTenant[l.tenant_id] ||= []).push(l.location_name || l.name || 'Location'); }
+      window._tenants = Object.entries(byTenant).map(([tid, names]) => ({ tenant_id: tid, label: names.join(' · ') }));
+
+      tb.innerHTML = list.map(l => {
+        const isMgr = l.kind === 'manager';
+        const siblings = (byTenant[l.tenant_id] || []).length;
+        const bizHint = siblings > 1
+          ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">🏢 Business: ${esc((byTenant[l.tenant_id]||[]).filter(Boolean).join(' · '))}</div>`
+          : '';
+        const mgrBadge = isMgr ? ' <span class="pill" style="background:var(--loyalty-dim);color:var(--loyalty)">Manager</span>' : '';
+        return `
+        <tr>
+          <td><strong>${esc(l.location_name||l.name||'—')}</strong>${mgrBadge}${bizHint}</td>
+          <td class="keycell">${esc(l.license_key)} <button class="rowbtn" onclick="copyKey('${esc(l.license_key)}')">Copy</button></td>
+          <td><span class="pill tier">${esc(l.tier||'—')}</span></td>
+          <td>${isMgr ? '—' : (l.used_registers||0) + ' / ' + (l.max_registers||1)}</td>
+          <td><span class="pill ${l.active?'on':'off'}">${l.active?'Active':'Inactive'}</span></td>
+          <td>${(l.features||[]).map(f=>`<span class="chip">${esc(FEATLABEL[f]||f)}</span>`).join('') || '<span style="color:var(--faint)">none</span>'}</td>
+          <td style="white-space:nowrap;text-align:right">
+            <button class="rowbtn" onclick='openEdit(${JSON.stringify(l)})'>Edit</button>
+            <button class="rowbtn" onclick='openAds(${JSON.stringify(l)})'>Ads</button>
+            <button class="rowbtn" onclick="openBilling('${esc(l.license_key)}','${esc(l.name||l.license_key)}')">Billing</button>
+            ${isMgr ? '' : `<button class="rowbtn" onclick="openMfrCreds('${esc(l.tenant_id)}','${esc((byTenant[l.tenant_id]||[]).filter(Boolean).join(' · ') || l.name || 'Business')}')">SFTP</button>`}
+            <button class="rowbtn danger" onclick="delTenant('${esc(l.license_key)}','${esc(l.name||l.license_key)}')">Delete</button>
+          </td>
+        </tr>`; }).join('');
+    }
+
+    function copyKey(k) { navigator.clipboard.writeText(k); showToast('Key copied', 'success', 1500); }
+
+    
+    function openEdit(l) {
+      document.getElementById('editTitle').textContent = l ? 'Edit Location' : 'New Location';
+      document.getElementById('editKey').value = l ? l.license_key : '';
+      document.getElementById('fName').value = l ? (l.location_name||l.name||'') : '';
+      document.getElementById('fTier').value = l ? (l.tier||'standard') : 'standard';
+      document.getElementById('fSeats').value = l ? (l.max_registers||1) : 1;
+      document.getElementById('fActive').checked = l ? !!l.active : true;
+      const feats = new Set(l ? (l.features||[]) : []);
+      document.querySelectorAll('.feat').forEach(c => { c.checked = feats.has(c.value); });
+
+      
+      
+      const bizFg = document.getElementById('bizFg');
+      const sel = document.getElementById('fBusiness');
+      if (l) {
+        bizFg.style.display = 'none';
+      } else {
+        bizFg.style.display = 'block';
+        sel.innerHTML = '<option value="">➕ New business</option>' +
+          (window._tenants||[]).map(t => `<option value="${esc(t.tenant_id)}">${esc(t.label)}</option>`).join('');
+        sel.value = '';
+      }
+
+      document.getElementById('createdKey').style.display = 'none';
+      document.getElementById('editModal').style.display = 'flex';
+    }
+
+    async function saveTenant() {
+      const key = document.getElementById('editKey').value;
+      const locName = document.getElementById('fName').value.trim();
+      const payload = {
+        name: locName,
+        location_name: locName,
+        tier: document.getElementById('fTier').value,
+        max_registers: parseInt(document.getElementById('fSeats').value,10) || 1,
+        active: document.getElementById('fActive').checked,
+        features: Array.from(document.querySelectorAll('.feat:checked')).map(c=>c.value),
+      };
+      const btn = document.getElementById('editSave'); btn.disabled = true; btn.textContent = 'Saving…';
+      let r;
+      if (key) { payload.license_key = key; r = await window.api.adminUpdate(payload); }
+      else {
+        
+        const biz = document.getElementById('fBusiness').value;
+        if (biz) payload.tenant_id = biz;
+        r = await window.api.adminCreate(payload);
+      }
+      btn.disabled = false; btn.textContent = 'Save';
+      if (!r.success) { showToast(r.error || 'Failed', 'error'); return; }
+      if (!key && r.license) {
+        const ck = document.getElementById('createdKey');
+        ck.innerHTML = `Created. License key:<br><strong style="font-family:ui-monospace,monospace;font-size:16px">${esc(r.license.license_key)}</strong> <button class="rowbtn" onclick="copyKey('${esc(r.license.license_key)}')">Copy</button>`;
+        ck.style.display = 'block';
+        loadTenants();
+      } else {
+        document.getElementById('editModal').style.display = 'none';
+        showToast('Saved', 'success'); loadTenants();
+      }
+    }
+
+    
+    function openManager() {
+      const sel = document.getElementById('mgrBusiness');
+      const tenants = window._tenants || [];
+      if (!tenants.length) { showToast('Create a location first, then add a manager for that business.', 'warning'); return; }
+      sel.innerHTML = tenants.map(t => `<option value="${esc(t.tenant_id)}">${esc(t.label)}</option>`).join('');
+      document.getElementById('mgrName').value = '';
+      document.getElementById('mgrCreatedKey').style.display = 'none';
+      document.getElementById('managerModal').style.display = 'flex';
+    }
+    async function saveManager() {
+      const tenant_id = document.getElementById('mgrBusiness').value;
+      if (!tenant_id) { showToast('Pick a business', 'warning'); return; }
+      const btn = document.getElementById('mgrSave'); btn.disabled = true; btn.textContent = 'Creating…';
+      const r = await window.api.adminCreate({
+        kind: 'manager', tenant_id,
+        name: document.getElementById('mgrName').value.trim() || 'Manager',
+      });
+      btn.disabled = false; btn.textContent = 'Create code';
+      if (!r.success || !r.license) { showToast(r.error || 'Failed', 'error'); return; }
+      const ck = document.getElementById('mgrCreatedKey');
+      ck.innerHTML = `Manager code created:<br><strong style="font-family:ui-monospace,monospace;font-size:16px">${esc(r.license.license_key)}</strong> <button class="rowbtn" onclick="copyKey('${esc(r.license.license_key)}')">Copy</button><br><span style="font-size:12px">Enter this in the Manager Portal app.</span>`;
+      ck.style.display = 'block';
+      loadTenants();
+    }
+
+    
+    async function openMfrCreds(tenantId, biz) {
+      document.getElementById('mfrTenant').value = tenantId;
+      document.getElementById('mfrBiz').textContent = biz || '';
+      document.getElementById('mfrList').innerHTML = '<div style="color:var(--faint);padding:16px">Loading…</div>';
+      document.getElementById('mfrModal').style.display = 'flex';
+      const r = await window.api.adminMfrList(tenantId);
+      if (!r.success) { document.getElementById('mfrList').innerHTML = `<div style="color:var(--bad);padding:16px">${esc(r.error||'Failed')}</div>`; return; }
+      const mfrs = r.manufacturers || [];
+      document.getElementById('mfrList').innerHTML = mfrs.map(m => {
+        const c = m.cred || {};
+        return `<div style="border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px">
+          <div style="font-weight:700;margin-bottom:8px">${esc(m.name)} <span class="pill tier">${esc(m.parent_company_code||'')}</span> ${c.has_secret ? '<span class="pill on">key set</span>' : '<span class="pill off">no key</span>'}</div>
+          <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px">
+            <input placeholder="SFTP host" id="h_${m.uid}" value="${esc(c.sftp_host||'')}" />
+            <input placeholder="Port" id="p_${m.uid}" value="${esc(c.sftp_port||22)}" />
+            <input placeholder="Username" id="u_${m.uid}" value="${esc(c.sftp_user||'')}" />
+            <input placeholder="Remote dir" id="d_${m.uid}" value="${esc(c.remote_dir||'.')}" />
+            <input placeholder="Password / key (blank = keep)" id="s_${m.uid}" type="password" style="grid-column:1/3" />
+          </div>
+          <div style="text-align:right;margin-top:8px"><button class="btn btn-navy" onclick="saveMfrCred('${esc(m.uid)}')">Save ${esc(m.name)}</button></div>
+        </div>`;
+      }).join('') || '<div style="color:var(--faint);padding:16px">No manufacturers seeded for this business.</div>';
+    }
+    async function saveMfrCred(uid) {
+      const g = (p) => document.getElementById(p + uid).value.trim();
+      const r = await window.api.adminSetMfrCred({
+        tenant_id: document.getElementById('mfrTenant').value,
+        manufacturer_uid: uid,
+        sftp_host: g('h_'), sftp_port: parseInt(g('p_'), 10) || 22, sftp_user: g('u_'),
+        remote_dir: g('d_') || '.', sftp_secret: g('s_') || undefined,
+      });
+      showToast(r.success ? 'SFTP credentials saved' : (r.error || 'Failed'), r.success ? 'success' : 'error');
+      if (r.success) openMfrCreds(document.getElementById('mfrTenant').value, document.getElementById('mfrBiz').textContent);
+    }
+
+    async function delTenant(key, name) {
+      if (!confirm(`Delete location “${name}”? This removes its code, frees all its registers, and deletes the location. This cannot be undone.`)) return;
+      const r = await window.api.adminDelete(key);
+      if (!r.success) { showToast(r.error || 'Failed', 'error'); return; }
+      showToast('Location deleted', 'success'); loadTenants();
+    }
+
+    
+    function adRow(slide) {
+      slide = slide || {};
+      const row = document.createElement('div');
+      row.className = 'ad-slide-row';
+      row.style.cssText = 'border:1px solid var(--line);border-radius:8px;padding:9px;margin-bottom:7px;background:var(--panel-2)';
+      row.innerHTML =
+        '<div style="display:flex;gap:6px;align-items:center">' +
+        '<input type="text" class="ad-i" placeholder="Image or GIF URL — fills the whole screen" style="flex:1;padding:7px" />' +
+        '<button type="button" class="rowbtn danger" onclick="this.closest(\'.ad-slide-row\').remove()">×</button></div>';
+      row.querySelector('.ad-i').value = slide.image || '';
+      return row;
+    }
+    function addAdSlide(slide) { document.getElementById('adsList').appendChild(adRow(slide)); }
+    function collectAds() {
+      return Array.from(document.querySelectorAll('#adsList .ad-slide-row')).map(r => ({
+        image: r.querySelector('.ad-i').value.trim(),
+      })).filter(s => s.image);
+    }
+    function openAds(l) {
+      document.getElementById('adsTitle').textContent = 'Ads — ' + (l.name || l.license_key);
+      document.getElementById('adsKey').value = l.license_key;
+      const dc = l.display_config || {};
+      document.getElementById('adsEnabled').checked = !!dc.promo_enabled;
+      document.getElementById('adsInterval').value = dc.ads_interval || 8;
+      const list = document.getElementById('adsList'); list.innerHTML = '';
+      const ads = Array.isArray(dc.ads) ? dc.ads : [];
+      if (ads.length) ads.forEach(addAdSlide); else addAdSlide();
+      document.getElementById('adsModal').style.display = 'flex';
+    }
+    async function saveAds() {
+      const key = document.getElementById('adsKey').value;
+      const cfg = {
+        promo_enabled: document.getElementById('adsEnabled').checked,
+        ads: collectAds(),
+        ads_interval: parseInt(document.getElementById('adsInterval').value, 10) || 8,
+      };
+      const btn = document.getElementById('adsSave'); btn.disabled = true; btn.textContent = 'Saving…';
+      const r = await window.api.adminSetAds(key, cfg);
+      btn.disabled = false; btn.textContent = 'Save Ads';
+      if (!r.success) { showToast(r.error || 'Failed', 'error'); return; }
+      document.getElementById('adsModal').style.display = 'none';
+      showToast('Ads saved', 'success'); loadTenants();
+    }
+
+    document.getElementById('gatePin').addEventListener('keydown', e => { if (e.key==='Enter') gateSubmit(); });
+    document.getElementById('gateSecret').addEventListener('keydown', e => { if (e.key==='Enter') gateSubmit(); });
+    document.getElementById('gatePin').focus();
+  </script>
+</body>
+</html>

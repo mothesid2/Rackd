@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Rebate Rules</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    .page-layout { padding: 24px; padding-bottom: 72px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    .top-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .rule-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .rule-table th { text-align: left; padding: 9px 10px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border-bottom: 2px solid var(--line); }
+    .rule-table td { padding: 10px; border-bottom: 1px solid var(--line-soft); }
+    .rule-table tbody tr.off td { opacity: .5; }
+    .pill { display: inline-block; border-radius: 20px; padding: 2px 10px; font-size: 11px; font-weight: 700; }
+    .pill.on { background: var(--good-dim); color: var(--good); } .pill.off { background: var(--panel-2); color: var(--muted); }
+    .pill.mfr { background: var(--loyalty-dim); color: var(--loyalty); }
+    .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--info-dim); color: var(--info); border-radius: 16px; padding: 3px 10px; font-size: 12px; margin: 2px 4px 2px 0; }
+    .chip button { border: none; background: none; color: var(--info); cursor: pointer; font-weight: 800; }
+    .rowbtn { background: var(--line-soft); border: 1px solid var(--line); border-radius: 7px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+    .mgr-block { background: var(--bad-dim); color: var(--bad); border-radius: 8px; padding: 14px; }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('settings')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Rebate Rules</h1>
+      <div class="spacer"></div>
+      <button class="btn btn-navy" id="newRuleBtn" onclick="openRule(null)">+ New Rule</button>
+    </div>
+
+    <div id="mgrBlock" class="mgr-block" style="display:none">Rebate rules are restricted to management.</div>
+
+    <div class="card" id="rulesCard" style="flex:1;overflow:auto">
+      <table class="rule-table">
+        <thead><tr><th>Rule</th><th>Manufacturer</th><th>Type</th><th>Qualifies</th><th>Discount</th><th>Window</th><th>Status</th><th></th></tr></thead>
+        <tbody id="ruleBody"><tr><td colspan="8" style="text-align:center;color:var(--faint);padding:24px">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="ruleModal" style="display:none">
+    <div class="modal" style="max-width:520px">
+      <button class="modal-close" onclick="closeModal('ruleModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title" id="ruleTitle">New Rule</div>
+      <input type="hidden" id="rUid" />
+      <div class="form-group"><label>Rule name *</label><input type="text" id="rName" placeholder="Camel Blue BOGO $1 off" /></div>
+      <div class="form-row">
+        <div class="form-group" style="flex:1"><label>Manufacturer</label><select id="rMfr"></select></div>
+        <div class="form-group" style="flex:1"><label>Rule type</label>
+          <select id="rType">
+            <option value="flat_discount">Flat discount</option>
+            <option value="bogo_discount">BOGO discount</option>
+            <option value="multi_pack_discount">Multi-pack discount</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Qualifying SKUs / barcodes *</label>
+        <input type="text" id="rSkuInput" placeholder="Scan or type a barcode, press Enter" />
+        <div id="rSkuChips" style="margin-top:6px"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="max-width:130px"><label>Qualifying qty</label><input type="number" id="rQty" min="1" value="2" /></div>
+        <div class="form-group" style="max-width:150px"><label>Discount</label><input type="text" inputmode="decimal" id="rAmt" value="1.00" /></div>
+        <div class="form-group" style="max-width:130px"><label>Discount type</label><select id="rDType"><option value="flat">$ flat</option><option value="percent">% percent</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="flex:1"><label>Active from</label><input type="date" id="rStart" /></div>
+        <div class="form-group" style="flex:1"><label>Active to</label><input type="date" id="rEnd" /></div>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none"><input type="checkbox" id="rFunded" checked style="width:auto" /> Manufacturer-funded (counts toward scan-data reports)</label>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Also decides the discount's tax treatment: manufacturer-funded rebates are taxed on the pre-discount price (the retailer is reimbursed, not the price actually lowered); off, the discount reduces the taxable price like a normal store coupon.</div>
+      </div>
+      <div class="form-group"><label style="display:flex;align-items:center;gap:8px;text-transform:none"><input type="checkbox" id="rActive" checked style="width:auto" /> Active</label></div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('ruleModal')">Cancel</button>
+        <button class="btn btn-navy" id="ruleSaveBtn" onclick="saveRule()">Save Rule</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar"><div class="status-left" id="status-left">Rebate Rules</div><div class="status-right" id="status-right"></div></div>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script>
+    let manufacturers = [];
+    let skuChips = [];
+    let rules = [];
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const session = (await window.api.getSession()).session;
+      if (session?.role !== 'manager') {
+        document.getElementById('mgrBlock').style.display = 'block';
+        document.getElementById('rulesCard').style.display = 'none';
+        document.getElementById('newRuleBtn').style.display = 'none';
+        return;
+      }
+      const m = await window.api.listManufacturers();
+      manufacturers = (m.success && m.manufacturers) || [];
+      document.getElementById('rMfr').innerHTML = '<option value="">— none —</option>' +
+        manufacturers.map(x => `<option value="${esc(x.uid)}">${esc(x.name)}</option>`).join('');
+      document.getElementById('rSkuInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); addSku(e.target.value); e.target.value = ''; }
+      });
+      loadRules();
+    });
+
+    function mfrName(uid) { const m = manufacturers.find(x => x.uid === uid); return m ? m.name : '—'; }
+    const TYPE_LABEL = { flat_discount: 'Flat', bogo_discount: 'BOGO', multi_pack_discount: 'Multi-pack' };
+
+    async function loadRules() {
+      const tb = document.getElementById('ruleBody');
+      const r = await window.api.listRebateRules();
+      if (!r.success) { tb.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--bad);padding:24px">${esc(r.error || 'Failed')}</td></tr>`; return; }
+      rules = r.rules || [];
+      renderRulesTable();
+    }
+    function renderRulesTable() {
+      const tb = document.getElementById('ruleBody');
+      if (!rules.length) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--faint);padding:24px">No rebate rules yet. Click “New Rule”.</td></tr>'; return; }
+      tb.innerHTML = rules.map(rule => {
+        const disc = rule.discount_type === 'percent' ? `${rule.discount_amount}%` : fmt(rule.discount_amount);
+        const win = (rule.active_start_date || '—') + ' → ' + (rule.active_end_date || '—');
+        return `<tr class="${rule.is_active ? '' : 'off'}">
+          <td><strong>${esc(rule.name)}</strong>${rule.is_manufacturer_funded ? '' : ' <span class="pill off">store-funded</span>'}</td>
+          <td>${rule.manufacturer_uid ? `<span class="pill mfr">${esc(rule.manufacturer_name || mfrName(rule.manufacturer_uid))}</span>` : '—'}</td>
+          <td>${TYPE_LABEL[rule.rule_type] || esc(rule.rule_type)}</td>
+          <td>${rule.qualifying_quantity} of ${(rule.qualifying_skus || []).length} SKU(s)</td>
+          <td>${esc(disc)}</td>
+          <td style="font-size:12px;color:var(--muted)">${esc(win)}</td>
+          <td><span class="pill ${rule.is_active ? 'on' : 'off'}">${rule.is_active ? 'Active' : 'Off'}</span></td>
+          <td style="white-space:nowrap;text-align:right">
+            <button class="rowbtn" onclick='openRule(${JSON.stringify(rule).replace(/'/g, "&#39;")})'>Edit</button>
+            <button class="rowbtn" onclick="toggleRule('${esc(rule.uid)}', ${rule.is_active ? 0 : 1})">${rule.is_active ? 'Deactivate' : 'Activate'}</button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    function renderChips() {
+      document.getElementById('rSkuChips').innerHTML = skuChips.map((s, i) =>
+        `<span class="chip">${esc(s)} <button onclick="removeSku(${i})">×</button></span>`).join('') || '<span style="font-size:12px;color:var(--faint)">No SKUs added yet</span>';
+    }
+    function addSku(v) { const s = String(v || '').trim(); if (s && !skuChips.includes(s)) { skuChips.push(s); renderChips(); } }
+    function removeSku(i) { skuChips.splice(i, 1); renderChips(); }
+
+    function openRule(rule) {
+      document.getElementById('ruleTitle').textContent = rule ? 'Edit Rule' : 'New Rule';
+      document.getElementById('rUid').value = rule ? rule.uid : '';
+      document.getElementById('rName').value = rule ? rule.name : '';
+      document.getElementById('rMfr').value = rule ? (rule.manufacturer_uid || '') : '';
+      document.getElementById('rType').value = rule ? rule.rule_type : 'flat_discount';
+      document.getElementById('rQty').value = rule ? rule.qualifying_quantity : 2;
+      document.getElementById('rAmt').value = rule ? rule.discount_amount : 1.0;
+      document.getElementById('rDType').value = rule ? rule.discount_type : 'flat';
+      document.getElementById('rStart').value = rule ? (rule.active_start_date || '') : '';
+      document.getElementById('rEnd').value = rule ? (rule.active_end_date || '') : '';
+      document.getElementById('rFunded').checked = rule ? !!rule.is_manufacturer_funded : true;
+      document.getElementById('rActive').checked = rule ? !!rule.is_active : true;
+      skuChips = rule ? (rule.qualifying_skus || []).slice() : [];
+      renderChips();
+      openModal('ruleModal');
+    }
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    async function saveRule() {
+      const input = document.getElementById('rSkuInput');
+      if (input.value.trim()) { addSku(input.value); input.value = ''; }
+      const isNew = !document.getElementById('rUid').value;
+      const rule = {
+        uid: document.getElementById('rUid').value || ('__pending__' + Date.now()),
+        name: document.getElementById('rName').value.trim(),
+        manufacturer_uid: document.getElementById('rMfr').value || null,
+        manufacturer_name: mfrName(document.getElementById('rMfr').value),
+        rule_type: document.getElementById('rType').value,
+        qualifying_skus: skuChips,
+        qualifying_quantity: parseInt(document.getElementById('rQty').value, 10) || 1,
+        discount_amount: parseFloat(document.getElementById('rAmt').value) || 0,
+        discount_type: document.getElementById('rDType').value,
+        is_manufacturer_funded: document.getElementById('rFunded').checked,
+        active_start_date: document.getElementById('rStart').value || null,
+        active_end_date: document.getElementById('rEnd').value || null,
+        is_active: document.getElementById('rActive').checked,
+      };
+      if (!rule.name) { showToast('Rule name is required', 'warning'); return; }
+      if (!rule.qualifying_skus.length) { showToast('Add at least one qualifying SKU', 'warning'); return; }
+
+      const snapshot = rules.slice();
+      const payload = { ...rule, uid: isNew ? undefined : rule.uid };
+
+      await RackdUI.optimistic(
+        null,
+        () => {
+          if (isNew) rules = [rule, ...rules];
+          else rules = rules.map((x) => (x.uid === rule.uid ? rule : x));
+          renderRulesTable();
+          closeModal('ruleModal');
+        },
+        () => window.api.saveRebateRule(payload),
+        () => { rules = snapshot; renderRulesTable(); },
+        'Could not save that rule — change was undone'
+      ).then(() => { showToast('Rebate rule saved', 'success'); loadRules(); }).catch(() => {});
+    }
+
+    async function toggleRule(uid, active) {
+      const snapshot = rules.slice();
+      await RackdUI.optimistic(
+        null,
+        () => { rules = rules.map((x) => (x.uid === uid ? { ...x, is_active: !!active } : x)); renderRulesTable(); },
+        () => window.api.setRebateRuleActive(uid, !!active),
+        () => { rules = snapshot; renderRulesTable(); },
+        'Could not update that rule — change was undone'
+      ).then(() => showToast(active ? 'Rule activated' : 'Rule deactivated', 'success')).catch(() => {});
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Online Pickups</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    .page-layout { padding: 24px; padding-bottom: 72px; max-width: 940px; margin: 0 auto; height: 100vh; overflow-y: auto; }
+    .queue { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+    .ord { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+    .ord .head { display: flex; align-items: center; justify-content: space-between; }
+    .ord .num { font-weight: 800; font-size: 16px; }
+    .ord .items { font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+    .ord .tot { margin-top: 6px; font-weight: 700; }
+    .ord .meta { color: var(--faint); font-size: 12px; }
+    .ord .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .pill { display: inline-block; border-radius: 20px; padding: 2px 10px; font-size: 11px; font-weight: 700; }
+    .pill.new { background: var(--bad-dim); color: var(--bad); }
+    .pill.preparing { background: var(--warn-dim); color: var(--warn); }
+    .pill.ready { background: var(--good-dim); color: var(--good); }
+    .abtn { border: none; border-radius: 9px; padding: 9px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .abtn.prep { background: var(--ink); color: var(--panel); }
+    .abtn.ready { background: var(--good); color: var(--panel); }
+    .abtn.pickup { background: #6f7d5a; color: var(--panel); }
+    .abtn.cancel { background: var(--line-soft); color: var(--bad); }
+    .empty { text-align: center; color: var(--faint); padding: 60px 0; }
+    .idbox { border: 2px solid var(--bad); background: var(--bad-dim); border-radius: 12px; padding: 16px; margin: 12px 0; }
+    .idbox label { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; cursor: pointer; }
+    .idbox input { width: 20px; height: 20px; margin-top: 1px; }
+    .who { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('main-menu')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Online Pickups</h1>
+      <button class="btn btn-gray" style="margin-left:auto" onclick="load()">Refresh</button>
+    </div>
+
+    <div id="queue" class="queue"><div class="empty">Loading…</div></div>
+  </div>
+
+  
+  <div class="modal-overlay" id="pickModal" style="display:none">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-title">Complete pickup</div>
+      <div id="pickSummary" style="font-size:14px;color:var(--ink-2);margin:6px 0 4px"></div>
+      <div class="idbox">
+        <label>
+          <input type="checkbox" id="idChecked" />
+          <span><strong>I checked a valid government ID in person and the customer is 21 or older.</strong>
+          This confirmation is recorded against your login.</span>
+        </label>
+      </div>
+      <div class="who" id="pickWho"></div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closePick()">Cancel</button>
+        <button class="btn btn-navy" id="pickConfirm" onclick="confirmPickup()" disabled>Confirm pickup</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="cancelModal" style="display:none">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-title">Can't fulfill this order?</div>
+      <div style="font-size:14px;color:var(--ink-2);margin:6px 0 12px">
+        This <strong>refunds the customer's card</strong> and returns the items to stock. Choose why:
+      </div>
+      <select id="cancelReason" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:14px">
+        <option value="out_of_stock">Out of stock</option>
+        <option value="item_damaged">Item damaged / not sellable</option>
+        <option value="id_compliance">ID / compliance issue</option>
+        <option value="store_closing">Store closing / can't prepare in time</option>
+        <option value="other">Other</option>
+      </select>
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn btn-gray" onclick="closeCancel()">Keep order</button>
+        <button class="btn" style="background:var(--bad);color:var(--panel)" id="cancelConfirm" onclick="confirmCancel()">Refund &amp; cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar"><div class="status-left">Online Pickups</div><div class="status-right" id="empName"></div></div>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script>
+    let orders = [];
+    let pickId = null;
+    let myRole = null;         
+    let cancelId = null;       
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      if (!(await enforceMenuAccess('access_pickups'))) return;
+      await loadFeatures();
+      if (!isFeatureEnabled('web_store')) { window.api.navigate('main-menu'); return; }
+      const s = await window.api.getSession();
+      if (s && s.success && s.session) {
+        myRole = s.session.role || null;
+        document.getElementById('empName').textContent = 'Signed in: ' + (s.session.username || '');
+      }
+      load();
+    });
+
+    async function load() {
+      const r = await window.api.storefrontQueue();
+      const q = document.getElementById('queue');
+      if (!r.success) { q.innerHTML = `<div class="empty">${esc(r.error || 'Could not load orders')}</div>`; return; }
+      orders = r.orders || [];
+      if (!orders.length) { q.innerHTML = '<div class="empty">No online orders waiting.</div>'; return; }
+      q.innerHTML = orders.map(card).join('');
+    }
+
+    function card(o) {
+      const items = (o.online_order_items || []).map(i => `${i.qty}× ${esc(i.name || '')}`).join(', ');
+      const st = ['new','preparing','ready'].includes(o.status) ? o.status : 'new';
+      const label = st === 'new' ? 'New' : st === 'preparing' ? 'Preparing' : 'Ready';
+      let next = '';
+      if (st === 'new') next = `<button class="abtn prep" onclick="advance('${o.id}','preparing')">Start preparing</button>`;
+      else if (st === 'preparing') next = `<button class="abtn ready" onclick="advance('${o.id}','ready')">Mark ready</button>`;
+      
+      const canRefund = myRole === 'manager' || myRole === 'admin';
+      const cancelBtn = canRefund
+        ? `<button class="abtn cancel" onclick="openCancel('${o.id}')">Can't fulfill</button>`
+        : '';
+      return `
+        <div class="ord">
+          <div class="head"><span class="num">#${esc(o.order_number)}</span><span class="pill ${st}">${label}</span></div>
+          <div class="items">${items || '<span class="meta">—</span>'}</div>
+          <div class="tot">${money(o.total)} <span class="meta">· ${fmtWhen(o.created_at)}</span></div>
+          <div class="actions">
+            ${next}
+            <button class="abtn pickup" onclick="openPick('${o.id}')">Hand off (check ID)</button>
+            ${cancelBtn}
+          </div>
+        </div>`;
+    }
+
+    function money(n) { return '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+    function fmtWhen(s) { try { return new Date(String(s).replace(' ', 'T')).toLocaleString(); } catch { return s; } }
+
+    async function advance(id, status) {
+      const r = await window.api.storefrontAdvance({ order_id: id, status });
+      if (!r.success) { showToast(r.error || 'Failed', 'error'); return; }
+      showToast(status === 'ready' ? 'Marked ready — customer texted' : 'Order updated', 'success');
+      load();
+    }
+
+    
+    function openCancel(id) { cancelId = id; document.getElementById('cancelReason').value = 'out_of_stock'; openModal('cancelModal'); }
+    function closeCancel() { cancelId = null; closeModal('cancelModal'); }
+    async function confirmCancel() {
+      if (!cancelId) return;
+      const reason = document.getElementById('cancelReason').value;
+      const btn = document.getElementById('cancelConfirm'); btn.disabled = true; btn.textContent = 'Refunding…';
+      const r = await window.api.storefrontAdvance({ order_id: cancelId, status: 'cancelled', cancel_reason: reason });
+      btn.disabled = false; btn.textContent = 'Refund & cancel';
+      if (!r.success) { showToast(r.error || 'Failed', 'error'); return; }
+      showToast('Order cancelled and refunded', 'success');
+      closeCancel();
+      load();
+    }
+
+    function openPick(id) {
+      pickId = id;
+      const o = orders.find(x => x.id === id);
+      document.getElementById('pickSummary').textContent = o ? `Order #${o.order_number} · ${money(o.total)}` : '';
+      document.getElementById('idChecked').checked = false;
+      document.getElementById('pickConfirm').disabled = true;
+      document.getElementById('pickWho').textContent = '';
+      openModal('pickModal');
+    }
+    function closePick() { pickId = null; closeModal('pickModal'); }
+    document.getElementById('idChecked').addEventListener('change', e => {
+      document.getElementById('pickConfirm').disabled = !e.target.checked;
+    });
+
+    async function confirmPickup() {
+      if (!pickId) return;
+      const checked = document.getElementById('idChecked').checked;
+      const btn = document.getElementById('pickConfirm'); btn.disabled = true; btn.textContent = 'Recording…';
+      const r = await window.api.storefrontCompletePickup({ order_id: pickId, id_checked: checked });
+      btn.textContent = 'Confirm pickup';
+      if (!r.success) { showToast(r.error || 'Failed', 'error'); btn.disabled = !checked; return; }
+      showToast('Pickup completed — ID check logged', 'success');
+      closePick();
+      load();
+    }
+  </script>
+</body>
+</html>

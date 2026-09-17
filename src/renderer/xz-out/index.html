@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — X/Z Out</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    .page-layout { padding: 24px; padding-bottom: 80px; max-width: 860px; margin: 0 auto; height: calc(100vh - 32px); overflow-y: auto; }
+
+    .report-section { margin-bottom: 18px; }
+    .report-section-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-bottom: 10px; }
+
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+    .grid-pay { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+
+    .metric-tile { background: var(--panel-2); border-radius: 10px; padding: 14px 16px; }
+    .metric-tile .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 4px; }
+    .metric-tile .val { font-size: 20px; font-weight: 800; color: var(--ink); }
+    .metric-tile .val.green { color: var(--good); } .metric-tile .val.blue { color: var(--info); } .metric-tile .val.amber { color: var(--warn); }
+
+    .report-divider { border: none; border-top: 2px solid var(--line); margin: 14px 0; }
+    .report-total-row { display: flex; justify-content: space-between; align-items: center; font-size: 20px; font-weight: 800; padding: 8px 0; }
+    .report-line-row { display: flex; justify-content: space-between; font-size: 14px; padding: 5px 0; border-bottom: 1px solid var(--line-soft); }
+    .report-line-row:last-child { border-bottom: none; }
+    .report-line-row .lbl { color: var(--ink-2); }
+    .report-line-row .val { font-weight: 600; }
+    .rank-badge { display: inline-block; background: var(--ink); color: var(--panel); border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 700; margin-right: 6px; }
+    .since-badge { display: inline-block; background: var(--info-dim); color: var(--info); border-radius: 20px; padding: 3px 12px; font-size: 12px; font-weight: 600; }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .date-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .date-bar input { border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font-size: 14px; }
+    .date-bar label { font-size: 13px; color: var(--ink-2); }
+
+    .scope-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .scope-btn { border: none; background: var(--panel); color: var(--ink-2); font-size: 13px; font-weight: 600; padding: 7px 14px; cursor: pointer; }
+    .scope-btn + .scope-btn { border-left: 1px solid var(--line); }
+    .scope-btn.active { background: var(--ink); color: var(--panel); }
+
+    .z-warning { background: var(--warn-dim); border: 1px solid var(--warn-dim); border-radius: 10px; padding: 14px 16px; font-size: 14px; color: var(--warn); margin-bottom: 16px; display: flex; align-items: flex-start; gap: 10px; }
+    .z-warning svg { width: 20px; height: 20px; flex-shrink: 0; margin-top: 1px; }
+    .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+
+    
+    @keyframes xzSkelShimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+    .val.skel {
+      color: transparent !important;
+      background: linear-gradient(90deg, var(--panel-2) 25%, var(--line-soft) 37%, var(--panel-2) 63%);
+      background-size: 400% 100%;
+      animation: xzSkelShimmer 1.4s ease infinite;
+      border-radius: 4px;
+    }
+    .skel-block {
+      height: 14px; border-radius: 4px; margin: 6px 0;
+      background: linear-gradient(90deg, var(--panel-2) 25%, var(--line-soft) 37%, var(--panel-2) 63%);
+      background-size: 400% 100%;
+      animation: xzSkelShimmer 1.4s ease infinite;
+    }
+    @media (prefers-reduced-motion: reduce) { .val.skel, .skel-block { animation: none; } }
+
+    @media print {
+      body { background: var(--panel) !important; }
+      .status-bar, .btn-row, .page-header, .date-bar, #zReportCard, .print-hide { display: none !important; }
+      .page-layout { padding: 0 !important; max-width: 100% !important; height: auto !important; overflow: visible !important; }
+      .card { box-shadow: none !important; border: 1px solid var(--faint) !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header" style="flex-wrap:wrap">
+      <button class="btn btn-back" onclick="navigate('main-menu')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">X / Z Out</h1>
+      <div id="reportActions" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn btn-navy" id="employeeBtn" style="display:none" onclick="navigate('xz-out/employee-report')">Employee Sales</button>
+        <button class="btn btn-navy" id="drawerLogBtn" style="display:none" onclick="navigate('xz-out/drawer-log')">Cash Drawer Log</button>
+        <button class="btn btn-navy" id="ageLogBtn" style="display:none" onclick="navigate('xz-out/age-log')">Age Verification Log</button>
+        <button class="btn btn-navy" id="auditBtn" style="display:none" onclick="navigate('xz-out/monthly')">Audit</button>
+      </div>
+    </div>
+
+    
+    <div class="card" id="xReportCard">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div class="card-title" style="margin:0" id="xCardTitle">X Report</div>
+        <span class="since-badge" id="rangeBadge"></span>
+      </div>
+
+      <div class="date-bar print-hide" style="margin-top:12px">
+        <label>From</label><input type="date" id="startDate" />
+        <label>To</label><input type="date" id="endDate" />
+        <button class="btn btn-navy" onclick="loadX()">View</button>
+        <div class="scope-toggle" id="scopeToggle" role="group" aria-label="Report scope">
+          <button type="button" class="scope-btn active" data-scope="register" onclick="setScope('register')">This register</button>
+          <button type="button" class="scope-btn" data-scope="location" onclick="setScope('location')">This location</button>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-gray" onclick="setToday()">Today</button>
+      </div>
+
+      <div class="report-section">
+        <div class="report-section-title">Sales Summary</div>
+        <div class="grid-4">
+          <div class="metric-tile"><div class="lbl">Gross Sales</div><div class="val" id="xGross">—</div></div>
+          <div class="metric-tile"><div class="lbl">Less Discounts</div><div class="val amber" id="xDiscount">—</div></div>
+          <div class="metric-tile"><div class="lbl">Net Sales</div><div class="val green" id="xNet">—</div></div>
+          <div class="metric-tile"><div class="lbl">Tax</div><div class="val" id="xTax">—</div></div>
+        </div>
+      </div>
+
+      <div class="report-section">
+        <div class="report-section-title">Payment Breakdown</div>
+        <div class="grid-pay" id="xPayTiles"></div>
+        <div style="margin-top:12px">
+          <div class="report-line-row"><span class="lbl">Transactions</span><span class="val" id="xCount">—</span></div>
+          <div class="report-line-row"><span class="lbl">Units / Transaction</span><span class="val" id="xUPT">—</span></div>
+          <div class="report-line-row"><span class="lbl">Average Sale</span><span class="val" id="xAvg">—</span></div>
+        </div>
+      </div>
+
+      <div class="report-section">
+        <div class="report-section-title">Refunds</div>
+        <div id="xRefunds" class="report-line-row"><span class="lbl">Refunds</span><span class="val">—</span></div>
+      </div>
+
+      <div class="two-col">
+        <div class="report-section">
+          <div class="report-section-title">By Department</div>
+          <div id="xCatRows"></div>
+        </div>
+        <div class="report-section">
+          <div class="report-section-title">Top Products</div>
+          <div id="xTopRows"></div>
+        </div>
+      </div>
+
+      <div class="report-section" id="xTipPoolSection" style="display:none">
+        <div class="report-section-title">Tip Pool</div>
+        <div id="xTipPoolRows"></div>
+      </div>
+
+      <hr class="report-divider" />
+      <div class="report-total-row"><span>Total Collection</span><span id="xTotal">—</span></div>
+
+      <div class="btn-row">
+        <button class="btn btn-navy" onclick="loadX()">Refresh</button>
+        <button class="btn btn-navy" onclick="window.api.printPage()">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Print X Report
+        </button>
+        <button class="btn btn-navy" onclick="printXThermal()">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Print X Report (Thermal)
+        </button>
+        
+        <button class="btn btn-gray" onclick="popDrawer()">💵 Pop Drawer</button>
+      </div>
+    </div>
+
+    
+    <div class="card" id="zReportCard">
+      <div class="card-title">Z Report — End of Day</div>
+      <div class="z-warning">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div><strong>Warning:</strong> Running a Z Report closes the current shift and resets all shift totals. This cannot be undone. Manager password required.</div>
+      </div>
+      <div id="zManagerMsg" style="display:none;background:var(--bad-dim);border-radius:8px;padding:12px;font-size:14px;color:var(--bad);margin-bottom:12px">Z Report requires manager access.</div>
+      <div id="zPinSection">
+        <div class="form-group" style="max-width:280px"><label>Manager Password</label><input type="password" id="zPin" placeholder="Enter manager password" /></div>
+        <div class="btn-row">
+          <button class="btn btn-red" id="runZBtn">Run Z Report &amp; Close Shift</button>
+          <button class="btn btn-navy" id="printClosingSummaryBtn" onclick="printClosingSummary()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Print Z Report
+          </button>
+        </div>
+        <div class="muted" style="font-size:12px;margin-top:6px">Print Z Report prints a preview — it does not close the shift. Closing only happens at the scheduled batch time, or with the manager password above.</div>
+      </div>
+      <div id="zResults" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div style="font-size:15px;font-weight:700;color:var(--good)">✓ Z Report Complete — Shift Closed &amp; Reset</div>
+          <button class="btn btn-navy" id="printZBtn" onclick="printZReport()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Print Z Report
+          </button>
+        </div>
+        <div id="zReportContent"></div>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="overrideModal" style="display:none">
+    <div class="modal" style="max-width:340px;text-align:center">
+      <div class="modal-title">Manager Authorization</div>
+      <p style="font-size:13px;color:var(--muted);margin:8px 0 14px" id="overrideMsg">A manager PIN is required for this action.</p>
+      <input type="password" id="overridePin" inputmode="numeric" placeholder="Manager PIN" style="text-align:center;font-size:18px;letter-spacing:4px" />
+      <div id="overrideErr" style="display:none;color:var(--bad);font-size:13px;margin-top:8px"></div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button class="btn btn-gray" style="flex:1" onclick="cancelOverride()">Cancel</button>
+        <button class="btn btn-navy" style="flex:1" onclick="submitOverride()">Authorize</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="zConfirmModal" style="display:none">
+    <div class="modal" style="max-width:460px">
+      <div class="modal-header"><div class="modal-title">Confirm Z Report</div><button class="modal-close" onclick="closeModal('zConfirmModal')" data-tooltip="Close" aria-label="Close">&times;</button></div>
+      <div class="modal-body">
+        <div style="font-size:15px;margin-bottom:18px">Running the <strong>Z Report</strong> saves it, closes the current shift, and resets totals. <strong>This cannot be undone.</strong> Continue?</div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="btn" onclick="closeModal('zConfirmModal')">Cancel</button>
+          <button class="btn btn-red" id="confirmZBtn">Yes, Run Z Report</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar"><div class="status-left" id="status-left">Loading…</div><div class="status-right" id="status-right"></div></div>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script>
+    
+    
+    
+    
+    
+    
+    
+    
+    function anyModalOpen() {
+      return [...document.querySelectorAll('.modal-overlay')].some((el) => getComputedStyle(el).display !== 'none');
+    }
+
+    
+    
+    
+    let _overrideResolve = null;
+    function promptOverridePin(label, errMsg) {
+      return new Promise((resolve) => {
+        _overrideResolve = resolve;
+        document.getElementById('overrideMsg').textContent = label || 'A manager PIN is required for this action.';
+        const err = document.getElementById('overrideErr');
+        if (errMsg) { err.textContent = errMsg; err.style.display = 'block'; } else { err.style.display = 'none'; }
+        document.getElementById('overridePin').value = '';
+        openModal('overrideModal');
+        setTimeout(() => document.getElementById('overridePin').focus(), 60);
+      });
+    }
+    function submitOverride() {
+      const pin = document.getElementById('overridePin').value.trim();
+      if (!pin) return;
+      closeModal('overrideModal');
+      const r = _overrideResolve; _overrideResolve = null; if (r) r(pin);
+    }
+    function cancelOverride() {
+      closeModal('overrideModal');
+      const r = _overrideResolve; _overrideResolve = null; if (r) r(null);
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+      const pinEl = document.getElementById('overridePin');
+      if (pinEl) pinEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitOverride(); });
+    });
+
+    
+    
+    async function callWithOverride(fn, label) {
+      let res = await fn(undefined);
+      let attempts = 0;
+      while (res && !res.success && (res.needsOverride || /invalid manager pin/i.test(res.error || '')) && attempts < 3) {
+        const pin = await promptOverridePin(label, attempts > 0 ? 'Incorrect PIN — try again' : null);
+        if (pin == null) return { success: false, cancelled: true };
+        res = await fn(pin);
+        attempts++;
+      }
+      return res;
+    }
+
+    async function popDrawer() {
+      
+      
+      const res = await callWithOverride(
+        (pin) => window.api.popDrawer('Manual pop from X/Z Out', { noSale: true, override: pin }),
+        'Manager PIN required to open the drawer'
+      );
+      if (res.cancelled) return;
+      showToast(res.success ? 'Drawer opened' : (res.error || 'Could not open drawer'), res.success ? 'success' : 'warning');
+    }
+    document.addEventListener('DOMContentLoaded', async () => {
+      await setToday();
+      loadX();
+      scheduleRefresh();
+
+      const session = (await window.api.getSession()).session;
+      if (session?.role !== 'manager') {
+        document.getElementById('zManagerMsg').style.display = 'block';
+        document.getElementById('zPinSection').style.display = 'none';
+      } else {
+        document.getElementById('auditBtn').style.display = 'inline-flex';
+        document.getElementById('ageLogBtn').style.display = 'inline-flex';
+        document.getElementById('drawerLogBtn').style.display = 'inline-flex';
+        document.getElementById('employeeBtn').style.display = 'inline-flex';
+      }
+
+      document.getElementById('runZBtn').addEventListener('click', () => {
+        if (!document.getElementById('zPin').value) { showToast('Enter manager password', 'warning'); return; }
+        openModal('zConfirmModal');
+      });
+      document.getElementById('confirmZBtn').addEventListener('click', () => { closeModal('zConfirmModal'); runZReport(); });
+      document.getElementById('zPin').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('runZBtn').click(); });
+    });
+
+    async function setToday() {
+      
+      
+      
+      let iso;
+      try {
+        const win = await window.api.getBusinessDayWindow();
+        if (win.success) iso = win.businessDate;
+      } catch {  }
+      if (!iso) { const t = new Date(); t.setMinutes(t.getMinutes() - t.getTimezoneOffset()); iso = t.toISOString().slice(0, 10); }
+      document.getElementById('startDate').value = iso;
+      document.getElementById('endDate').value = iso;
+    }
+
+    
+    
+    
+    
+    
+    
+    
+    let currentScope = 'register';
+
+    
+    
+    function showXSkeleton() {
+      ['xGross', 'xDiscount', 'xNet', 'xTax', 'xCount', 'xUPT', 'xAvg', 'xTotal'].forEach((id) => {
+        document.getElementById(id).classList.add('skel');
+      });
+      const bar = () => '<div class="skel-block" style="width:' + (60 + Math.random() * 30) + '%"></div>';
+      document.getElementById('xPayTiles').innerHTML = [1, 2, 3].map(() =>
+        `<div class="metric-tile">${bar()}${bar()}</div>`).join('');
+      document.getElementById('xCatRows').innerHTML = bar() + bar() + bar();
+      document.getElementById('xTopRows').innerHTML = bar() + bar() + bar();
+      document.getElementById('xRefunds').innerHTML = bar();
+    }
+    showXSkeleton();
+
+    
+    
+    
+    
+    let refreshTimer = null;
+    function scheduleRefresh() {
+      if (refreshTimer) clearInterval(refreshTimer);
+      const ms = currentScope === 'register' ? 3000 : 15000;
+      refreshTimer = setInterval(() => { if (!anyModalOpen()) loadX(); }, ms);
+    }
+
+    function setScope(scope) {
+      currentScope = scope;
+      document.querySelectorAll('.scope-btn').forEach(b => b.classList.toggle('active', b.dataset.scope === scope));
+      scheduleRefresh();
+      loadX();
+    }
+
+    async function loadX() {
+      const start = document.getElementById('startDate').value;
+      const end = document.getElementById('endDate').value;
+      if (start && end && start > end) { showToast('From date must be before the To date', 'error'); return; }
+
+      let res;
+      if (currentScope === 'location') {
+        res = await window.api.getLocationPeriodReport({ start, end });
+        if (!res.success) {
+          
+          showToast(res.error || 'Location totals unavailable — showing this register', 'warning');
+          currentScope = 'register';
+          document.querySelectorAll('.scope-btn').forEach(b => b.classList.toggle('active', b.dataset.scope === 'register'));
+          res = await window.api.getPeriodReport({ start, end });
+        }
+      } else {
+        res = await window.api.getPeriodReport({ start, end });
+      }
+
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      lastXReport = res;
+      renderX(res);
+    }
+
+    let lastXReport = null;
+    async function printXThermal() {
+      if (!lastXReport) return;
+      const res = await window.api.printPeriodReport(lastXReport);
+      if (!res.success) return showToast(res.error || 'Print failed', 'error');
+      showToast(res.saved_to ? 'No thermal printer configured — saved to file' : 'Printed', res.saved_to ? 'warning' : 'success');
+    }
+
+    function renderX(r) {
+      document.querySelectorAll('.val.skel').forEach((el) => el.classList.remove('skel'));
+      const s = r.summary, p = r.payments;
+      document.getElementById('rangeBadge').textContent = r.period.label;
+      document.getElementById('xGross').textContent = fmt(s.gross);
+      document.getElementById('xDiscount').textContent = '-' + fmt(s.discounts);
+      document.getElementById('xNet').textContent = fmt(s.gross - s.discounts);
+      document.getElementById('xTax').textContent = fmt(s.tax);
+      document.getElementById('xCount').textContent = s.count;
+      document.getElementById('xUPT').textContent = s.units_per_txn.toFixed(2);
+      document.getElementById('xAvg').textContent = fmt(s.avg);
+      document.getElementById('xTotal').textContent = fmt(s.total_collected);
+
+      const tiles = [{ lbl: 'Cash', val: p.cash, cls: 'green' }]
+        .concat(p.brands.map(b => ({ lbl: b.brand, val: b.amount, cls: 'blue' })));
+      if (p.other_card.amount > 0) tiles.push({ lbl: 'Other Card', val: p.other_card.amount, cls: 'blue' });
+      document.getElementById('xPayTiles').innerHTML = tiles.map(t =>
+        `<div class="metric-tile"><div class="lbl">${esc(t.lbl)}</div><div class="val ${t.cls}">${fmt(t.val)}</div></div>`).join('');
+
+      if (r.card_processing_fee_amount > 0) {
+        document.getElementById('xPayTiles').insertAdjacentHTML('beforeend',
+          `<div class="metric-tile"><div class="lbl">Est. card fees (${cardFeeLabel(r)})</div><div class="val amber">-${fmt(r.card_processing_fee_amount)}</div></div>`);
+      }
+
+      document.getElementById('xRefunds').innerHTML = r.refunds.count
+        ? `<span class="lbl">${r.refunds.count} refund${r.refunds.count !== 1 ? 's' : ''}</span><span class="val" style="color:var(--bad)">${fmt(r.refunds.total)}</span>`
+        : '<span class="lbl">Refunds</span><span class="val">None</span>';
+
+      document.getElementById('xCatRows').innerHTML = r.by_category.length === 0
+        ? '<div style="font-size:13px;color:var(--faint)">No sales</div>'
+        : r.by_category.map(c => `<div class="report-line-row"><span class="lbl">${esc(c.category)}</span><span class="val">${fmt(c.revenue)} <span style="color:var(--faint);font-size:12px;font-weight:400">(${c.qty})</span></span></div>`).join('');
+
+      document.getElementById('xTopRows').innerHTML = r.top_products.length === 0
+        ? '<div style="font-size:13px;color:var(--faint)">No sales</div>'
+        : r.top_products.map((t, i) => `<div class="report-line-row"><span class="lbl"><span class="rank-badge">#${i + 1}</span>${esc(t.name)}</span><span class="val">${fmt(t.revenue)}</span></div>`).join('');
+
+      const tpSection = document.getElementById('xTipPoolSection');
+      if (r.tip_pool && r.tip_pool.total_tips > 0) {
+        tpSection.style.display = 'block';
+        document.getElementById('xTipPoolRows').innerHTML = renderTipPoolRows(r.tip_pool);
+      } else {
+        tpSection.style.display = 'none';
+      }
+
+      const scopeLabel = r.scope === 'location' ? 'Location (all registers)' : 'This register';
+      document.getElementById('xCardTitle').textContent = r.scope === 'location' ? 'X Report — Location' : 'X Report';
+      document.getElementById('status-left').textContent = `X Report · ${scopeLabel} · ${r.period.label}`;
+    }
+
+    function buildLineRow(label, val) {
+      return `<div class="report-line-row"><span class="lbl">${esc(String(label))}</span><span class="val">${esc(String(val))}</span></div>`;
+    }
+
+    
+    function cardFeeLabel(r) {
+      const pct = `${r.card_processing_fee_pct}%`;
+      return r.card_processing_fee_flat_cents > 0 ? `${pct} + ${fmt(r.card_processing_fee_flat_cents / 100)}/txn` : pct;
+    }
+
+    
+    
+    
+    
+    
+    
+    function renderTipPoolRows(tp) {
+      if (!tp || tp.total_tips <= 0) return '<div style="font-size:13px;color:var(--faint)">No tips collected</div>';
+      if (!tp.pooled) {
+        const direct = tp.by_employee.length
+          ? tp.by_employee.map((e) => `<div class="report-line-row"><span class="lbl">${esc(e.name)}</span><span class="val">${fmt(e.share)}</span></div>`).join('')
+          : '<div style="font-size:13px;color:var(--faint)">No sales with tips in this range.</div>';
+        return `<div style="font-size:12.5px;color:var(--warn);background:var(--warn-dim);border:1px solid var(--warn-dim);border-radius:8px;padding:8px 10px;margin-bottom:8px">Not pooled — ${esc(tp.skip_reason || 'no eligible employees clocked in')}</div>`
+          + buildLineRow('Total tips', fmt(tp.total_tips))
+          + `<div style="margin-top:8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted)">Direct, per employee (not pooled)</div>` + direct;
+      }
+      const rows = [
+        buildLineRow('Total tips', fmt(tp.total_tips)),
+        buildLineRow(`Card processing deduction (${tp.merchant_fee_effective_pct}% of card tips${tp.merchant_fee_flat_cents > 0 ? ` + ${fmt(tp.merchant_fee_flat_cents / 100)}/card tip` : ''})`, '-' + fmt(tp.deduction_amount)),
+        buildLineRow('Pool to distribute', fmt(tp.pool_amount)),
+      ].join('');
+      const emp = tp.by_employee.length
+        ? tp.by_employee.map((e) => `<div class="report-line-row"><span class="lbl">${esc(e.name)} <span style="color:var(--faint);font-size:12px">(${e.hours.toFixed(2)} hrs)</span></span><span class="val">${fmt(e.share)}</span></div>`).join('')
+        : '<div style="font-size:13px;color:var(--faint)">No eligible hours logged in this range — nobody to distribute to yet.</div>';
+      return rows + `<div style="margin-top:8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted)">Per employee (cashiers only — managers are excluded by law)</div>` + emp;
+    }
+
+    let lastZReport = null;
+
+    function renderZResults(r) {
+      lastZReport = r;
+      const brandRows = (r.by_card_brand || []).map((b) => buildLineRow(`  ${b.brand} (${b.count})`, fmt(b.amount))).join('');
+      document.getElementById('zReportContent').innerHTML = `
+        <div class="report-section">
+          <div class="report-section-title">Sales Summary</div>
+          <div class="grid-4">
+            <div class="metric-tile"><div class="lbl">Gross</div><div class="val">${fmt(r.gross_sales)}</div></div>
+            <div class="metric-tile"><div class="lbl">Discounts</div><div class="val amber">-${fmt(r.discount_total)}</div></div>
+            <div class="metric-tile"><div class="lbl">Tax</div><div class="val">${fmt(r.tax_total)}</div></div>
+            <div class="metric-tile"><div class="lbl">Net</div><div class="val green">${fmt(r.net_sales)}</div></div>
+          </div>
+        </div>
+        <div class="report-section">
+          <div class="report-section-title">Payment Breakdown</div>
+          ${buildLineRow('Cash', fmt(r.cash_total))}
+          ${buildLineRow('Card (all brands)', fmt(r.card_total))}
+          ${brandRows}
+          ${r.split_total > 0 ? buildLineRow('Split tender', fmt(r.split_total)) : ''}
+          ${r.online_total > 0 ? buildLineRow('Online (prepaid)', fmt(r.online_total)) : ''}
+          ${buildLineRow('Transactions', r.sale_count)}
+          ${r.card_processing_fee_amount > 0 ? buildLineRow(`Est. card processing fee (${cardFeeLabel(r)})`, '-' + fmt(r.card_processing_fee_amount)) : ''}
+        </div>
+        ${r.tip_pool && r.tip_pool.total_tips > 0 ? `<div class="report-section">
+          <div class="report-section-title">Tip Pool</div>
+          ${renderTipPoolRows(r.tip_pool)}
+        </div>` : ''}
+        <hr class="report-divider" />
+        <div class="report-total-row"><span>Total Net Sales</span><span>${fmt(r.net_sales)}</span></div>`;
+    }
+
+    async function printZReport() {
+      if (!lastZReport) return;
+      const btn = document.getElementById('printZBtn');
+      btn.disabled = true; const t = btn.innerHTML; btn.innerHTML = 'Printing…';
+      const res = await window.api.printZReport(lastZReport);
+      btn.disabled = false; btn.innerHTML = t;
+      if (!res.success) { showToast(res.error || 'Print failed', 'error'); return; }
+      showToast(res.saved_to ? 'No printer configured — saved to file' : 'Z Report printed', res.saved_to ? 'warning' : 'success');
+    }
+
+    async function printClosingSummary() {
+      const btn = document.getElementById('printClosingSummaryBtn');
+      btn.disabled = true; const t = btn.innerHTML; btn.innerHTML = 'Printing…';
+      const res = await window.api.printClosingSummary();
+      btn.disabled = false; btn.innerHTML = t;
+      if (!res.success) { showToast(res.error || 'Print failed', 'error'); return; }
+      showToast(res.saved_to ? 'No printer configured — saved to file' : 'Closing shift summary printed', res.saved_to ? 'warning' : 'success');
+    }
+
+    async function runZReport() {
+      const pin = document.getElementById('zPin').value;
+      const btn = document.getElementById('runZBtn');
+      btn.disabled = true; btn.textContent = 'Processing…';
+      let res;
+      try { res = await window.api.runZReport(pin); }
+      catch (e) { showToast('Error: ' + e.message, 'error'); btn.disabled = false; btn.textContent = 'Run Z Report & Close Shift'; return; }
+      btn.disabled = false; btn.textContent = 'Run Z Report & Close Shift';
+      if (!res.success) { showToast(res.error || 'Z Report failed', 'error'); return; }
+      document.getElementById('zPinSection').style.display = 'none';
+      document.getElementById('zResults').style.display = 'block';
+      renderZResults(res.report);
+      showToast('Z Report saved. Shift closed and reset.', 'success');
+      loadX();
+      
+      
+      
+      
+      setTimeout(async () => {
+        await window.api.logout();
+        await window.api.navigate('login');
+      }, 1800);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Settings</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    .page-layout {
+      padding: 24px;
+      padding-bottom: 80px;
+      max-width: 700px;
+      height: calc(100vh - 32px);
+      overflow-y: auto;
+    }
+    .settings-section { margin-bottom: 20px; }
+
+    
+    .user-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      margin-bottom: 6px;
+      background: var(--panel-2);
+    }
+    .user-row:last-child { margin-bottom: 0; }
+    .user-name { font-weight: 700; font-size: 14px; flex: 1; }
+    .user-role-badge {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+    .user-role-badge.manager { background: var(--info-dim); color: var(--info); }
+    .user-role-badge.cashier { background: var(--good-dim); color: var(--good); }
+    .must-change-badge {
+      font-size: 11px;
+      background: var(--warn-dim);
+      color: var(--warn);
+      border-radius: 20px;
+      padding: 2px 8px;
+      font-weight: 600;
+    }
+    .btn-delete-user {
+      background: none;
+      border: 1px solid var(--bad);
+      color: var(--bad);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-delete-user:hover { background: var(--bad-dim); }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('main-menu')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Settings</h1>
+    </div>
+
+    
+    <div class="card settings-section" id="onboardingCard" style="display:none;border:1px solid var(--loyalty-dim);background:var(--loyalty-dim)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div class="card-title" style="margin:0">🚀 Setup Checklist</div>
+        <div style="font-size:13px;color:var(--loyalty);font-weight:700"><span id="obPct">0</span>% complete</div>
+      </div>
+      <div style="height:8px;background:var(--loyalty-dim);border-radius:6px;margin:10px 0 14px;overflow:hidden">
+        <div id="obBar" style="height:100%;width:0;background:linear-gradient(90deg,var(--loyalty),var(--loyalty));transition:width .3s"></div>
+      </div>
+      <div id="obList"></div>
+      <div id="obNext" style="font-size:13px;color:var(--ink-2);margin-top:10px"></div>
+      <div id="obCall" style="display:none;margin-top:12px;background:var(--info-dim);border:1px solid var(--info-dim);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--info)"></div>
+      <div style="margin-top:12px">
+        <button class="btn btn-gray" id="obDismiss" style="display:none;padding:5px 12px;font-size:12px" onclick="dismissOnboarding()">Hide checklist</button>
+      </div>
+    </div>
+
+    
+    <div class="card settings-section">
+      <div class="card-title">Receipt Configuration</div>
+      <div class="form-row">
+        <div class="form-group"><label>Store Name</label><input type="text" id="storeName" /></div>
+        <div class="form-group"><label>Phone</label><input type="text" id="storePhone" /></div>
+      </div>
+      <div class="form-group">
+        <label>Address</label>
+        <input type="text" id="storeAddress" disabled title="Set once by the owner in the Owner Console and synced down — not editable here" />
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Set by the owner in the Owner Console during shop setup, and synced down automatically.</div>
+      </div>
+      <div class="form-group"><label>Footer Message</label><input type="text" id="storeFooter" /></div>
+      <div class="form-group"><label>Refund Policy (printed at the bottom of every receipt)</label><textarea id="refundPolicy" rows="3" style="width:100%;resize:vertical" placeholder="e.g. Tobacco & vapor are non-refundable. Gift-shop items returnable within 7 days with receipt…"></textarea></div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;cursor:pointer"><input type="checkbox" id="tipEnabled" style="width:auto" /> Ask for a tip on the customer display (card sales)</label>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">When on, the customer picks a tip on their screen before the card is charged. Turn OFF the tip prompt on the card terminal itself to avoid asking twice.</div>
+      </div>
+      <div class="form-group" style="max-width:260px"><label>Tip presets (% of subtotal)</label><input type="text" id="tipPresets" placeholder="15,18,20" /></div>
+      <div class="form-group">
+        <div style="font-size:12px;color:var(--muted)">Tip pool processing deduction is set by the owner in the Owner Console (your actual card-processing rate) — not editable here.</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="max-width:180px">
+          <label>Tax Rate (%)</label>
+          <input type="text" inputmode="decimal" id="taxRate" />
+        </div>
+        <div class="form-group" style="max-width:220px">
+          <label>Minimum Purchase Age</label>
+          <select id="minAge">
+            <option value="0">No age restriction</option>
+            <option value="18">18+</option>
+            <option value="21">21+</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-navy" data-write-action="settings_change" onclick="saveReceiptConfig()">Save Receipt Settings</button>
+    </div>
+
+    
+    <div class="card settings-section">
+      <div class="card-title">Staff &amp; Permissions</div>
+      <p style="font-size:13px;color:var(--muted);margin:-4px 0 12px">Manage cashier/manager accounts, per-employee permissions, PINs, and the manager-override audit log.</p>
+      <button class="btn btn-navy" onclick="navigate('staff/permissions')">Manage Staff &amp; Permissions →</button>
+    </div>
+
+    
+    <div class="card settings-section">
+      <div class="card-title">Manufacturer Rebates</div>
+      <p style="font-size:13px;color:var(--muted);margin:-4px 0 12px">How qualifying tobacco/vape manufacturer rebates are handled at checkout.</p>
+      <div class="form-group">
+        <label style="display:flex;align-items:flex-start;gap:8px;text-transform:none;cursor:pointer;margin-bottom:8px">
+          <input type="radio" name="rebateMode" value="0" id="rebateModeOff" style="width:auto;margin-top:3px" />
+          <span><strong>Off — banner only.</strong> The cashier sees a “Rebate available” prompt and taps to apply the discount manually.</span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:8px;text-transform:none;cursor:pointer">
+          <input type="radio" name="rebateMode" value="1" id="rebateModeOn" style="width:auto;margin-top:3px" />
+          <span><strong>On — auto-apply.</strong> Qualifying rebates are inserted automatically as a discount line; the cashier just sees a confirmation.</span>
+        </label>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn btn-navy" data-write-action="settings_change" onclick="saveRebateMode()">Save</button>
+        <button class="btn btn-gray" onclick="navigate('rebates/rules')">Manage Rebate Rules →</button>
+      </div>
+    </div>
+
+    
+    <div class="card settings-section">
+      <div class="card-title">Pricing Groups</div>
+      <p style="font-size:13px;color:var(--muted);margin:-4px 0 12px">Group items to share a price and tax setting, and build mix-and-match promos ("buy 2, 50% off the 2nd") scoped to a group.</p>
+      <button class="btn btn-gray" onclick="navigate('pricing-groups')">Manage Pricing Groups →</button>
+    </div>
+
+    
+    <div class="card settings-section">
+      <div class="card-title">Card Terminal</div>
+      <div class="form-group" style="max-width:280px">
+        <label>Terminal Type</label>
+        <select id="terminalType" onchange="onTerminalTypeChange()">
+          <option value="valor_vp100">Valor VP100</option>
+          <option value="mock">Mock (Testing)</option>
+        </select>
+      </div>
+
+      
+      <div id="valorFields">
+        <p style="font-size:12px;color:var(--muted);margin:0 0 12px">
+          Valor Connect semi-integration: the <strong>terminal is the server</strong> and the POS connects to it.
+          On the VP100 — Portal → Device Management → EPI → Edit Parameter →
+          <strong>Terminal &amp; Transaction → Valor Connect</strong> → enable <strong>TCP</strong> or
+          <strong>WebSocket</strong> (match the selector below) → Param Download; it shows
+          <em>"Server is Waiting for Transaction"</em>. Then enter the <strong>terminal's IP</strong> and port here.
+          <span id="pcIpHint" style="color:var(--muted)"></span>
+        </p>
+        <div class="form-row">
+          <div class="form-group" style="max-width:200px">
+            <label>Connection type — match the terminal</label>
+            <select id="terminalTransport">
+              <option value="tcp">TCP</option>
+              <option value="websocket">WebSocket</option>
+            </select>
+          </div>
+          <div class="form-group" style="max-width:200px">
+            <label>Terminal IP address</label>
+            <input type="text" id="terminalIp" placeholder="e.g. 11.11.20.78" style="font-weight:700" />
+          </div>
+          <div class="form-group" style="max-width:110px">
+            <label>Port</label>
+            <input type="number" id="terminalPort" placeholder="5000" />
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <button class="btn btn-gray" onclick="testTerminal()" id="testTerminalBtn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            Test Connection
+          </button>
+          <span id="testResult" style="font-size:13px;font-weight:600"></span>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-navy" data-write-action="settings_change" onclick="saveTerminalSettings()">Save Terminal Settings</button>
+      </div>
+    </div>
+
+    
+    <div class="card settings-section">
+      <div class="card-title">Receipt Printer</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Printer Type</label>
+          <select id="printerType">
+            <option value="epson">Epson / ESC-POS — most USB printers (EOM-200, TM-T20)</option>
+            <option value="star">Star (mC-Print, TSP100, TSP650)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Printer</label>
+          <select id="printerSelect" onchange="onPrinterSelect()">
+            <option value="">Select a printer…</option>
+            <option value="__network__">Network printer (TCP/IP)…</option>
+            <option value="none">Off — save receipts to file</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" id="printerNetworkGroup" style="display:none">
+        <label>Network address</label>
+        <input type="text" id="printerInterface" placeholder="tcp://192.168.1.50:9100" />
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin-top:-4px;margin-bottom:12px">
+        Pick your installed receipt printer (e.g. Star TSP143). Install the printer's driver first, then click Refresh.
+        Works the same on Windows and Mac. If the printer is off, receipts save as a .txt file.
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-navy" data-write-action="settings_change" onclick="savePrinterSettings()">Save Printer Settings</button>
+        <button class="btn btn-gray" onclick="testPrinter()">Test Print + Pop Drawer</button>
+        <button class="btn btn-gray" onclick="loadPrinters()">Refresh Printers</button>
+      </div>
+      <div id="printerStatus" style="font-size:13px;margin-top:10px"></div>
+    </div>
+
+    
+    <div class="card settings-section">
+      <div class="card-title">Cash Drawer</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+        Pops automatically when the cashier presses <strong>Cash</strong>. A standalone USB drawer
+        (e.g. Clover D100) connects as a serial/COM port — pick it below. A drawer wired into the
+        receipt printer uses "Through receipt printer" instead.
+      </p>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Drawer Type</label>
+          <select id="drawerType" onchange="toggleDrawerFields()">
+            <option value="serial">USB serial drawer (COM port)</option>
+            <option value="printer">Through receipt printer</option>
+            <option value="none">Off / no drawer</option>
+          </select>
+        </div>
+        <div class="form-group" id="drawerPortGroup">
+          <label>COM Port</label>
+          <select id="drawerComPort"><option value="">Auto-detect</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="max-width:180px">
+          <label>Starting Float</label>
+          <input type="number" id="cashFloat" min="0" step="0.01" placeholder="200.00" />
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin-top:-8px;margin-bottom:12px">
+        Default starting cash assumed for a new shift on THIS register. A cashier can correct the
+        actual count for a single shift from the Cash Drawer panel on the POS screen without
+        changing this default.
+      </p>
+      <div class="form-row" id="drawerAdvanced">
+        <div class="form-group" style="max-width:140px"><label>Baud Rate</label><input type="text" id="drawerBaud" placeholder="9600" /></div>
+        <div class="form-group"><label>Kick Code (hex)</label><input type="text" id="drawerKickHex" placeholder="1B 70 00 19 FA" /></div>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin-top:-8px;margin-bottom:12px">
+        If the drawer doesn't pop with <code>1B 70 00 19 FA</code>, try <code>1B 70 01 19 FA</code> (pin 5),
+        <code>1B 70 00 40 50</code>, or <code>07</code>, then Test.
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-navy" data-write-action="settings_change" onclick="saveDrawerSettings()">Save Drawer Settings</button>
+        <button class="btn btn-gray" onclick="testDrawer()">Test — Pop Drawer</button>
+        <button class="btn btn-gray" onclick="loadDrawerPorts()">Refresh Ports</button>
+      </div>
+      <div id="drawerStatus" style="font-size:13px;margin-top:10px"></div>
+    </div>
+
+    
+    <div class="card settings-section">
+      <div class="card-title">Zebra Barcode Printer</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+        For printing 2.25" × 1.25" barcode tags from Inventory and Invoices.
+        Connect via TCP/IP (Zebra Z8, Z11, ZD220, GK420d, etc.).
+      </p>
+      <div class="form-row">
+        <div class="form-group"><label>Zebra IP Address</label><input type="text" id="zebraIp" placeholder="192.168.1.200" /></div>
+        <div class="form-group" style="max-width:160px"><label>Port</label><input type="number" id="zebraPort" placeholder="9100" /></div>
+      </div>
+      <button class="btn btn-navy" data-write-action="settings_change" onclick="saveZebraSettings()">Save Zebra Settings</button>
+    </div>
+
+    
+    <div class="card settings-section">
+      <div class="card-title">Touchscreen</div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;cursor:pointer"><input type="checkbox" id="onscreenKeyboardEnabled" style="width:auto" /> Show an on-screen keyboard when tapping a text field</label>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Turn this on for kiosks with a touchscreen and no physical keyboard attached. Leave off if this register has a keyboard.</div>
+      </div>
+      <button class="btn btn-navy" data-write-action="settings_change" onclick="saveTouchscreenSettings()">Save Touchscreen Settings</button>
+    </div>
+
+    
+    <div class="card settings-section">
+      <div class="card-title">Sync</div>
+      <div id="syncStatusBox" style="font-size:13px;margin-bottom:12px;color:var(--faint)">Loading…</div>
+      <p style="font-size:13px;color:var(--muted);margin:-4px 0 12px">Push a fresh copy of all inventory AND every local sale/receipt/drawer event to the cloud so the Manager Portal &amp; Owner Console match this register.</p>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 12px">Use after a re-key, if reports look stale, or once — after updating past a multi-kiosk sync fix — to recover any sales that never made it to the cloud.</p>
+      <button class="btn btn-navy" onclick="resyncToCloud(this)">Resync to cloud</button>
+      <details style="margin-top:14px">
+        <summary style="cursor:pointer;font-size:12px;color:var(--muted);font-weight:600">Diagnostics — for troubleshooting cross-kiosk sync</summary>
+        <div id="syncDiagBox" style="font-size:12px;font-family:monospace;margin-top:8px;color:var(--ink-2);white-space:pre-wrap">Loading…</div>
+      </details>
+    </div>
+
+    
+    <div class="card settings-section" id="ownerCard">
+      <div class="card-title">Owner Console 🔒</div>
+      <div id="ownerLocked">
+        <p style="font-size:13px;color:var(--muted);margin-bottom:10px" id="ownerLockMsg">Owner PIN required.</p>
+        <div class="form-row">
+          <div class="form-group"><label id="ownerPinLabel">Owner PIN</label><input type="password" id="ownerPin" /></div>
+          <div class="form-group" id="ownerPinConfirmWrap" style="display:none"><label>Confirm PIN</label><input type="password" id="ownerPinConfirm" /></div>
+        </div>
+        <button class="btn btn-navy" id="ownerUnlockBtn" onclick="ownerUnlock()">Unlock</button>
+        <button class="btn btn-gray" id="ownerResetPinBtn" style="display:none;margin-left:8px" onclick="ownerResetPin()">Forgot PIN? Reset</button>
+      </div>
+      <div id="ownerConsole" style="display:none">
+        <p style="font-size:13px;color:var(--good);margin-bottom:12px">Owner unlocked — these settings are hidden from store managers.</p>
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;cursor:pointer">
+            <input type="checkbox" id="promoEnabled" style="width:auto" />
+            Show promotional / rebate message on the customer display
+          </label>
+        </div>
+        <div class="form-group">
+          <label>Ad images / GIFs (each fills the whole customer display)</label>
+          <div id="adsList"></div>
+          <button type="button" class="btn btn-gray" style="padding:5px 12px;font-size:12px;margin-top:6px" onclick="addAdSlide()">+ Add image</button>
+        </div>
+        <div class="form-group" style="max-width:240px"><label>Rotate every (seconds)</label><input type="number" id="adsInterval" min="3" max="60" value="8" /></div>
+        <button class="btn btn-navy" onclick="saveOwnerDisplay()">Save Display Settings</button>
+        <button class="btn btn-gray" style="margin-left:8px" onclick="navigate('admin')">Tenant Admin →</button>
+        <div class="form-group" style="max-width:280px;margin-top:18px">
+          <label>Update channel (this register)</label>
+          <select id="updateChannel" onchange="setUpdateChannel()">
+            <option value="production">Production (stable)</option>
+            <option value="staging">Staging (test builds first)</option>
+          </select>
+        </div>
+        <div class="form-group" style="max-width:360px;margin-top:18px;border-top:1px solid var(--line);padding-top:16px">
+          <label>Store connection</label>
+          <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Disconnect this register from its current business/location so you can enter a new activation key. Data already synced to the cloud is kept.</p>
+          <button class="btn" style="background:var(--bad);color:var(--panel)" onclick="disconnectRegister()">Disconnect &amp; change store…</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-left" id="status-left">Loading…</div>
+    <div class="status-right" id="status-right"></div>
+  </div>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script src="../lib/writeGuard.js"></script>
+  <script src="../lib/licenseUi.js"></script>
+  <script src="../lib/syncUi.js"></script>
+  <script>
+    
+    
+    
+    
+    function esc(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      
+      const { session } = await window.api.getSession();
+      if (session?.role !== 'manager') {
+        showToast('Settings requires manager access', 'error');
+        setTimeout(() => navigate('main-menu'), 1500);
+        return;
+      }
+
+      ownerInitCard();
+      loadOnboarding();
+      loadSyncStatus();
+      document.querySelector('#syncDiagBox').closest('details').addEventListener('toggle', (e) => {
+        if (e.target.open) loadSyncDiagnostics();
+      });
+
+      const [settingsRes, configRes, termCfgRes] = await Promise.all([
+        window.api.getSettings(),
+        window.api.getReceiptConfig(),
+        window.api.getTerminalConfig(),
+      ]);
+
+      if (settingsRes.success) {
+        const s = settingsRes.settings;
+        document.getElementById('printerType').value = s.printer_type || 'epson';
+        window._savedPrinterIface = s.printer_interface || '';
+        document.getElementById('printerInterface').value = /^tcp:\/\//i.test(window._savedPrinterIface) ? window._savedPrinterIface : '';
+        loadPrinters();
+        document.getElementById('zebraIp').value = s.zebra_ip || '';
+        document.getElementById('zebraPort').value = s.zebra_port || '9100';
+        document.getElementById('drawerType').value = s.drawer_type || 'serial';
+        document.getElementById('cashFloat').value = s.cash_float || '200';
+        document.getElementById('drawerBaud').value = s.drawer_baud || '9600';
+        document.getElementById('drawerKickHex').value = s.drawer_kick_hex || '1B 70 00 19 FA';
+        window._savedDrawerPort = s.drawer_com_port || '';
+        toggleDrawerFields();
+        loadDrawerPorts();
+        document.getElementById('onscreenKeyboardEnabled').checked = s.onscreen_keyboard_enabled === '1';
+      }
+
+      if (termCfgRes.success) {
+        const c = termCfgRes.config;
+        document.getElementById('terminalType').value = c.terminal_type || 'valor_vp100';
+        document.getElementById('terminalTransport').value = c.terminal_transport || 'tcp';
+        document.getElementById('terminalIp').value = c.terminal_ip || '';
+        document.getElementById('terminalPort').value = c.terminal_port || '5000';
+        onTerminalTypeChange();
+      }
+
+      
+      try {
+        const ipRes = await window.api.getLocalIps();
+        const el = document.getElementById('pcIpHint');
+        if (el && ipRes.success && ipRes.ips.length) el.textContent = ` (This PC is ${ipRes.ips.join(', ')}.)`;
+      } catch {  }
+
+      if (configRes.success && configRes.config) {
+        const c = configRes.config;
+        document.getElementById('storeName').value = c.store_name || '';
+        document.getElementById('storePhone').value = c.phone || '';
+        document.getElementById('storeAddress').value = c.address || '';
+        document.getElementById('storeFooter').value = c.footer_message || '';
+        document.getElementById('refundPolicy').value = c.refund_policy || '';
+        document.getElementById('tipEnabled').checked = c.tip_enabled == 1 || c.tip_enabled === true;
+        document.getElementById('tipPresets').value = c.tip_presets || '15,18,20';
+        document.getElementById(c.rebate_auto_apply == 1 ? 'rebateModeOn' : 'rebateModeOff').checked = true;
+        document.getElementById('taxRate').value = ((c.tax_rate || 0.0825) * 100).toFixed(2);
+        document.getElementById('minAge').value = String(c.min_age ?? 21);
+      }
+    });
+
+    
+    async function loadOnboarding() {
+      const res = await window.api.getOnboardingStatus();
+      if (!res || !res.success) return;
+      
+      if (res.complete && res.dismissed) { document.getElementById('onboardingCard').style.display = 'none'; return; }
+
+      document.getElementById('onboardingCard').style.display = 'block';
+      document.getElementById('obPct').textContent = res.overall_progress;
+      document.getElementById('obBar').style.width = res.overall_progress + '%';
+
+      document.getElementById('obList').innerHTML = res.checklist.map(s => {
+        const icon = s.status === 'complete' ? '✓' : (s.status === 'current' ? '▶' : '○');
+        const color = s.status === 'complete' ? 'var(--good)' : (s.status === 'current' ? 'var(--loyalty)' : 'var(--faint)');
+        const weight = s.status === 'current' ? '700' : '500';
+        return `<div style="display:flex;align-items:center;gap:9px;padding:5px 0;font-size:14px">
+          <span style="color:${color};font-weight:800;width:16px;text-align:center">${icon}</span>
+          <span style="color:${s.status==='complete'?'var(--muted)':'var(--ink)'};font-weight:${weight}">${esc(s.label)}${s.optional ? ' <span style="font-size:11px;color:var(--faint)">(optional)</span>' : ''}</span>
+        </div>`;
+      }).join('');
+
+      document.getElementById('obNext').innerHTML = res.next_action
+        ? `<strong>Next:</strong> ${esc(res.next_action)}` : '';
+
+      const call = document.getElementById('obCall');
+      if (res.book_a_call) {
+        call.style.display = 'block';
+        call.innerHTML = `${esc(res.book_a_call.message)} <a href="${esc(res.book_a_call.booking_url)}" target="_blank" style="font-weight:700;color:var(--info)">Book a call →</a>`;
+      } else { call.style.display = 'none'; }
+
+      document.getElementById('obDismiss').style.display = res.complete ? 'inline-flex' : 'none';
+    }
+    async function dismissOnboarding() {
+      await window.api.dismissOnboarding();
+      document.getElementById('onboardingCard').style.display = 'none';
+    }
+
+    
+    let ownerPinCached = null;
+    async function ownerInitCard() {
+      
+      
+      let demo = false;
+      try { const d = await window.api.appIsDemo(); demo = !!(d && d.demo); } catch {  }
+      const card = document.getElementById('ownerCard');
+      if (!demo) { card.style.display = 'none'; return; }
+      card.style.display = '';
+
+      const r = await window.api.ownerHasPin();
+      const hasPin = !!(r && r.hasPin);
+      card._hasPin = hasPin;
+      document.getElementById('ownerLockMsg').textContent = hasPin
+        ? 'Enter your Owner PIN to unlock owner-only settings.'
+        : 'Create an Owner PIN to protect owner-only settings.';
+      document.getElementById('ownerPinLabel').textContent = hasPin ? 'Owner PIN' : 'New Owner PIN';
+      document.getElementById('ownerPinConfirmWrap').style.display = hasPin ? 'none' : 'block';
+      document.getElementById('ownerUnlockBtn').textContent = hasPin ? 'Unlock' : 'Create PIN';
+      document.getElementById('ownerResetPinBtn').style.display = hasPin ? 'inline-block' : 'none';
+    }
+    async function ownerResetPin() {
+      if (!confirm('Reset the Owner PIN? You will set a new one right after.')) return;
+      const res = await window.api.ownerResetPin();
+      if (!res.success) { showToast(res.error || 'Reset failed', 'error'); return; }
+      showToast('Owner PIN cleared — create a new one', 'success');
+      document.getElementById('ownerPin').value = '';
+      document.getElementById('ownerPinConfirm').value = '';
+      await ownerInitCard();
+    }
+    async function ownerUnlock() {
+      const hasPin = document.getElementById('ownerCard')._hasPin;
+      const pin = document.getElementById('ownerPin').value.trim();
+      if (!pin) return;
+      if (!hasPin) {
+        const confirm = document.getElementById('ownerPinConfirm').value.trim();
+        if (pin.length < 4) { showToast('PIN must be at least 4 digits', 'warning'); return; }
+        if (pin !== confirm) { showToast('PINs do not match', 'warning'); return; }
+        const res = await window.api.ownerSetPin(pin);
+        if (!res.success) { showToast(res.error || 'Failed to set PIN', 'error'); return; }
+      } else {
+        const res = await window.api.ownerVerifyPin(pin);
+        if (!res.success) { showToast('Incorrect Owner PIN', 'error'); return; }
+      }
+      ownerPinCached = pin;
+      document.getElementById('ownerLocked').style.display = 'none';
+      document.getElementById('ownerConsole').style.display = 'block';
+      const cfg = await window.api.ownerGetDisplayConfig();
+      if (cfg && cfg.config) {
+        document.getElementById('promoEnabled').checked = !!cfg.config.promo_enabled;
+        document.getElementById('adsInterval').value = cfg.config.ads_interval || 8;
+        const list = document.getElementById('adsList');
+        list.innerHTML = '';
+        const ads = cfg.config.ads || [];
+        if (ads.length) ads.forEach(addAdSlide); else addAdSlide();
+      }
+      try { const uc = await window.api.updateGetChannel(); if (uc && uc.channel) document.getElementById('updateChannel').value = uc.channel; } catch (e) {}
+    }
+    async function setUpdateChannel() {
+      const ch = document.getElementById('updateChannel').value;
+      const r = await window.api.updateSetChannel(ch);
+      showToast(r.success ? ('Update channel: ' + ch) : 'Failed', r.success ? 'success' : 'error');
+    }
+    function addAdSlide(slide) {
+      slide = slide || {};
+      const row = document.createElement('div');
+      row.className = 'ad-slide-row';
+      row.style.cssText = 'border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--panel-2)';
+      row.innerHTML =
+        '<div style="display:flex;gap:8px;align-items:center">' +
+        '<input type="text" class="ad-image" placeholder="Image or GIF URL — fills the whole screen" style="flex:1" />' +
+        '<button type="button" class="btn btn-gray" style="padding:2px 10px;font-size:12px" onclick="this.closest(\'.ad-slide-row\').remove()">Remove</button>' +
+        '</div>';
+      row.querySelector('.ad-image').value = slide.image || '';
+      document.getElementById('adsList').appendChild(row);
+    }
+    function collectAds() {
+      return Array.from(document.querySelectorAll('#adsList .ad-slide-row')).map((r) => ({
+        image: r.querySelector('.ad-image').value.trim(),
+      })).filter((s) => s.image);
+    }
+    
+    async function resyncToCloud(btn) {
+      btn.disabled = true; const t = btn.textContent; btn.textContent = 'Resyncing…';
+      const r = await window.api.syncResyncAll();
+      btn.disabled = false; btn.textContent = t;
+      if (r && r.success) showToast(`Queued ${r.queued} item(s) — syncing to cloud`, 'success');
+      else showToast((r && r.error) || 'Resync failed', 'error');
+      loadSyncStatus();
+    }
+
+    let syncDiagLoaded = false;
+    async function loadSyncDiagnostics() {
+      if (syncDiagLoaded) return;
+      syncDiagLoaded = true;
+      const box = document.getElementById('syncDiagBox');
+      const d = await window.api.syncDiagnostics();
+      if (!d.success) { box.textContent = 'Error: ' + (d.error || 'unknown'); return; }
+      const cursorLines = d.cursors.length
+        ? d.cursors.map(c => `  ${c.table_name}: last pulled through ${c.last_pulled_at || '(never)'}`).join('\n')
+        : '  (no pull cursors yet)';
+      box.textContent =
+        `tenant_id:   ${d.tenant_id || '(none — not licensed)'}\n` +
+        `location_id: ${d.location_id || '(none — this register has no location bound; peer-pull is skipped entirely)'}\n` +
+        `register_id: ${d.register_id}\n\n` +
+        `pull cursors:\n${cursorLines}`;
+    }
+
+    async function loadSyncStatus() {
+      const box = document.getElementById('syncStatusBox');
+      if (!box) return;
+      let s;
+      try { s = (await window.api.syncStatus()).status; } catch { box.textContent = 'Could not load sync status.'; return; }
+      if (!s) { box.textContent = 'Could not load sync status.'; return; }
+      const dot = { synced: 'var(--good)', pending: 'var(--warn)', offline: 'var(--faint)', conflict: 'var(--warn)', error: 'var(--bad)' }[s.state] || 'var(--faint)';
+      const label = { synced: 'Synced', pending: `${s.pending_sync_count} pending`, offline: 'Offline', conflict: `${s.conflict_count} conflict(s)`, error: `${s.dead_letter_count} failed — needs attention` }[s.state] || s.state;
+      const lastOk = s.last_sync_succeeded_at ? new Date(s.last_sync_succeeded_at).toLocaleString() : 'never';
+      box.innerHTML = `
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-right:6px"></span>
+        <strong>${esc(label)}</strong>
+        <span style="color:var(--faint)"> · ${s.online ? 'online' : 'offline'} · last successful sync: ${esc(lastOk)}</span>
+        ${s.last_sync_error && s.state !== 'synced' ? `<div style="color:var(--bad);margin-top:4px">${esc(s.last_sync_error)}</div>` : ''}`;
+    }
+
+    
+    
+    async function disconnectRegister() {
+      if (!confirm('Disconnect this register from its current store?\n\nYou will need a business key to set it up again. Sales already synced to the cloud are kept — this does not delete data.')) return;
+      const r = await window.api.licenseDeactivate();
+      if (r && r.success === false) { showToast(r.error || 'Could not disconnect', 'error'); return; }
+      await window.api.navigate('activation');
+    }
+
+    async function saveOwnerDisplay() {
+      if (!ownerPinCached) { showToast('Unlock the Owner Console first', 'warning'); return; }
+      const res = await window.api.ownerSetDisplayConfig(ownerPinCached, {
+        promo_enabled: document.getElementById('promoEnabled').checked,
+        ads: collectAds(),
+        ads_interval: parseInt(document.getElementById('adsInterval').value, 10) || 8,
+      });
+      showToast(res.success ? 'Display settings saved' : (res.error || 'Failed'), res.success ? 'success' : 'error');
+    }
+
+    async function saveRebateMode() {
+      const on = document.getElementById('rebateModeOn').checked;
+      const r = await window.api.updateReceiptConfig({ rebate_auto_apply: on ? 1 : 0 });
+      showToast(r.success ? 'Rebate setting saved' : (r.error || 'Failed'), r.success ? 'success' : 'error');
+    }
+
+    async function saveReceiptConfig() {
+      const data = {
+        store_name: document.getElementById('storeName').value.trim(),
+        phone: document.getElementById('storePhone').value.trim(),
+        
+        footer_message: document.getElementById('storeFooter').value.trim(),
+        refund_policy: document.getElementById('refundPolicy').value.trim(),
+        tip_enabled: document.getElementById('tipEnabled').checked ? 1 : 0,
+        tip_presets: document.getElementById('tipPresets').value.trim() || '15,18,20',
+        tax_rate: parseFloat(document.getElementById('taxRate').value) / 100,
+        min_age: parseInt(document.getElementById('minAge').value, 10) || 0,
+      };
+      const res = await window.api.updateReceiptConfig(data);
+      showToast(res.success ? 'Receipt settings saved!' : (res.error || 'Failed'), res.success ? 'success' : 'error');
+    }
+
+    function toggleDrawerFields() {
+      const type = document.getElementById('drawerType').value;
+      document.getElementById('drawerPortGroup').style.display = type === 'serial' ? 'block' : 'none';
+      document.getElementById('drawerAdvanced').style.display = type === 'serial' ? 'flex' : 'none';
+    }
+
+    async function loadDrawerPorts() {
+      const sel = document.getElementById('drawerComPort');
+      try {
+        const res = await window.api.listDrawerPorts();
+        const ports = (res.success && res.ports) ? res.ports : [];
+        const want = document.getElementById('drawerComPort').value || window._savedDrawerPort || '';
+        sel.innerHTML = '<option value="">Auto-detect</option>' + ports.map(p => {
+          const label = `${p.path}${p.manufacturer ? ' — ' + p.manufacturer : ''}${p.vendorId ? ' (VID ' + p.vendorId + ')' : ''}`;
+          return `<option value="${p.path}">${label}</option>`;
+        }).join('');
+        sel.value = want;
+        document.getElementById('drawerStatus').innerHTML = ports.length
+          ? `<span style="color:var(--ink-2)">${ports.length} serial port(s) found.</span>`
+          : `<span style="color:var(--warn)">No serial ports detected. Plug in the drawer and click Refresh Ports.</span>`;
+      } catch (e) {
+        document.getElementById('drawerStatus').innerHTML = `<span style="color:var(--bad)">${e}</span>`;
+      }
+    }
+
+    async function saveDrawerSettings() {
+      const floatVal = parseFloat(document.getElementById('cashFloat').value);
+      await Promise.all([
+        window.api.updateSetting('drawer_type', document.getElementById('drawerType').value),
+        window.api.updateSetting('drawer_com_port', document.getElementById('drawerComPort').value),
+        window.api.updateSetting('drawer_baud', document.getElementById('drawerBaud').value.trim() || '9600'),
+        window.api.updateSetting('drawer_kick_hex', document.getElementById('drawerKickHex').value.trim() || '1B 70 00 19 FA'),
+        window.api.updateSetting('cash_float', String(Number.isFinite(floatVal) && floatVal >= 0 ? floatVal : 200)),
+      ]);
+      window._savedDrawerPort = document.getElementById('drawerComPort').value;
+      showToast('Drawer settings saved!', 'success');
+    }
+
+    async function saveTouchscreenSettings() {
+      await window.api.updateSetting('onscreen_keyboard_enabled', document.getElementById('onscreenKeyboardEnabled').checked ? '1' : '0');
+      showToast('Touchscreen settings saved!', 'success');
+    }
+
+    async function testDrawer() {
+      const statusEl = document.getElementById('drawerStatus');
+      statusEl.innerHTML = '<span style="color:var(--ink-2)">Sending kick…</span>';
+      
+      await saveDrawerSettings();
+      const res = await window.api.popDrawer('Settings test');
+      statusEl.innerHTML = res.success
+        ? `<span style="color:var(--good)">✓ Drawer opened${res.port ? ' on ' + res.port : ''} (${res.via || ''}).</span>`
+        : `<span style="color:var(--bad)">✗ ${res.error || 'Could not open drawer'}</span>`;
+    }
+
+    function onTerminalTypeChange() {
+      const isMock = document.getElementById('terminalType').value === 'mock';
+      const fields = document.getElementById('valorFields');
+      const inputs = fields.querySelectorAll('input');
+      fields.style.opacity = isMock ? '0.45' : '1';
+      inputs.forEach(el => { el.disabled = isMock; });
+      document.getElementById('testTerminalBtn').disabled = isMock;
+    }
+
+    async function testTerminal() {
+      const btn = document.getElementById('testTerminalBtn');
+      const resultEl = document.getElementById('testResult');
+      btn.disabled = true;
+      resultEl.textContent = 'Testing…';
+      resultEl.style.color = 'var(--muted)';
+
+      
+      await saveTerminalSettings(true);
+
+      const res = await window.api.testTerminalConnection();
+      btn.disabled = false;
+
+      if (res.success) {
+        resultEl.textContent = '✓ ' + (res.message || 'Connected');
+        resultEl.style.color = 'var(--good)';
+      } else {
+        resultEl.textContent = '✗ ' + (res.message || 'Unreachable');
+        resultEl.style.color = 'var(--bad)';
+      }
+    }
+
+    async function saveTerminalSettings(silent = false) {
+      const config = {
+        terminal_type: document.getElementById('terminalType').value,
+        terminal_transport: document.getElementById('terminalTransport').value,
+        terminal_ip: document.getElementById('terminalIp').value.trim(),
+        terminal_port: document.getElementById('terminalPort').value.trim() || '5000',
+      };
+      const res = await window.api.saveTerminalConfig(config);
+      if (!silent) {
+        showToast(res.success ? 'Terminal settings saved!' : (res.error || 'Save failed'), res.success ? 'success' : 'error');
+      }
+    }
+
+    function onPrinterSelect() {
+      const v = document.getElementById('printerSelect').value;
+      document.getElementById('printerNetworkGroup').style.display = v === '__network__' ? 'block' : 'none';
+    }
+
+    async function loadPrinters() {
+      const sel = document.getElementById('printerSelect');
+      const statusEl = document.getElementById('printerStatus');
+      let installed = [];
+      try {
+        const res = await window.api.listPrinters();
+        installed = (res.success && res.printers) ? res.printers : [];
+      } catch {  }
+
+      const saved = window._savedPrinterIface || '';
+      const isNet = /^tcp:\/\//i.test(saved);
+      sel.innerHTML =
+        '<option value="">Select a printer…</option>' +
+        installed.map(p => `<option value="${esc(p.name)}">${esc(p.name)}${p.isDefault ? ' (default)' : ''}</option>`).join('') +
+        '<option value="__network__">Network printer (TCP/IP)…</option>' +
+        '<option value="none">Off — save receipts to file</option>';
+
+      
+      if (saved === 'none') sel.value = 'none';
+      else if (isNet) sel.value = '__network__';
+      else if (saved && installed.some(p => p.name === saved)) sel.value = saved;
+      else sel.value = '';
+      onPrinterSelect();
+
+      statusEl.innerHTML = installed.length
+        ? `<span style="color:var(--ink-2)">${installed.length} printer(s) found.</span>`
+        : `<span style="color:var(--warn)">No installed printers detected. Install the printer's driver, then click Refresh Printers.</span>`;
+    }
+
+    function selectedPrinterInterface() {
+      const v = document.getElementById('printerSelect').value;
+      if (v === '__network__') return document.getElementById('printerInterface').value.trim();
+      if (v === 'none' || v === '') return v || 'none';
+      return v; 
+    }
+
+    async function savePrinterSettings() {
+      const iface = selectedPrinterInterface();
+      window._savedPrinterIface = iface;
+      await Promise.all([
+        window.api.updateSetting('printer_type', document.getElementById('printerType').value),
+        window.api.updateSetting('printer_interface', iface),
+      ]);
+      showToast('Printer settings saved!', 'success');
+    }
+
+    async function testPrinter() {
+      const statusEl = document.getElementById('printerStatus');
+      statusEl.innerHTML = '<span style="color:var(--ink-2)">Sending test print…</span>';
+      await savePrinterSettings();
+      const res = await window.api.testPrint();
+      statusEl.innerHTML = res.success
+        ? '<span style="color:var(--good)">✓ Test sent — check the printer for a slip and listen for the drawer.</span>'
+        : `<span style="color:var(--bad)">✗ ${res.error || 'Test print failed'}</span>`;
+    }
+
+    async function saveZebraSettings() {
+      await Promise.all([
+        window.api.updateSetting('zebra_ip', document.getElementById('zebraIp').value.trim()),
+        window.api.updateSetting('zebra_port', document.getElementById('zebraPort').value.trim() || '9100'),
+      ]);
+      showToast('Zebra settings saved!', 'success');
+    }
+  </script>
+</body>
+</html>

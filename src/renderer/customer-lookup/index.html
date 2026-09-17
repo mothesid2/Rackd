@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Customer Lookup</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    body { overflow: hidden; }
+    .page-layout {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 16px;
+      padding: 16px;
+      padding-bottom: 56px;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .left-pane { display: flex; flex-direction: column; overflow: hidden; gap: 10px; }
+    
+    .left-pane .search-wrap { flex: 0 0 auto; }
+    .left-pane .search-wrap input { padding-left: 12px; }
+    .right-pane { display: flex; flex-direction: column; overflow: hidden; }
+
+    .customer-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .customer-item {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line-soft);
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+
+    .customer-item:hover { background: var(--panel-2); }
+    .customer-item.selected { background: var(--accent-dim); border-left: 3px solid var(--accent); }
+    .customer-item:last-child { border-bottom: none; }
+
+    .ci-name { font-size: 15px; font-weight: 600; color: var(--ink); }
+    .ci-phone { font-size: 13px; color: var(--muted); margin-top: 2px; }
+    .ci-meta { font-size: 12px; color: var(--faint); margin-top: 2px; }
+
+    
+    .detail-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .detail-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      color: var(--faint);
+      font-size: 15px;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .detail-placeholder svg { width: 56px; height: 56px; opacity: 0.2; }
+
+    .profile-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #2a2f37, #1b1d21);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--panel);
+      flex-shrink: 0;
+    }
+
+    .profile-info h3 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .profile-info p { font-size: 14px; color: var(--muted); }
+
+    .profile-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .stat-box {
+      background: var(--panel-2);
+      border-radius: 8px;
+      padding: 10px 12px;
+      text-align: center;
+    }
+
+    .stat-box .stat-val { font-size: 18px; font-weight: 800; color: var(--ink); }
+    .stat-box .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+    .txn-history { flex: 1; overflow-y: auto; }
+
+    .txn-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line-soft);
+      font-size: 14px;
+    }
+
+    .txn-row:last-child { border: none; }
+
+    .opt-in-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      padding: 10px 0;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 42px;
+      height: 22px;
+    }
+
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: var(--faint);
+      border-radius: 22px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 18px; height: 18px;
+      left: 2px; top: 2px;
+      background: var(--panel);
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+
+    .toggle-switch input:checked + .toggle-slider { background: var(--good); }
+    .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
+
+    .detail-actions {
+      display: flex;
+      gap: 8px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+
+    
+    .marketing-tile-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .marketing-tile {
+      flex: 1;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 4px;
+      height: auto;
+      min-height: 46px;
+      padding: 8px 4px;
+      font-size: 11.5px;
+    }
+
+    .marketing-tile svg {
+      width: 15px;
+      height: 15px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    
+    <div class="left-pane">
+      <div class="page-header" style="margin-bottom:10px">
+        <button class="btn btn-back" onclick="navigate('main-menu')">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+          Back
+        </button>
+        <h1 class="page-title">Customers</h1>
+      </div>
+
+      <div class="search-wrap">
+        <input type="text" id="searchInput" placeholder="Name or phone…" />
+      </div>
+
+      <div class="card" id="customerListCard" style="flex:1;overflow:hidden;padding:0;display:none">
+        <div class="customer-list" id="customerList"></div>
+      </div>
+
+      <button class="btn btn-green" style="width:100%" onclick="openAddCustomer()">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add New Customer
+      </button>
+
+      
+      <div id="marketingTools" style="display:none">
+        <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--faint);margin:6px 0 5px 2px">Marketing</div>
+        <div class="marketing-tile-row">
+          <button class="btn btn-gray marketing-tile" id="smsBlastBtn" onclick="openModal('smsBlastModal')" data-tooltip="SMS text blast">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span>Text blast</span>
+          </button>
+          <button class="btn btn-gray marketing-tile" id="birthdayBtn" onclick="openBirthdays()" data-tooltip="Birthdays today">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8"/><path d="M16.5 8a2.5 2.5 0 0 0 0-5C13 3 12 8 12 8"/></svg>
+            <span>Birthdays</span>
+          </button>
+          <button class="btn btn-gray marketing-tile" id="nudgeBtn" onclick="sendNudges()" data-tooltip="Text customers close to a reward">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+            <span>Nudges</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    
+    <div class="right-pane">
+      <div class="card detail-card" id="detailCard">
+        <div class="detail-placeholder" id="detailPlaceholder">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+          Select a customer to view details
+        </div>
+        <div id="customerDetail" style="display:none;flex:1;display:flex;flex-direction:column;overflow:hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="addCustomerModal" style="display:none">
+    <div class="modal" style="max-width:480px;width:95%">
+      <button class="modal-close" onclick="closeModal('addCustomerModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title">Add Customer</div>
+      <div class="form-row">
+        <div class="form-group"><label>First Name *</label><input type="text" id="ac-first" /></div>
+        <div class="form-group"><label>Last Name *</label><input type="text" id="ac-last" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Phone</label><input type="tel" id="ac-phone" /></div>
+        <div class="form-group"><label>Email</label><input type="email" id="ac-email" /></div>
+      </div>
+      <div class="form-group"><label>Address</label><input type="text" id="ac-address" /></div>
+      <div class="form-row">
+        <div class="form-group"><label>City</label><input type="text" id="ac-city" /></div>
+        <div class="form-group" style="max-width:80px"><label>State</label><input type="text" id="ac-state" maxlength="2" /></div>
+        <div class="form-group" style="max-width:110px"><label>ZIP</label><input type="text" id="ac-zip" maxlength="10" /></div>
+      </div>
+      <div class="form-group"><label>Notes</label><textarea id="ac-notes" rows="2" style="resize:vertical"></textarea></div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('addCustomerModal')">Cancel</button>
+        <button class="btn btn-navy" id="addCustomerBtn" data-write-action="customer_edit">Save Customer</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="confirmCustomerModal" style="display:none">
+    <div class="modal" style="max-width:460px;width:95%">
+      <button class="modal-close" onclick="closeModal('confirmCustomerModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title">Confirm New Customer</div>
+
+      
+      <div id="cc-step-info">
+        <p style="font-size:13px;color:var(--ink-2);margin-bottom:10px">Please confirm this information is correct:</p>
+        <div id="cc-summary" style="border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--panel-2);font-size:14px;line-height:1.7"></div>
+        <div class="modal-actions">
+          <button class="btn btn-gray" onclick="closeModal('confirmCustomerModal')">Edit</button>
+          <button class="btn btn-navy" onclick="ccConfirmInfo()">Yes, information is correct →</button>
+        </div>
+      </div>
+
+      
+      <div id="cc-step-consent" style="display:none">
+        <label style="display:flex;align-items:flex-start;gap:8px;text-transform:none;font-size:14px;cursor:pointer;margin-bottom:10px">
+          <input type="checkbox" id="cc-consent" style="width:auto;margin-top:3px" onchange="ccToggleConsent()" />
+          <span>Customer consents to receive <strong>marketing &amp; loyalty program</strong> text messages at the number provided.</span>
+        </label>
+        <div id="cc-consent-block" style="display:none;border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--panel-2)">
+          <div style="font-size:12px;color:var(--ink-2);line-height:1.5;margin-bottom:8px">
+            By signing, the customer agrees to receive recurring automated marketing &amp; loyalty
+            text messages at the number provided. Consent is not a condition of purchase. Msg &amp; data
+            rates may apply; msg frequency varies. Reply STOP to opt out, HELP for help.
+          </div>
+          <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Customer signature</label>
+          <canvas id="ac-sig" width="440" height="120" style="width:100%;height:120px;border:1px dashed var(--faint);border-radius:6px;background:var(--panel);touch-action:none;cursor:crosshair"></canvas>
+          <div style="text-align:right;margin-top:4px">
+            <button type="button" class="btn btn-gray" style="padding:4px 10px;font-size:12px" onclick="clearSignature()">Clear</button>
+          </div>
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin-top:8px">Leave unchecked if the customer does not want texts — the profile still saves.</p>
+        <div class="modal-actions">
+          <button class="btn btn-gray" onclick="ccBackToInfo()">Back</button>
+          <button class="btn btn-navy" id="ccSaveBtn" data-write-action="customer_edit">Save Customer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="editCustomerModal" style="display:none">
+    <div class="modal" style="max-width:480px;width:95%">
+      <button class="modal-close" onclick="closeModal('editCustomerModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title">Edit Customer</div>
+      <input type="hidden" id="ec-id" />
+      <div class="form-row">
+        <div class="form-group"><label>First Name *</label><input type="text" id="ec-first" /></div>
+        <div class="form-group"><label>Last Name *</label><input type="text" id="ec-last" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Phone</label><input type="tel" id="ec-phone" /></div>
+        <div class="form-group"><label>Email</label><input type="email" id="ec-email" /></div>
+      </div>
+      <div class="form-group"><label>Address</label><input type="text" id="ec-address" /></div>
+      <div class="form-row">
+        <div class="form-group"><label>City</label><input type="text" id="ec-city" /></div>
+        <div class="form-group" style="max-width:80px"><label>State</label><input type="text" id="ec-state" maxlength="2" /></div>
+        <div class="form-group" style="max-width:110px"><label>ZIP</label><input type="text" id="ec-zip" maxlength="10" /></div>
+      </div>
+      <div class="form-group"><label>Notes</label><textarea id="ec-notes" rows="2" style="resize:vertical"></textarea></div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('editCustomerModal')">Cancel</button>
+        <button class="btn btn-navy" id="editCustomerBtn" data-write-action="customer_edit">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="sendTextModal" style="display:none">
+    <div class="modal" style="max-width:440px">
+      <button class="modal-close" onclick="closeModal('sendTextModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title">Send Text Message</div>
+      <div style="font-size:14px;color:var(--muted);margin-bottom:14px">To: <strong id="smsToName"></strong> (<span id="smsToPhone"></span>)</div>
+      <div class="form-group">
+        <label>Message</label>
+        <textarea id="smsMessage" rows="4" style="resize:vertical" maxlength="160"
+                  oninput="document.getElementById('smsCharCount').textContent=this.value.length"></textarea>
+        <div style="text-align:right;font-size:12px;color:var(--muted);margin-top:4px">
+          <span id="smsCharCount">0</span>/160 characters
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('sendTextModal')">Cancel</button>
+        <button class="btn btn-navy" id="sendSmsBtn">Send Message</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="smsBlastModal" style="display:none">
+    <div class="modal" style="max-width:500px">
+      <button class="modal-close" onclick="closeModal('smsBlastModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title">SMS Text Blast</div>
+      <div class="form-group">
+        <label>Message</label>
+        <textarea id="blastMessage" rows="4" style="resize:vertical" maxlength="160"
+                  oninput="document.getElementById('blastCharCount').textContent=this.value.length"></textarea>
+        <div style="text-align:right;font-size:12px;color:var(--muted);margin-top:4px">
+          <span id="blastCharCount">0</span>/160 characters
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Recipients</label>
+        <select id="blastFilter">
+          <option value="all">All opted-in customers</option>
+          <option value="30">Purchased in last 30 days</option>
+          <option value="60">Purchased in last 60 days</option>
+          <option value="90">Purchased in last 90 days</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('smsBlastModal')">Cancel</button>
+        <button class="btn btn-navy" id="sendBlastBtn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Send Blast
+        </button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="birthdayModal" style="display:none">
+    <div class="modal" style="max-width:520px;width:95%">
+      <button class="modal-close" onclick="closeModal('birthdayModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title">🎂 Birthdays Today</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+        Generates a 15% off code (7-day expiry), awards a +50 point bonus, and texts opted-in customers.
+      </p>
+      <div id="birthdayList" style="max-height:300px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;margin-bottom:14px"></div>
+      <div id="birthdayResults" style="display:none;font-size:13px;color:var(--good);background:var(--good-dim);border-radius:8px;padding:10px;margin-bottom:12px"></div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('birthdayModal')">Close</button>
+        <button class="btn btn-navy" id="runBirthdayBtn">Generate &amp; Send</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="txnDetailModal" style="display:none">
+    <div class="modal" style="max-width:500px;width:95%">
+      <button class="modal-close" onclick="closeModal('txnDetailModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title" id="txnDetailTitle">Transaction #—</div>
+      <div id="txnDetailMeta" style="font-size:13px;color:var(--muted);margin-bottom:12px"></div>
+      <div id="txnDetailItems" style="max-height:220px;overflow-y:auto;margin:8px 0;border:1px solid var(--line-soft);border-radius:8px;padding:4px 8px"></div>
+      <div id="txnDetailTotals"></div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('txnDetailModal')">Close</button>
+        <button class="btn btn-navy" id="txnDetailPrintBtn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Print ESC/POS
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-left" id="status-left">Loading…</div>
+    <div class="status-right" id="status-right"></div>
+  </div>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script src="../lib/writeGuard.js"></script>
+  <script src="../lib/licenseUi.js"></script>
+  <script src="../lib/syncUi.js"></script>
+  <script>
+    let customers = [];
+    let selectedCustomer = null;
+    let selectedCustomerDetail = null;
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      if (!(await enforceMenuAccess('access_customer_lookup'))) return;
+      loadCustomers();
+
+      
+      const session = (await window.api.getSession()).session;
+      if (session?.role === 'manager') {
+        document.getElementById('marketingTools').style.display = 'block';
+        document.getElementById('runBirthdayBtn').addEventListener('click', runBirthdays);
+      }
+
+      document.getElementById('searchInput').addEventListener('input', e => {
+        const q = e.target.value.trim();
+        filterList(q);
+      });
+
+      document.getElementById('addCustomerBtn').addEventListener('click', reviewNewCustomer);
+      document.getElementById('ccSaveBtn').addEventListener('click', saveConfirmedCustomer);
+      initSignaturePad();
+      document.getElementById('editCustomerBtn').addEventListener('click', editCustomer);
+
+      document.getElementById('sendBlastBtn').addEventListener('click', sendBlast);
+    });
+
+    async function loadCustomers(query = '') {
+      const res = await window.api.getCustomers(query);
+      if (!res.success) { showToast(res.error, 'error'); return; }
+      customers = res.customers;
+      filterList(document.getElementById('searchInput').value.trim());
+    }
+
+    function filterList(query) {
+      const card = document.getElementById('customerListCard');
+      if (!query) {
+        
+        if (card) card.style.display = 'none';
+        document.getElementById('customerList').innerHTML = '';
+        return;
+      }
+      if (card) card.style.display = '';
+      const q = query.toLowerCase();
+      const filtered = customers.filter(c =>
+        (c.first_name + ' ' + c.last_name).toLowerCase().includes(q) ||
+        (c.phone || '').includes(q)
+      );
+      renderList(filtered);
+    }
+
+    function renderList(list) {
+      const el = document.getElementById('customerList');
+      if (list.length === 0) {
+        el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--faint);font-size:14px">No customers found</div>';
+        return;
+      }
+
+      el.innerHTML = list.map(c => `
+        <div class="customer-item ${selectedCustomer?.id === c.id ? 'selected' : ''}"
+             onclick="selectCustomer(${c.id})">
+          <div class="ci-name">${esc(c.first_name)} ${esc(c.last_name)}</div>
+          <div class="ci-phone">${esc(c.phone || '—')}</div>
+          <div class="ci-meta">
+            ${c.last_visit ? `Last visit: ${fmtDate(c.last_visit)}` : 'No visits'}
+            &nbsp;·&nbsp; Total: ${fmt(c.total_spent)}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function selectCustomer(id) {
+      selectedCustomer = customers.find(c => c.id === id);
+      renderList(customers.filter(() => true)); 
+
+      const res = await window.api.getCustomer(id);
+      if (!res.success) return;
+      selectedCustomerDetail = res;
+
+      const c = res.customer;
+      const txns = res.transactions;
+      const loy = res.loyalty || { tier: 'Member', next_tier_at: 500, ledger: [] };
+
+      document.getElementById('detailPlaceholder').style.display = 'none';
+      const detailEl = document.getElementById('customerDetail');
+      detailEl.style.display = 'flex';
+
+      const initials = (c.first_name[0] || '') + (c.last_name[0] || '');
+
+      detailEl.innerHTML = `
+        <div class="profile-header">
+          <div class="avatar">${esc(initials.toUpperCase())}</div>
+          <div class="profile-info">
+            <h3>${esc(c.first_name)} ${esc(c.last_name)}</h3>
+            <p>${esc(c.phone || '—')} ${c.email ? `&nbsp;·&nbsp; ${esc(c.email)}` : ''}</p>
+            ${(() => {
+              const addr = [c.address, [c.city, c.state].filter(Boolean).join(', '), c.zip].filter(Boolean).join(' ');
+              return addr ? `<p style="color:var(--muted);font-size:13px;margin-top:2px">🏠 ${esc(addr)}</p>` : '';
+            })()}
+            ${c.notes ? `<p style="color:var(--muted);font-size:13px;margin-top:4px">${esc(c.notes)}</p>` : ''}
+          </div>
+        </div>
+
+        <div class="profile-stats">
+          <div class="stat-box">
+            <div class="stat-val">${c.txn_count}</div>
+            <div class="stat-label">Visits</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val">${fmt(c.total_spent)}</div>
+            <div class="stat-label">Total Spent</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val">${c.last_visit ? fmtDate(c.last_visit) : '—'}</div>
+            <div class="stat-label">Last Visit</div>
+          </div>
+        </div>
+
+        <div style="background:var(--loyalty-dim);border:1px solid var(--loyalty-dim);border-radius:10px;padding:12px 14px;margin:4px 0 12px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <span style="font-size:20px;font-weight:800;color:var(--loyalty)">★ ${c.loyalty_points || 0}</span>
+              <span style="font-size:12px;color:var(--muted);margin-left:4px">points</span>
+              <span style="font-size:11px;font-weight:700;background:var(--loyalty-dim);color:var(--loyalty);padding:2px 9px;border-radius:10px;margin-left:8px">${esc(loy.tier)}</span>
+            </div>
+            <div style="font-size:11px;color:var(--muted);text-align:right">
+              ${loy.next_tier_at ? `${loy.next_tier_at - (c.lifetime_points || 0)} pts to next tier` : 'Top tier'}<br>
+              <span>${c.lifetime_points || 0} lifetime</span>
+            </div>
+          </div>
+          ${loy.ledger && loy.ledger.length ? `
+            <div style="margin-top:8px;border-top:1px solid var(--loyalty-dim);padding-top:6px">
+              ${loy.ledger.slice(0, 5).map(l => `
+                <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0">
+                  <span style="color:var(--muted)">${esc(l.reason)} · ${fmtDate(l.created_at)}</span>
+                  <span style="font-weight:600;color:${l.change >= 0 ? 'var(--good)' : 'var(--bad)'}">${l.change >= 0 ? '+' : ''}${l.change}</span>
+                </div>`).join('')}
+            </div>` : ''}
+        </div>
+
+        <div id="upsellBox" style="display:none;background:var(--info-dim);border:1px solid var(--info-dim);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px">
+          <div style="font-weight:700;color:var(--info);margin-bottom:4px">Suggested upsell</div>
+          <div id="upsellList" style="color:var(--ink-2)"></div>
+        </div>
+
+        <div class="opt-in-toggle">
+          <label class="toggle-switch">
+            <input type="checkbox" id="optInToggle" ${c.opt_in_sms ? 'checked' : ''}
+                   onchange="toggleOptIn(${c.id}, this.checked)" />
+            <span class="toggle-slider"></span>
+          </label>
+          <span>SMS Marketing</span>
+          <span style="font-size:12px;color:var(--muted);margin-left:4px">${c.opt_in_sms ? 'Opted In' : 'Opted Out'}</span>
+        </div>
+
+        <div class="card-title" style="margin-top:8px;display:flex;align-items:center;justify-content:space-between">
+          <span>Transaction History</span>
+          <span style="font-size:11px;color:var(--faint);font-weight:400">Click any row for details</span>
+        </div>
+        <div class="txn-history">
+          ${txns.length === 0
+            ? '<div style="color:var(--faint);font-size:13px;padding:8px 0">No transactions</div>'
+            : txns.map(t => `
+              <div class="txn-row" onclick="openTxnDetail(${t.id})" style="cursor:pointer;border-radius:6px;padding:8px 4px;margin:0 -4px;transition:background 0.1s"
+                   onmouseover="this.style.background='var(--panel-2)'" onmouseout="this.style.background=''">
+                <div>
+                  <div style="font-weight:600">#${t.id} <span style="font-size:11px;color:var(--faint);font-weight:400">↗</span></div>
+                  <div style="font-size:12px;color:var(--muted)">${fmtDate(t.created_at)}</div>
+                </div>
+                <div style="text-align:right">
+                  <div style="font-weight:600">${fmt(t.total)}</div>
+                  <div style="font-size:12px;color:var(--muted)">${esc(t.payment_method)}</div>
+                </div>
+              </div>
+            `).join('')
+          }
+        </div>
+
+        <div class="detail-actions">
+          <button class="btn btn-navy" onclick="openEditModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Edit
+          </button>
+          ${c.phone ? `
+            <button class="btn btn-navy" onclick="openSendText(${c.id}, '${esc(c.first_name)} ${esc(c.last_name)}', '${esc(c.phone)}')">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Send Text
+            </button>
+          ` : ''}
+        </div>
+      `;
+
+      
+      try {
+        const up = await window.api.getCustomerUpsell(id);
+        if (up.success && up.upsell.length) {
+          document.getElementById('upsellBox').style.display = 'block';
+          document.getElementById('upsellList').innerHTML = up.upsell
+            .map(p => `${esc(p.name)} <span style="color:var(--muted)">(${fmt(p.price)})</span>`).join(' &nbsp;·&nbsp; ');
+        }
+      } catch {  }
+    }
+
+    async function sendNudges() {
+      if (!confirm('Text all opted-in customers who are within 50 points of a reward?')) return;
+      const res = await window.api.sendCloseToReward({ within: 50 });
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      showToast(`Sent ${res.sent} nudge${res.sent !== 1 ? 's' : ''} (${res.eligible} eligible)`, 'success');
+    }
+
+    async function openBirthdays() {
+      document.getElementById('birthdayResults').style.display = 'none';
+      const listEl = document.getElementById('birthdayList');
+      listEl.innerHTML = '<div style="padding:14px;text-align:center;color:var(--faint)">Loading…</div>';
+      document.getElementById('runBirthdayBtn').disabled = false;
+      openModal('birthdayModal');
+
+      const res = await window.api.getBirthdaysToday();
+      if (!res.success) { listEl.innerHTML = `<div style="padding:14px;color:var(--bad)">${esc(res.error)}</div>`; return; }
+      if (res.birthdays.length === 0) {
+        listEl.innerHTML = '<div style="padding:14px;text-align:center;color:var(--faint)">No birthdays today</div>';
+        document.getElementById('runBirthdayBtn').disabled = true;
+        return;
+      }
+      listEl.innerHTML = res.birthdays.map(b => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 14px;border-bottom:1px solid var(--line-soft);font-size:14px">
+          <div><strong>${esc(b.name)}</strong> <span style="color:var(--muted);font-size:12px">${esc(b.phone || 'no phone')}</span></div>
+          <div style="font-size:11px">
+            ${b.opt_in_sms ? '<span style="color:var(--good)">opted in</span>' : '<span style="color:var(--warn)">no SMS</span>'}
+            ${b.already_generated ? ' · <span style="color:var(--muted)">code exists</span>' : ''}
+          </div>
+        </div>`).join('');
+    }
+
+    async function runBirthdays() {
+      const btn = document.getElementById('runBirthdayBtn');
+      btn.disabled = true; btn.textContent = 'Sending…';
+      const res = await window.api.runBirthdayPromos();
+      btn.textContent = 'Generate & Send';
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); btn.disabled = false; return; }
+      const el = document.getElementById('birthdayResults');
+      el.style.display = 'block';
+      el.innerHTML = `<strong>${res.generated}</strong> codes generated · <strong>${res.sent}</strong> texts sent · <strong>${res.bonuses}</strong> bonuses awarded`
+        + res.results.map(r => `<div style="margin-top:4px;color:var(--ink-2)">${esc(r.name)} — ${esc(r.code)} <span style="color:var(--muted)">(${esc(r.note)})</span></div>`).join('');
+      showToast(`${res.sent} birthday texts sent`, 'success');
+    }
+
+    async function toggleOptIn(id, value) {
+      const res = await window.api.updateCustomer(id, { opt_in_sms: value ? 1 : 0 });
+      if (!res.success) showToast(res.error || 'Update failed', 'error');
+      else showToast(`SMS ${value ? 'enabled' : 'disabled'}`, 'success');
+    }
+
+    function openEditModal() {
+      const c = selectedCustomerDetail?.customer;
+      if (!c) return;
+      document.getElementById('ec-id').value = c.id;
+      document.getElementById('ec-first').value = c.first_name;
+      document.getElementById('ec-last').value = c.last_name;
+      document.getElementById('ec-phone').value = c.phone || '';
+      document.getElementById('ec-email').value = c.email || '';
+      document.getElementById('ec-address').value = c.address || '';
+      document.getElementById('ec-city').value = c.city || '';
+      document.getElementById('ec-state').value = c.state || '';
+      document.getElementById('ec-zip').value = c.zip || '';
+      document.getElementById('ec-notes').value = c.notes || '';
+      openModal('editCustomerModal');
+    }
+
+    async function editCustomer() {
+      const id = parseInt(document.getElementById('ec-id').value);
+      const data = {
+        first_name: document.getElementById('ec-first').value.trim(),
+        last_name: document.getElementById('ec-last').value.trim(),
+        phone: document.getElementById('ec-phone').value.trim(),
+        email: document.getElementById('ec-email').value.trim(),
+        address: document.getElementById('ec-address').value.trim(),
+        city: document.getElementById('ec-city').value.trim(),
+        state: document.getElementById('ec-state').value.trim(),
+        zip: document.getElementById('ec-zip').value.trim(),
+        notes: document.getElementById('ec-notes').value.trim(),
+      };
+
+      if (!data.first_name || !data.last_name) { showToast('Name required', 'warning'); return; }
+
+      const res = await window.api.updateCustomer(id, data);
+      if (res.success) {
+        showToast('Customer updated!', 'success');
+        closeModal('editCustomerModal');
+        loadCustomers();
+        selectCustomer(id);
+      } else {
+        showToast(res.error || 'Update failed', 'error');
+      }
+    }
+
+    
+    let sigCtx = null, sigDrawing = false, sigHas = false;
+    function initSignaturePad() {
+      const c = document.getElementById('ac-sig');
+      if (!c) return;
+      sigCtx = c.getContext('2d');
+      sigCtx.lineWidth = 2; sigCtx.lineCap = 'round'; sigCtx.strokeStyle = 'var(--ink)';
+      const pos = (e) => {
+        const r = c.getBoundingClientRect();
+        const t = e.touches ? e.touches[0] : e;
+        return { x: (t.clientX - r.left) * (c.width / r.width), y: (t.clientY - r.top) * (c.height / r.height) };
+      };
+      const start = (e) => { sigDrawing = true; sigHas = true; const p = pos(e); sigCtx.beginPath(); sigCtx.moveTo(p.x, p.y); e.preventDefault(); };
+      const move = (e) => { if (!sigDrawing) return; const p = pos(e); sigCtx.lineTo(p.x, p.y); sigCtx.stroke(); e.preventDefault(); };
+      const end = () => { sigDrawing = false; };
+      c.addEventListener('mousedown', start); c.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
+      c.addEventListener('touchstart', start, { passive: false }); c.addEventListener('touchmove', move, { passive: false }); c.addEventListener('touchend', end);
+    }
+    function clearSignature() {
+      const c = document.getElementById('ac-sig');
+      if (sigCtx && c) sigCtx.clearRect(0, 0, c.width, c.height);
+      sigHas = false;
+    }
+    function ccToggleConsent() {
+      const on = document.getElementById('cc-consent').checked;
+      document.getElementById('cc-consent-block').style.display = on ? 'block' : 'none';
+      if (!on) clearSignature();
+    }
+    function openAddCustomer() {
+      ['ac-first','ac-last','ac-phone','ac-email','ac-address','ac-city','ac-state','ac-zip','ac-notes']
+        .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      openModal('addCustomerModal');
+    }
+
+    
+    let pendingNewCustomer = null;
+    function reviewNewCustomer() {
+      const data = {
+        first_name: document.getElementById('ac-first').value.trim(),
+        last_name: document.getElementById('ac-last').value.trim(),
+        phone: document.getElementById('ac-phone').value.trim(),
+        email: document.getElementById('ac-email').value.trim(),
+        address: document.getElementById('ac-address').value.trim(),
+        city: document.getElementById('ac-city').value.trim(),
+        state: document.getElementById('ac-state').value.trim(),
+        zip: document.getElementById('ac-zip').value.trim(),
+        notes: document.getElementById('ac-notes').value.trim(),
+      };
+      if (!data.first_name || !data.last_name) { showToast('Name required', 'warning'); return; }
+      pendingNewCustomer = data;
+
+      const addr = [data.address, [data.city, data.state].filter(Boolean).join(', '), data.zip].filter(Boolean).join(' ');
+      document.getElementById('cc-summary').innerHTML =
+        `<div><strong>${esc(data.first_name)} ${esc(data.last_name)}</strong></div>` +
+        (data.phone ? `<div>📞 ${esc(data.phone)}</div>` : '<div style="color:var(--warn)">No phone number</div>') +
+        (data.email ? `<div>✉ ${esc(data.email)}</div>` : '') +
+        (addr ? `<div>🏠 ${esc(addr)}</div>` : '');
+
+      
+      document.getElementById('cc-step-info').style.display = 'block';
+      document.getElementById('cc-step-consent').style.display = 'none';
+      document.getElementById('cc-consent').checked = false;
+      ccToggleConsent();
+      clearSignature();
+      openModal('confirmCustomerModal');
+    }
+
+    
+    function ccConfirmInfo() {
+      document.getElementById('cc-step-info').style.display = 'none';
+      document.getElementById('cc-step-consent').style.display = 'block';
+    }
+    function ccBackToInfo() {
+      document.getElementById('cc-step-consent').style.display = 'none';
+      document.getElementById('cc-step-info').style.display = 'block';
+    }
+
+    async function saveConfirmedCustomer() {
+      if (!pendingNewCustomer) return;
+      const data = { ...pendingNewCustomer };
+      const consent = document.getElementById('cc-consent').checked;
+      data.opt_in_sms = consent;
+
+      
+      if (consent) {
+        if (!sigHas) { showToast('Customer signature required to consent to texts', 'warning'); return; }
+        data.sms_consent_signature = document.getElementById('ac-sig').toDataURL('image/png');
+      }
+
+      const res = await window.api.addCustomer(data);
+      if (res.success) {
+        showToast('Customer added!', 'success');
+        closeModal('confirmCustomerModal');
+        closeModal('addCustomerModal');
+        pendingNewCustomer = null;
+        loadCustomers();
+      } else {
+        showToast(res.error || 'Failed', 'error');
+      }
+    }
+
+    function openSendText(id, name, phone) {
+      document.getElementById('smsToName').textContent = name;
+      document.getElementById('smsToPhone').textContent = phone;
+      document.getElementById('smsMessage').value = '';
+      document.getElementById('smsCharCount').textContent = '0';
+
+      document.getElementById('sendSmsBtn').onclick = async () => {
+        const msg = document.getElementById('smsMessage').value.trim();
+        if (!msg) { showToast('Enter a message', 'warning'); return; }
+        const res = await window.api.sendSingleSms(phone, msg);
+        if (res.success) {
+          showToast('Message sent!', 'success');
+          closeModal('sendTextModal');
+        } else {
+          showToast(res.error || 'Failed to send', 'error');
+        }
+      };
+
+      openModal('sendTextModal');
+    }
+
+    async function sendBlast() {
+      const message = document.getElementById('blastMessage').value.trim();
+      if (!message) { showToast('Enter a message', 'warning'); return; }
+
+      const filterVal = document.getElementById('blastFilter').value;
+      const filter = filterVal === 'all' ? { all_opted_in: true } : { purchased_within_days: parseInt(filterVal) };
+
+      const res = await window.api.sendSmsBlast(message, filter);
+      if (res.success) {
+        showToast(`Blast sent to ${res.sent} recipients!`, 'success');
+        closeModal('smsBlastModal');
+      } else {
+        showToast(res.error || 'Blast failed', 'error');
+      }
+    }
+
+    async function openTxnDetail(id) {
+      const res = await window.api.getTransaction(id);
+      if (!res.success) { showToast(res.error || 'Failed to load transaction', 'error'); return; }
+
+      const t = res.transaction;
+      const items = res.items;
+
+      document.getElementById('txnDetailTitle').textContent = `Transaction #${t.id}`;
+      document.getElementById('txnDetailMeta').innerHTML =
+        `${fmtDate(t.created_at)} at ${fmtTime(t.created_at)}` +
+        (t.cashier_name ? ` &nbsp;·&nbsp; Cashier: ${esc(t.cashier_name)}` : '');
+
+      document.getElementById('txnDetailItems').innerHTML = items.length === 0
+        ? '<div style="color:var(--faint);font-size:13px;padding:8px">No items</div>'
+        : items.map(item => `
+            <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line-soft);font-size:14px">
+              <div>
+                <div style="font-weight:600">${esc(item.product_name || 'Item')}</div>
+                <div style="font-size:12px;color:var(--muted)">${item.qty} × ${fmt(item.unit_price)}</div>
+              </div>
+              <div style="font-weight:600;padding-left:12px">${fmt(item.line_total)}</div>
+            </div>
+          `).join('');
+
+      document.getElementById('txnDetailTotals').innerHTML = `
+        <div style="border-top:2px solid var(--line);padding-top:10px;margin-top:4px">
+          <div style="display:flex;justify-content:space-between;font-size:14px;padding:3px 0"><span>Subtotal</span><span>${fmt(t.subtotal)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:14px;padding:3px 0;color:var(--muted)"><span>Tax (${((t.tax_rate || 0) * 100).toFixed(2)}%)</span><span>${fmt(t.tax_amount)}</span></div>
+          ${t.discount_amount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:14px;padding:3px 0;color:var(--muted)"><span>Discount</span><span>-${fmt(t.discount_amount)}</span></div>` : ''}
+          <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700;border-top:1px solid var(--line);padding-top:8px;margin-top:4px"><span>TOTAL</span><span>${fmt(t.total)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-top:8px">
+            <span>Payment</span>
+            <span>${t.payment_method === 'cash'
+              ? `Cash — Change: ${fmt(t.change_given)}`
+              : t.payment_method === 'card'
+              ? `Card ${t.last4 ? `····${t.last4}` : ''} ${t.auth_code ? `(Auth: ${t.auth_code})` : ''}`
+              : esc(t.payment_method || '—')
+            }</span>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('txnDetailPrintBtn').onclick = async () => {
+        const r = await window.api.printReceipt(id);
+        showToast(r.success ? (r.saved_to ? 'Receipt saved to file' : 'Printed!') : (r.error || 'Print failed'), r.success ? 'success' : 'error');
+      };
+
+      openModal('txnDetailModal');
+    }
+  </script>
+</body>
+</html>

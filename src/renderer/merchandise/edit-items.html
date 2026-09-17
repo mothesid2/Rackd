@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Edit Items</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    .page-layout {
+      padding: 24px;
+      padding-bottom: 56px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .filter-bar .search-wrap input { padding-left: 12px; }
+
+    .edit-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .table-wrap {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .edit-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .edit-table th {
+      text-align: left;
+      padding: 8px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--ink-2);
+      border-bottom: 2px solid var(--line);
+      position: sticky;
+      top: 0;
+      background: var(--panel);
+      z-index: 1;
+    }
+
+    .edit-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .edit-table td input {
+      border: 1px solid transparent;
+      border-radius: 5px;
+      padding: 5px 7px;
+      font-size: 13px;
+      width: 100%;
+      background: transparent;
+      outline: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .edit-table td input:focus {
+      border-color: var(--accent);
+      background: var(--panel-2);
+    }
+
+    .edit-table tr:hover td { background: var(--panel-2); }
+    .edit-table tr.dirty td { background: var(--warn-dim) !important; }
+
+    .save-row-btn {
+      background: var(--accent);
+      color: var(--panel);
+      border: none;
+      border-radius: 5px;
+      padding: 5px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .save-row-btn:hover { filter: brightness(1.1); }
+    .save-row-btn:disabled { background: var(--faint); cursor: default; }
+
+    .bulk-save {
+      position: sticky;
+      bottom: 0;
+      background: var(--panel);
+      padding: 10px 0;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('merchandise')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Edit Items</h1>
+    </div>
+
+    <div class="filter-bar">
+      <div class="search-wrap"><input type="text" id="filterBarcode" placeholder="SKU / Barcode" /></div>
+      <div class="search-wrap"><input type="text" id="filterName" placeholder="Name" /></div>
+      <div class="search-wrap"><input type="text" id="filterCategory" placeholder="Category" /></div>
+      <div class="search-wrap"><input type="text" id="filterVendor" placeholder="Vendor" /></div>
+    </div>
+
+    <div class="card edit-card">
+      <div class="table-wrap">
+        <table class="edit-table" id="editTable">
+          <thead>
+            <tr>
+              <th>Barcode</th>
+              <th style="min-width:180px">Name</th>
+              <th>Category</th>
+              <th>Vendor</th>
+              <th>Price ($)</th>
+              <th>Cost ($)</th>
+              <th>Stock</th>
+              <th>Min Stock</th>
+              <th style="text-align:center" title="Age restricted">Age</th>
+              <th style="text-align:center" title="Show in low-stock alerts">Alert</th>
+              <th style="text-align:center" title="Charge sales tax on this item">Tax</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="editBody">
+            <tr><td colspan="12" style="text-align:center;color:var(--muted);padding:24px">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="bulk-save">
+        <span id="dirtyCount" style="font-size:13px;color:var(--muted);align-self:center"></span>
+        <button class="btn btn-navy" id="saveAllBtn" data-write-action="inventory_edit" disabled>Save All Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-left" id="status-left">Loading…</div>
+    <div class="status-right" id="status-right"></div>
+  </div>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script src="../lib/writeGuard.js"></script>
+  <script src="../lib/licenseUi.js"></script>
+  <script src="../lib/syncUi.js"></script>
+  <script>
+    let products = [];
+    let dirtyRows = new Set();
+    let categoryOptions = []; 
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadProducts();
+      loadCategoryOptions();
+      ['filterBarcode', 'filterName', 'filterCategory', 'filterVendor'].forEach(id =>
+        document.getElementById(id).addEventListener('input', renderTable));
+      document.getElementById('saveAllBtn').addEventListener('click', saveAll);
+    });
+
+    async function loadCategoryOptions() {
+      const res = await window.api.categoryNames();
+      categoryOptions = (res.success && res.names) || [];
+      renderTable();
+    }
+
+    
+    
+    
+    
+    
+    function categorySelectHtml(productId, current) {
+      const options = categoryOptions.includes(current) || !current
+        ? categoryOptions
+        : [current, ...categoryOptions];
+      return `<select data-field="category" onchange="markDirty(${productId})">` +
+        `<option value="">— none —</option>` +
+        options.map(c => `<option value="${esc(c)}" ${c === current ? 'selected' : ''}>${esc(c)}${!categoryOptions.includes(c) ? ' (not in Categories list)' : ''}</option>`).join('') +
+        `</select>`;
+    }
+
+    async function loadProducts() {
+      const res = await window.api.getProducts();
+      if (!res.success) { showToast(res.error, 'error'); return; }
+      products = res.products;
+      renderTable();
+    }
+
+    function renderTable() {
+      const qBarcode = document.getElementById('filterBarcode').value.trim().toLowerCase();
+      const qName = document.getElementById('filterName').value.trim().toLowerCase();
+      const qCategory = document.getElementById('filterCategory').value.trim().toLowerCase();
+      const qVendor = document.getElementById('filterVendor').value.trim().toLowerCase();
+
+      const filtered = products.filter(p =>
+        (!qBarcode || (p.barcode || '').toLowerCase().includes(qBarcode)) &&
+        (!qName || (p.name || '').toLowerCase().includes(qName)) &&
+        (!qCategory || (p.category || '').toLowerCase().includes(qCategory)) &&
+        (!qVendor || (p.vendor || '').toLowerCase().includes(qVendor))
+      );
+
+      const tbody = document.getElementById('editBody');
+      if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:24px">No products found</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(p => `
+        <tr data-id="${p.id}" class="${dirtyRows.has(p.id) ? 'dirty' : ''}">
+          <td><input type="text" data-field="barcode" value="${esc(p.barcode || '')}" onchange="markDirty(${p.id})" /></td>
+          <td><input type="text" data-field="name" value="${esc(p.name)}" onchange="markDirty(${p.id})" /></td>
+          <td>${categorySelectHtml(p.id, p.category || '')}</td>
+          <td><input type="text" data-field="vendor" value="${esc(p.vendor || '')}" onchange="markDirty(${p.id})" /></td>
+          <td><input type="text" inputmode="decimal" data-money data-field="price" value="${Number(p.price).toFixed(2)}" onchange="markDirty(${p.id})" /></td>
+          <td><input type="text" inputmode="decimal" data-money data-field="cost" value="${Number(p.cost).toFixed(2)}" onchange="markDirty(${p.id})" /></td>
+          <td><input type="number" data-field="stock_qty" value="${p.stock_qty}" onchange="markDirty(${p.id})" /></td>
+          <td><input type="number" data-field="low_stock_threshold" value="${p.low_stock_threshold}" onchange="markDirty(${p.id})" /></td>
+          <td style="text-align:center"><input type="checkbox" data-field="age_restricted" style="width:auto" ${p.age_restricted ? 'checked' : ''} onchange="markDirty(${p.id})" /></td>
+          <td style="text-align:center"><input type="checkbox" data-field="low_stock_alert" style="width:auto" ${p.low_stock_alert === 0 ? '' : 'checked'} onchange="markDirty(${p.id})" /></td>
+          <td style="text-align:center"><input type="checkbox" data-field="is_taxable" style="width:auto" ${p.is_taxable === 0 ? '' : 'checked'} onchange="markDirty(${p.id})" /></td>
+          <td style="white-space:nowrap">
+            <button class="save-row-btn" data-write-action="inventory_edit" onclick="saveRow(${p.id})" ${dirtyRows.has(p.id) ? '' : 'disabled'}>Save</button>
+            <button class="save-row-btn" style="background:var(--loyalty)" onclick="openVariants(${p.id}, '${esc(p.name).replace(/'/g,"\\'")}')">Variants</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function markDirty(id) {
+      dirtyRows.add(id);
+      const row = document.querySelector(`tr[data-id="${id}"]`);
+      if (row) {
+        row.classList.add('dirty');
+        const btn = row.querySelector('.save-row-btn');
+        if (btn) btn.disabled = false;
+      }
+      document.getElementById('dirtyCount').textContent = `${dirtyRows.size} unsaved change${dirtyRows.size !== 1 ? 's' : ''}`;
+      document.getElementById('saveAllBtn').disabled = dirtyRows.size === 0;
+    }
+
+    function openVariants(id, name) {
+      localStorage.setItem('variantProductId', id);
+      localStorage.setItem('variantProductName', name);
+      navigate('merchandise/variants');
+    }
+
+    async function saveRow(id) {
+      const row = document.querySelector(`tr[data-id="${id}"]`);
+      if (!row) return;
+
+      const data = {};
+      row.querySelectorAll('input[data-field], select[data-field]').forEach(input => {
+        const field = input.dataset.field;
+        const val = input.value;
+        if (input.type === 'checkbox') data[field] = input.checked ? 1 : 0;
+        else if (['price', 'cost'].includes(field)) data[field] = parseFloat(val) || 0;
+        else if (['stock_qty', 'low_stock_threshold'].includes(field)) data[field] = parseInt(val) || 0;
+        else data[field] = val;
+      });
+
+      const res = await window.api.updateProduct(id, data);
+      if (res.success) {
+        dirtyRows.delete(id);
+        row.classList.remove('dirty');
+        const btn = row.querySelector('.save-row-btn');
+        if (btn) btn.disabled = true;
+
+        
+        const p = products.find(x => x.id === id);
+        if (p) Object.assign(p, data);
+
+        document.getElementById('dirtyCount').textContent =
+          dirtyRows.size > 0 ? `${dirtyRows.size} unsaved change${dirtyRows.size !== 1 ? 's' : ''}` : '';
+        document.getElementById('saveAllBtn').disabled = dirtyRows.size === 0;
+        showToast('Saved!', 'success');
+      } else {
+        showToast(res.error || 'Save failed', 'error');
+      }
+    }
+
+    async function saveAll() {
+      const ids = [...dirtyRows];
+      let saved = 0;
+      for (const id of ids) {
+        await saveRow(id);
+        saved++;
+      }
+      showToast(`Saved ${saved} product${saved !== 1 ? 's' : ''}`, 'success');
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Categories</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    .page-layout { padding: 24px; padding-bottom: 72px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    .split { display: grid; grid-template-columns: 320px 1fr; gap: 16px; flex: 1; overflow: hidden; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: auto; }
+    .cat-row { padding: 12px 14px; border-bottom: 1px solid var(--panel-2); cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    .cat-row:hover { background: var(--panel-2); } .cat-row.sel { background: var(--info-dim); }
+    .cat-row .name { font-weight: 700; }
+    .cat-row .count { font-size: 12px; color: var(--muted); }
+    .member-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 4px; border-bottom: 1px solid var(--panel-2); font-size: 14px; }
+    .rowbtn { background: var(--line-soft); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 5px 10px; font-size: 12px; cursor: pointer; }
+    .rowbtn.danger { color: var(--bad); }
+    .sec-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 18px 0 8px; }
+    .sec-title:first-child { margin-top: 0; }
+    .empty-hint { color: var(--faint); font-size: 13px; padding: 8px 4px; }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('merchandise')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Categories</h1>
+      <div class="spacer"></div>
+      <button class="btn btn-navy" onclick="openCreate()">+ New Category</button>
+    </div>
+
+    <div id="mgrBlock" style="display:none;background:var(--bad-dim);color:var(--bad);border-radius:8px;padding:14px">
+      Categories are restricted to management.
+    </div>
+
+    <div id="body" class="split">
+      <div class="panel" id="catList"></div>
+      <div class="panel" id="detailPanel" style="padding:18px">
+        <div style="color:var(--faint)">Select a category, or create a new one.</div>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="createModal" style="display:none">
+    <div class="modal" style="max-width:400px">
+      <button class="modal-close" onclick="closeModal('createModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title">New Category</div>
+      <div class="form-group"><label>Name *</label><input type="text" id="cName" placeholder="Vape Juice" /></div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('createModal')">Cancel</button>
+        <button class="btn btn-navy" onclick="createCategory()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="renameModal" style="display:none">
+    <div class="modal" style="max-width:400px">
+      <button class="modal-close" onclick="closeModal('renameModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title">Rename Category</div>
+      <input type="hidden" id="rId" />
+      <div class="form-group"><label>Name *</label><input type="text" id="rName" /></div>
+      <p style="font-size:12px;color:var(--muted);margin-top:-4px">Every item currently in this category moves with the rename.</p>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('renameModal')">Cancel</button>
+        <button class="btn btn-navy" onclick="saveRename()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="addItemModal" style="display:none">
+    <div class="modal" style="max-width:460px">
+      <button class="modal-close" onclick="closeModal('addItemModal')" data-tooltip="Close" aria-label="Close">×</button>
+      <div class="modal-title">Add existing items</div>
+      <div class="search-wrap" style="margin-bottom:10px">
+        <input type="text" id="itemSearch" placeholder="Search products…" oninput="searchUnassigned(this.value)" />
+      </div>
+      <div id="itemResults" style="max-height:280px;overflow-y:auto"></div>
+      <div class="modal-actions">
+        <span id="itemSelectedCount" class="muted" style="margin-right:auto;font-size:12.5px;align-self:center"></span>
+        <button class="btn btn-gray" onclick="closeModal('addItemModal')">Cancel</button>
+        <button class="btn btn-navy" id="addSelectedBtn" onclick="addSelectedItems()" disabled>Add Selected</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar"><div class="status-left">Categories</div><div class="status-right"></div></div>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script>
+    let categories = [];
+    let selected = null; 
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const s = (await window.api.getSession()).session;
+      if (s?.role !== 'manager') {
+        document.getElementById('mgrBlock').style.display = 'block';
+        document.getElementById('body').style.display = 'none';
+        return;
+      }
+      await loadAll();
+    });
+
+    async function loadAll() {
+      const res = await window.api.listCategories();
+      categories = (res.success && res.categories) || [];
+      renderList();
+      if (selected != null) renderDetail();
+      else document.getElementById('detailPanel').innerHTML = '<div style="color:var(--faint)">Select a category, or create a new one.</div>';
+    }
+
+    function renderList() {
+      const el = document.getElementById('catList');
+      el.innerHTML = categories.length
+        ? categories.map(c => `
+          <div class="cat-row ${selected === c.id ? 'sel' : ''}" onclick="selectCategory(${c.id})">
+            <div class="name">${esc(c.name)}</div>
+            <div class="count">${c.item_count} item${c.item_count !== 1 ? 's' : ''}</div>
+          </div>`).join('')
+        : '<div class="empty-hint">No categories yet — create one above.</div>';
+    }
+
+    function selectCategory(id) { selected = id; renderList(); renderDetail(); }
+
+    async function renderDetail() {
+      const c = categories.find(x => x.id === selected);
+      const panel = document.getElementById('detailPanel');
+      if (!c) { panel.innerHTML = '<div style="color:var(--faint)">Select a category.</div>'; return; }
+
+      const membersRes = await window.api.listCategoryMembers(c.name);
+      const members = (membersRes.success && membersRes.products) || [];
+
+      panel.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px">
+          <div style="font-weight:800;font-size:18px">${esc(c.name)}</div>
+          <div style="display:flex;gap:8px">
+            <button class="rowbtn" onclick="openRename(${c.id}, '${esc(c.name).replace(/'/g, "&#39;")}')">Rename</button>
+            <button class="rowbtn danger" onclick="deleteCategory(${c.id})">Delete</button>
+          </div>
+        </div>
+
+        <div class="sec-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Items in this category (${members.length})</span>
+          <button class="rowbtn" onclick="openAddItem('${esc(c.name).replace(/'/g, "&#39;")}')">+ Add existing items</button>
+        </div>
+        <div id="memberList">
+          ${members.length ? members.map(p => `
+            <div class="member-row">
+              <div><strong>${esc(p.name)}</strong> <span style="color:var(--faint);font-size:12px">${p.barcode ? esc(p.barcode) : ''}</span></div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="font-variant-numeric:tabular-nums">${fmt(p.price)}</span>
+                <button class="rowbtn danger" onclick="removeItem(${p.id})">Remove</button>
+              </div>
+            </div>`).join('') : '<div class="empty-hint">No items in this category yet — add some above.</div>'}
+        </div>
+      `;
+    }
+
+    
+    function openCreate() {
+      document.getElementById('cName').value = '';
+      openModal('createModal');
+      setTimeout(() => document.getElementById('cName').focus(), 60);
+    }
+    async function createCategory() {
+      const name = document.getElementById('cName').value.trim();
+      if (!name) { showToast('Enter a category name', 'warning'); return; }
+      const res = await window.api.createCategory(name);
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      closeModal('createModal');
+      showToast('Category created', 'success');
+      await loadAll();
+    }
+
+    function openRename(id, name) {
+      document.getElementById('rId').value = id;
+      document.getElementById('rName').value = name;
+      openModal('renameModal');
+      setTimeout(() => document.getElementById('rName').focus(), 60);
+    }
+    async function saveRename() {
+      const id = parseInt(document.getElementById('rId').value, 10);
+      const name = document.getElementById('rName').value.trim();
+      if (!name) { showToast('Enter a category name', 'warning'); return; }
+      const res = await window.api.renameCategory(id, name);
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      closeModal('renameModal');
+      showToast('Category renamed', 'success');
+      await loadAll();
+    }
+
+    async function deleteCategory(id) {
+      const c = categories.find(x => x.id === id);
+      const msg = c && c.item_count > 0
+        ? `Delete "${c.name}"? ${c.item_count} item${c.item_count !== 1 ? 's' : ''} will be uncategorized — this cannot be undone.`
+        : `Delete "${c ? c.name : 'this category'}"?`;
+      if (!confirm(msg)) return;
+      const res = await window.api.deleteCategory(id);
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      selected = null;
+      showToast('Category deleted', 'success');
+      await loadAll();
+    }
+
+    
+    let addItemCategoryName = null;
+    let selectedItemIds = new Set();
+    function openAddItem(name) {
+      addItemCategoryName = name;
+      selectedItemIds = new Set();
+      document.getElementById('itemSearch').value = '';
+      document.getElementById('itemResults').innerHTML = '';
+      updateSelectedCount();
+      openModal('addItemModal');
+      setTimeout(() => document.getElementById('itemSearch').focus(), 60);
+      searchUnassigned('');
+    }
+    async function searchUnassigned(q) {
+      const res = await window.api.listCategoryUnassigned(addItemCategoryName, q);
+      const el = document.getElementById('itemResults');
+      const products = (res.success && res.products) || [];
+      el.innerHTML = products.length
+        ? products.map(p => `
+          <label class="member-row" style="cursor:pointer" for="item-${p.id}">
+            <span style="display:flex;align-items:center;gap:10px">
+              <input type="checkbox" id="item-${p.id}" style="width:auto" ${selectedItemIds.has(p.id) ? 'checked' : ''} onchange="toggleItem(${p.id}, this.checked)" />
+              <span><strong>${esc(p.name)}</strong> <span style="color:var(--faint);font-size:12px">${p.barcode ? esc(p.barcode) : ''}${p.category ? ' · currently ' + esc(p.category) : ''}</span></span>
+            </span>
+            <span style="font-variant-numeric:tabular-nums">${fmt(p.price)}</span>
+          </label>`).join('')
+        : '<div class="empty-hint">No matching products.</div>';
+    }
+    function toggleItem(id, checked) {
+      if (checked) selectedItemIds.add(id); else selectedItemIds.delete(id);
+      updateSelectedCount();
+    }
+    function updateSelectedCount() {
+      const n = selectedItemIds.size;
+      document.getElementById('itemSelectedCount').textContent = n ? `${n} selected` : '';
+      document.getElementById('addSelectedBtn').disabled = n === 0;
+    }
+    async function addSelectedItems() {
+      const ids = [...selectedItemIds];
+      if (!ids.length) return;
+      const res = await window.api.addCategoryItems(addItemCategoryName, ids);
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      closeModal('addItemModal');
+      showToast(`${ids.length} item${ids.length !== 1 ? 's' : ''} added`, 'success');
+      await loadAll();
+    }
+    async function removeItem(productId) {
+      const res = await window.api.removeCategoryItems([productId]);
+      if (!res.success) { showToast(res.error || 'Failed', 'error'); return; }
+      await loadAll();
+    }
+  </script>
+</body>
+</html>

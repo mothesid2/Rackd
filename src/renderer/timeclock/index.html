@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Time Clock</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    .page-layout { padding: 24px; padding-bottom: 72px; max-width: 720px; margin: 0 auto; height: 100vh; overflow-y: auto; }
+    .me-card { background: linear-gradient(160deg,#1f232a,#2a2f37); color: var(--panel); border-radius: 16px; padding: 26px; text-align: center; margin-bottom: 20px; }
+    .me-card .status { font-size: 15px; color: rgba(255,255,255,.7); margin-bottom: 14px; }
+    .big-btn { border: none; border-radius: 12px; font-size: 20px; font-weight: 800; padding: 18px 40px; cursor: pointer; }
+    .big-in { background: var(--good); color: var(--panel); } .big-out { background: var(--bad); color: var(--panel); }
+    .emp-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--panel-2); }
+    .pill { display: inline-block; border-radius: 20px; padding: 2px 10px; font-size: 11px; font-weight: 700; }
+    .pill.in { background: var(--good-dim); color: var(--good); } .pill.out { background: var(--line-soft); color: var(--muted); }
+    .rowbtn { background: var(--ink); color: var(--panel); border: none; border-radius: 8px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <div class="page-header">
+      <button class="btn btn-back" onclick="navigate('main-menu')">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <h1 class="page-title">Time Clock</h1>
+    </div>
+
+    <div class="me-card" id="meCard">
+      <div class="status" id="meStatus">Loading…</div>
+      <button class="big-btn big-in" id="meBtn" onclick="punchSelf()">Clock In</button>
+    </div>
+
+    <div class="card" id="othersCard" style="display:none">
+      <div class="card-title">Team</div>
+      <div id="empList"></div>
+    </div>
+  </div>
+
+  
+  <div class="modal-overlay" id="ovModal" style="display:none">
+    <div class="modal" style="max-width:340px;text-align:center">
+      <div class="modal-title">Manager Authorization</div>
+      <p style="font-size:13px;color:var(--muted);margin:8px 0 12px">A manager PIN is required to clock another employee.</p>
+      <input type="password" id="ovPin" inputmode="numeric" placeholder="Manager PIN" style="text-align:center;font-size:18px;letter-spacing:4px" />
+      <div class="modal-actions"><button class="btn btn-gray" onclick="ovResolve(null)">Cancel</button><button class="btn btn-navy" onclick="ovSubmit()">Authorize</button></div>
+    </div>
+  </div>
+
+  <div class="status-bar"><div class="status-left">Time Clock</div><div class="status-right"></div></div>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script>
+    let meUid = null;
+
+    document.addEventListener('DOMContentLoaded', load);
+
+    async function load() {
+      const r = await window.api.timeclockStatus();
+      if (!r.success) { document.getElementById('meStatus').textContent = r.error || 'Failed'; return; }
+      meUid = r.meUid;
+      const me = r.employees.find(e => e.uid === meUid);
+      const meBtn = document.getElementById('meBtn');
+      if (me && me.clocked_in) {
+        document.getElementById('meStatus').textContent = `Clocked in since ${fmtTime(me.since)}`;
+        meBtn.textContent = 'Clock Out'; meBtn.className = 'big-btn big-out';
+      } else {
+        document.getElementById('meStatus').textContent = 'You are clocked out';
+        meBtn.textContent = 'Clock In'; meBtn.className = 'big-btn big-in';
+      }
+
+      if (r.canClockOthers) {
+        document.getElementById('othersCard').style.display = 'block';
+        document.getElementById('empList').innerHTML = r.employees.map(e => `
+          <div class="emp-row">
+            <div><div style="font-weight:600">${esc(e.name)}</div>
+              <div>${e.clocked_in ? `<span class="pill in">In since ${fmtTime(e.since)}</span>` : '<span class="pill out">Out</span>'}</div></div>
+            ${e.uid === meUid ? '' : `<button class="rowbtn" onclick="punchOther('${esc(e.uid)}')">${e.clocked_in ? 'Clock out' : 'Clock in'}</button>`}
+          </div>`).join('');
+      }
+    }
+
+    function fmtTime(s) { try { return new Date(String(s).replace(' ','T')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); } catch { return s; } }
+
+    async function punchSelf() {
+      const r = await window.api.timeclockPunch();
+      if (!r.success) { showToast(r.error || 'Failed', 'error'); return; }
+      showToast(`Clocked ${r.action === 'in' ? 'in' : 'out'}`, 'success');
+      load();
+    }
+
+    async function punchOther(uid) {
+      let r = await window.api.timeclockPunch(uid, undefined);
+      let attempts = 0;
+      while (r && !r.success && (r.needsOverride || /invalid manager pin/i.test(r.error||'')) && attempts < 3) {
+        const pin = await promptOv();
+        if (pin == null) return;
+        r = await window.api.timeclockPunch(uid, pin); attempts++;
+      }
+      if (!r.success) { showToast(r.error || 'Failed', 'error'); return; }
+      showToast(`${r.employee} clocked ${r.action === 'in' ? 'in' : 'out'}`, 'success');
+      load();
+    }
+
+    
+    let _ovResolve = null;
+    function promptOv() { return new Promise(res => { _ovResolve = res; document.getElementById('ovPin').value=''; openModal('ovModal'); setTimeout(()=>document.getElementById('ovPin').focus(),60); }); }
+    function ovResolve(v) { closeModal('ovModal'); const r=_ovResolve; _ovResolve=null; if(r) r(v); }
+    function ovSubmit() { const p=document.getElementById('ovPin').value.trim(); if(!p) return; ovResolve(p); }
+    document.getElementById('ovPin').addEventListener('keydown', e => { if(e.key==='Enter') ovSubmit(); });
+  </script>
+</body>
+</html>

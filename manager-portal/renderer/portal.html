@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rackd — Management Portal</title>
+  <link rel="stylesheet" href="app.css" />
+  <link rel="stylesheet" href="shared-ui-kit.css" />
+  <script src="shared-ui-kit.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <div class="brand-lockup">
+        <img src="../assets/logo-mark.svg" alt="Rackd" />
+        <span class="brand">Rack<span class="d">D</span></span>
+        <span class="biz">Management Portal</span>
+      </div>
+      <span class="biz-chip" id="bizLabel">Business</span>
+      <span class="biz-chip" id="storeLabel" style="cursor:pointer" title="Change store">Store</span>
+      <div class="spacer"></div>
+      <span id="rangeWrap">
+        <input type="date" id="startDate" aria-label="Start date" />
+        <span style="color:var(--faint)">–</span>
+        <input type="date" id="endDate" aria-label="End date" />
+        <button class="rowbtn" id="applyRange">Apply</button>
+      </span>
+      <button class="btn" id="logout">Sign out</button>
+    </div>
+
+    <div class="side">
+      <div class="nav-label">Overview</div>
+      <button class="navbtn active" data-tab="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        Dashboard
+      </button>
+      <button class="navbtn" data-tab="inventory">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        Inventory
+      </button>
+      <button class="navbtn" data-tab="customers">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Customers
+      </button>
+      <div class="nav-label">Online</div>
+      <button class="navbtn" data-tab="storefront">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+        Storefront
+      </button>
+      <button class="navbtn" data-tab="orders">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+        Online orders
+      </button>
+      <div class="nav-label">Programs</div>
+      <button class="navbtn" data-tab="rebates">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        Rebates
+      </button>
+      <div class="nav-label">POS</div>
+      <button class="navbtn" data-tab="customization">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Customization
+      </button>
+      <div class="nav-label">Team</div>
+      <button class="navbtn" data-tab="staff">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Staff
+      </button>
+      <button class="navbtn" data-tab="timesheets">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Timesheets
+      </button>
+    </div>
+
+    <div class="content" id="view"><div class="spin">Loading…</div></div>
+  </div>
+
+  
+  <div class="overlay" id="repModal">
+    <div class="modal" style="width:560px">
+      <h3 id="repTitle">Location report</h3>
+      <div id="repBody"><div class="spin">Loading…</div></div>
+      <div class="row" style="justify-content:flex-end;margin-top:14px">
+        <button class="btn" onclick="document.getElementById('repModal').style.display='none'">Close</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="custModal">
+    <div class="modal">
+      <h3>Edit customer</h3>
+      <input type="hidden" id="cUid" />
+      <div class="row"><div class="fg" style="flex:1"><label>First name</label><input id="cFirst" /></div><div class="fg" style="flex:1"><label>Last name</label><input id="cLast" /></div></div>
+      <div class="fg"><label>Phone</label><input id="cPhone" /></div>
+      <div class="fg"><label>Email</label><input id="cEmail" /></div>
+      <div class="row"><div class="fg" style="flex:1"><label>Loyalty points</label><input id="cPoints" type="number" /></div>
+        <div class="fg" style="flex:1"><label>Gold member</label><select id="cGold"><option value="0">No</option><option value="1">Yes</option></select></div></div>
+      <div class="muted" style="font-size:12px;margin-bottom:12px">Saved changes sync down to every register in that location on their next sync.</div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('custModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="cSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="newCustModal">
+    <div class="modal">
+      <h3>Add customer</h3>
+      <div class="fg"><label>Location</label><select id="nLocation"></select>
+        <div class="muted" style="font-size:11px;margin-top:4px">The customer joins this location's book; its registers pull them down on next sync.</div></div>
+      <div class="row"><div class="fg" style="flex:1"><label>First name *</label><input id="nFirst" /></div><div class="fg" style="flex:1"><label>Last name</label><input id="nLast" /></div></div>
+      <div class="fg"><label>Phone</label><input id="nPhone" /></div>
+      <div class="fg"><label>Email</label><input id="nEmail" /></div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('newCustModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="nSave">Create</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="menuModal">
+    <div class="modal" style="width:420px">
+      <h3 id="mTitle">Online price</h3>
+      <input type="hidden" id="mBarcode" />
+      <div class="muted" style="font-size:12px;margin-bottom:10px" id="mSub"></div>
+      <div class="fg"><label>Override price (blank = use in-store price)</label>
+        <input id="mPrice" type="number" step="0.01" placeholder="e.g. 24.99" /></div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('menuModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="mSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="staffEditModal">
+    <div class="modal" style="width:480px;max-height:85vh;overflow-y:auto">
+      <h3 id="seTitle">Edit staff</h3>
+      <input type="hidden" id="seUid" />
+      <div class="fg"><label>Name</label><input id="seName" /></div>
+      <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-weight:400;cursor:pointer;margin-bottom:13px">
+        <input type="checkbox" id="seActive" style="width:auto" /> Active
+      </label>
+      <div id="sePermsWrap"></div>
+      <div class="row" style="justify-content:flex-end;margin-top:8px">
+        <button class="btn" onclick="document.getElementById('staffEditModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="seSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="resetCredModal">
+    <div class="modal" style="width:380px">
+      <h3 id="rcTitle">Reset PIN</h3>
+      <input type="hidden" id="rcUid" />
+      <input type="hidden" id="rcIsCashier" />
+      <div class="fg"><label id="rcLabel">New 4-digit PIN (blank = auto-generate)</label><input id="rcValue" /></div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('resetCredModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="rcSave">Reset</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="addManagerModal">
+    <div class="modal" style="width:380px">
+      <h3>Add manager</h3>
+      <div class="fg"><label>Name</label><input id="amName" /></div>
+      <div class="fg"><label>Username</label><input id="amUsername" /></div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('addManagerModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="amSave">Create</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="addCashierModal">
+    <div class="modal" style="width:380px">
+      <h3>Add cashier</h3>
+      <div class="fg"><label>Name</label><input id="acName" /></div>
+      <div class="fg"><label>4-digit PIN (blank = auto-generate)</label><input id="acPin" /></div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('addCashierModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="acSave">Create</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="tsModal">
+    <div class="modal" style="width:520px;max-height:85vh;overflow-y:auto">
+      <h3 id="tsTitle">Adjust punches</h3>
+      <div id="tsRows"></div>
+      <div class="row" style="justify-content:flex-end;margin-top:8px">
+        <button class="btn" onclick="document.getElementById('tsModal').style.display='none'">Done</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="tsAddModal">
+    <div class="modal" style="width:420px">
+      <h3>Add a shift</h3>
+      <div class="fg"><label>Employee</label><select id="tsAddEmployee"></select></div>
+      <div class="row">
+        <div class="fg" style="flex:1"><label>Clock in</label><input type="datetime-local" id="tsAddIn" /></div>
+        <div class="fg" style="flex:1"><label>Clock out</label><input type="datetime-local" id="tsAddOut" /></div>
+      </div>
+      <div style="font-size:10.5px;color:var(--faint);margin:-6px 0 13px">Leave clock out blank if still clocked in.</div>
+      <div class="row" style="justify-content:flex-end;margin-top:8px">
+        <button class="btn" onclick="document.getElementById('tsAddModal').style.display='none'">Cancel</button>
+        <button class="btn btn-accent" id="tsAddSave">Add shift</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="overlay" id="cancelModal">
+    <div class="modal" style="width:420px">
+      <h3>Cancel order</h3>
+      <input type="hidden" id="xOrder" />
+      <div class="muted" style="font-size:12.5px;margin-bottom:10px" id="xSub"></div>
+      <div class="fg"><label>Reason (optional)</label><input id="xReason" placeholder="e.g. out of stock" /></div>
+      <div class="muted" style="font-size:11.5px;margin-bottom:12px">A paid order is refunded automatically and the customer is texted.</div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('cancelModal').style.display='none'">Back</button>
+        <button class="btn" style="background:#5a2323;color:#f2c7c7" id="xConfirm">Cancel &amp; refund</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="portal.js"></script>
+</body>
+</html>

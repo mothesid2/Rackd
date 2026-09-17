@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Main Menu</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    
+    :root {
+      --ink: #1c1f24; --charcoal-1: #2f343c; --charcoal-2: #23272d; --charcoal-3: #1c2026;
+      --accent: #b01d2e; --accent-bright: #c8283a; --muted: #8a9099; --line: rgba(0,0,0,0.07);
+      --go: #1f7a3d; --go-bright: #279449;
+    }
+    body { overflow: hidden; }
+
+    
+    .launcher {
+      height: calc(100vh - 44px);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 18px 26px 16px;
+    }
+
+    
+    .lch-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .stat {
+      background: #fff; border: 1px solid var(--line); border-radius: 14px;
+      padding: 14px 18px; display: flex; align-items: center; gap: 14px;
+      box-shadow: 0 1px 0 rgba(0,0,0,0.03), 0 8px 22px -14px rgba(0,0,0,0.25);
+    }
+    .stat .ic { width: 46px; height: 46px; border-radius: 12px; flex: 0 0 auto; display: grid; place-items: center; }
+    .stat .ic svg { width: 24px; height: 24px; }
+    .stat.revenue .ic { background: rgba(70,160,90,0.12); color: #2f8f4e; }
+    .stat.profit  .ic { background: rgba(176,29,46,0.10); color: var(--accent); }
+    .stat.sales   .ic { background: rgba(40,60,90,0.10);  color: #2f4d7a; }
+    .stat .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+    .stat .val { font-size: 25px; font-weight: 800; color: var(--ink); line-height: 1.05; font-variant-numeric: tabular-nums; }
+
+    
+    .new-sale {
+      display: flex; align-items: center; justify-content: center; gap: 12px;
+      width: 100%; height: 66px; border: none; border-radius: 14px; cursor: pointer;
+      color: #fff; font-size: 21px; font-weight: 800; letter-spacing: 0.4px;
+      background:
+        repeating-linear-gradient(0deg, transparent 0 3px, rgba(255,255,255,0.05) 3px 4px, transparent 4px 9px, rgba(255,255,255,0.03) 9px 10px),
+        linear-gradient(180deg, var(--go-bright) 0%, var(--go) 52%, #14512a 100%);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.22);
+      text-shadow: 0 1px 3px rgba(0,0,0,0.28); transition: filter 0.14s, transform 0.1s;
+    }
+    .new-sale svg { width: 27px; height: 27px; }
+    .new-sale:hover { filter: brightness(1.08); transform: translateY(-1px); }
+    .new-sale:active { filter: brightness(0.94); transform: translateY(0); }
+
+    
+    .tile-grid {
+      flex: 1; min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-auto-rows: 1fr;
+      gap: 14px;
+    }
+    .tile {
+      position: relative; overflow: hidden; cursor: pointer;
+      border: none; border-radius: 18px; padding: 20px 22px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 14px;
+      
+      background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='150'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.045' stroke-width='1.2'%3E%3Cpath d='M-10 110 C 70 88 120 132 170 110 S 260 88 330 108'/%3E%3Cpath d='M-10 124 C 70 102 120 146 170 124 S 260 102 330 122'/%3E%3Cpath d='M-10 96 C 70 74 120 118 170 96 S 260 74 330 94'/%3E%3C/g%3E%3C/svg%3E") bottom center / 100% auto no-repeat,
+        linear-gradient(180deg, var(--charcoal-1) 0%, var(--charcoal-2) 52%, var(--charcoal-3) 100%);
+      box-shadow: 0 6px 18px -8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.28);
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+    .tile:hover { transform: translateY(-3px); box-shadow: 0 16px 32px -10px rgba(0,0,0,0.6); }
+    .tile:active { transform: translateY(-1px); }
+    
+    .tile .t-ic {
+      width: 88px; height: 88px; border-radius: 50%; display: grid; place-items: center; flex: 0 0 auto;
+      background: radial-gradient(circle at 50% 34%, #86212f 0%, #591a24 56%, #431520 100%);
+      box-shadow: inset 0 1px 2px rgba(255,255,255,0.16), inset 0 -2px 5px rgba(0,0,0,0.35);
+    }
+    .tile .t-ic svg { width: 42px; height: 42px; color: #e7cd92; }
+    .tile .t-title { position: relative; display: inline-block; font-size: 21px; font-weight: 700; color: #fff; line-height: 1.15; padding-bottom: 9px; }
+    .tile .t-title::after { content: ''; position: absolute; left: 50%; transform: translateX(-50%); bottom: 0; width: 38px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, #e7cd92, #b98f3e); }
+    .tile .t-sub { font-size: 13px; color: rgba(255,255,255,0.58); margin-top: 8px; }
+    .tile .t-arrow { position: absolute; top: 50%; right: 18px; transform: translateY(-50%); color: #e7cd92; opacity: 0.75; }
+    .tile .t-arrow svg { width: 22px; height: 22px; }
+    
+    .tile.exit {
+      background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='150'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.05' stroke-width='1.2'%3E%3Cpath d='M-10 110 C 70 88 120 132 170 110 S 260 88 330 108'/%3E%3Cpath d='M-10 124 C 70 102 120 146 170 124 S 260 102 330 122'/%3E%3C/g%3E%3C/svg%3E") bottom center / 100% auto no-repeat,
+        linear-gradient(180deg, #5f2327 0%, #4a1a1e 52%, #3a1417 100%);
+    }
+    .tile.exit .t-ic { background: radial-gradient(circle at 50% 34%, #9a2a33 0%, #6d1e26 56%, #4d1620 100%); }
+    .tile.exit .t-ic svg { color: #f0d9a6; }
+
+    
+    .fullscreen-btn {
+      position: fixed; top: 10px; right: 12px; z-index: 300;
+      background: rgba(27,30,34,0.78); border: 1px solid rgba(255,255,255,0.14); border-radius: 5px;
+      color: rgba(255,255,255,0.7); cursor: pointer; padding: 0; width: 30px; height: 30px;
+      display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; backdrop-filter: blur(4px);
+    }
+    .fullscreen-btn:hover { background: rgba(176,29,46,0.9); color: #fff; }
+    .fullscreen-btn svg { width: 15px; height: 15px; }
+
+    @media (max-height: 760px) { .tile .t-ic { width: 68px; height: 68px; } .tile .t-ic svg { width: 34px; height: 34px; } .tile .t-title { font-size: 19px; } .new-sale { height: 56px; } .tile { padding: 14px 18px; gap: 10px; } }
+    @media (prefers-reduced-motion: reduce) { .tile, .new-sale { transition: none; } }
+
+    
+    @keyframes skel-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+    .stat.skeleton .ic { background: rgba(0,0,0,0.06); }
+    .skel-bar { border-radius: 5px; background: rgba(0,0,0,0.08); animation: skel-pulse 1.3s ease-in-out infinite; }
+    .skel-bar-lbl { width: 64px; height: 9px; margin-bottom: 8px; }
+    .skel-bar-val { width: 88px; height: 19px; }
+    @media (prefers-reduced-motion: reduce) { .skel-bar { animation: none; } }
+  </style>
+</head>
+<body>
+  <div class="launcher">
+    
+    <div class="lch-metrics" id="metricsRow"></div>
+
+    
+    <button class="new-sale" onclick="navigate('pos')">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+      New Sale
+    </button>
+
+    
+    <div class="tile-grid">
+      <div id="dynTiles" style="display:contents"></div>
+
+      <button class="tile" id="settingsBtn" onclick="navigate('settings')" style="display:none">
+        <div class="t-ic"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+        <div><div class="t-title">Settings</div><div class="t-sub">Terminal &amp; store config</div></div>
+        <span class="t-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
+      </button>
+
+      <button class="tile exit" id="logoutBtn">
+        <div class="t-ic"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>
+        <div><div class="t-title">Log Out</div><div class="t-sub">End your session</div></div>
+      </button>
+    </div>
+  </div>
+
+  
+  <button class="fullscreen-btn" id="fullscreenBtn" data-tooltip="Toggle fullscreen (F11)" aria-label="Toggle fullscreen">
+    <svg id="fsIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+    </svg>
+  </button>
+
+  
+  <div class="status-bar">
+    <div class="status-left" id="status-left"></div>
+    <div class="status-right" id="status-right"></div>
+  </div>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script src="../lib/updateUi.js"></script>
+  <script>
+    const FS_EXPAND = `<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>`;
+    const FS_COMPRESS = `<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>`;
+    let isFullscreen = false;
+    document.getElementById('fullscreenBtn').addEventListener('click', async () => {
+      isFullscreen = await window.api.toggleFullscreen();
+      document.getElementById('fsIcon').innerHTML = isFullscreen ? FS_COMPRESS : FS_EXPAND;
+    });
+
+    let currentRole = null;
+    let latestOverview = null;
+    let currentSlots = null; 
+    let currentMenuAccess = {};
+    let currentCanViewReports = false;
+    let lastLayoutSig = null; 
+    let layoutLoaded = false; 
+
+    
+    
+    const METRIC_CATALOG = {
+      revenue:         { label: 'Revenue',          cls: 'revenue', icon: '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>', fmt: (ov) => fmt(ov.revenue) },
+      profit:          { label: 'Profit',           cls: 'profit',  icon: '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>', fmt: (ov) => fmt(ov.profit) },
+      sales:           { label: 'Sales today',      cls: 'sales',   icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>', fmt: (ov) => ov.sale_count },
+      avg_ticket:      { label: 'Avg ticket',       cls: 'sales',   icon: '<line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/>', fmt: (ov) => fmt(ov.avg_ticket ?? (ov.sale_count ? ov.revenue / ov.sale_count : 0)) },
+      tax_collected:   { label: 'Tax collected',    cls: 'sales',   icon: '<path d="M12 2 3 7v6c0 5 4 9 9 9s9-4 9-9V7z"/>', fmt: (ov) => fmt(ov.tax_collected ?? 0) },
+      discounts_given: { label: 'Discounts given',  cls: 'profit',  icon: '<path d="M20.59 13.41 11 22 2 13l9-9h9z"/><circle cx="7" cy="7" r="1.2"/>', fmt: (ov) => fmt(ov.discounts_given ?? 0) },
+      refunds_today:   { label: 'Refunds / exchanges', cls: 'revenue', icon: '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-9.36L1 10"/>', fmt: (ov) => ov.refunds_today ?? 0 },
+    };
+    const TILE_CATALOG = {
+      receipts:          { target: 'receipts', title: 'Receipts', sub: 'View transactions', menuKey: 'access_receipts', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>' },
+      merchandise:       { target: 'merchandise', title: 'Merchandise', sub: 'Manage inventory', menuKey: 'access_merchandise', icon: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>' },
+      'customer-lookup': { target: 'customer-lookup', title: 'Customer Lookup', sub: 'Find customer info', menuKey: 'access_customer_lookup', icon: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
+      timeclock:         { target: 'timeclock', title: 'Time Clock', sub: 'Clock in / out', menuKey: null, icon: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>' },
+      pickups:           { target: 'pickups', title: 'Online Pickups', sub: 'Web order pickups', menuKey: 'access_pickups', feature: 'web_store', icon: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>' },
+      xzout:             { target: 'xz-out', title: 'X / Z Out', sub: 'Close registers', menuKey: null, requiresViewReports: true, cls: 'xzout-btn', icon: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>' },
+    };
+    const DEFAULT_TILE_ORDER = ['receipts', 'merchandise', 'customer-lookup', 'timeclock', 'pickups', 'xzout'];
+    const ARROW = '<polyline points="9 18 15 12 9 6"/>';
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    function renderMetricSlots(slots, role) {
+      const chosen = (Array.isArray(slots) ? slots : []).filter((key) => key && METRIC_CATALOG[key]).slice(0, 3);
+      const row = document.getElementById('metricsRow');
+      if (!chosen.length) {
+        row.style.display = 'none';
+        row.innerHTML = '';
+        return;
+      }
+      row.style.display = 'grid';
+      row.style.gridTemplateColumns = `repeat(${chosen.length}, 1fr)`;
+      row.innerHTML = chosen.map((key) => {
+        const m = METRIC_CATALOG[key];
+        const val = latestOverview ? m.fmt(latestOverview) : '—';
+        return `<div class="stat ${m.cls}">
+          <div class="ic"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${m.icon}</svg></div>
+          <div><div class="lbl">${m.label}</div><div class="val">${val}</div></div>
+        </div>`;
+      }).join('');
+    }
+
+    
+    
+    
+    
+    function renderMetricSkeleton(count = 3) {
+      const row = document.getElementById('metricsRow');
+      row.style.display = 'grid';
+      row.style.gridTemplateColumns = `repeat(${count}, 1fr)`;
+      row.innerHTML = Array.from({ length: count }, () => `
+        <div class="stat skeleton">
+          <div class="ic"></div>
+          <div>
+            <div class="skel-bar skel-bar-lbl"></div>
+            <div class="skel-bar skel-bar-val"></div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderTiles(order, role) {
+      const keys = (Array.isArray(order) && order.length ? order : DEFAULT_TILE_ORDER).filter((k) => TILE_CATALOG[k]);
+      document.getElementById('dynTiles').innerHTML = keys.map((key) => {
+        const t = TILE_CATALOG[key];
+        if (t.feature && !isFeatureEnabled(t.feature)) return '';
+        if (role !== 'manager' && role !== 'admin') {
+          if (t.menuKey && currentMenuAccess[t.menuKey] === false) return '';
+          if (t.requiresViewReports && !currentCanViewReports) return '';
+        }
+        return `<button class="tile${t.cls ? ' ' + t.cls : ''}" onclick="navigate('${t.target}')">
+          <div class="t-ic"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${t.icon}</svg></div>
+          <div><div class="t-title">${t.title}</div><div class="t-sub">${t.sub}</div></div>
+          <span class="t-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${ARROW}</svg></span>
+        </button>`;
+      }).join('');
+    }
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    renderTiles(DEFAULT_TILE_ORDER, 'manager');
+    renderMetricSkeleton();
+
+    async function loadLayout(role) {
+      let slots = null, order = null;
+      try {
+        const r = await window.api.getLayoutConfig(role);
+        if (r.success) { slots = r.layout.report_slots; order = r.layout.tile_order; }
+      } catch {  }
+      const sig = JSON.stringify([slots, order]);
+      currentSlots = slots;
+      layoutLoaded = true;
+      if (sig === lastLayoutSig) return; 
+      lastLayoutSig = sig;
+      renderMetricSlots(slots, role);
+      renderTiles(order, role);
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const { session } = await window.api.getSession();
+      currentRole = session?.role;
+
+      
+      
+      
+      
+      await loadFeatures();
+
+      
+      
+
+      if (session?.role === 'manager' || session?.role === 'admin') {
+        document.getElementById('settingsBtn').style.display = '';
+      } else {
+        
+        
+        
+        
+        try {
+          const me = await window.api.permsMe();
+          currentCanViewReports = !!(me.success && me.permissions?.view_reports?.granted);
+          currentMenuAccess = (me.success && me.menuAccess) || {};
+        } catch {  }
+      }
+
+      await loadOverview(session?.role);
+      await loadLayout(currentRole);
+      document.getElementById('logoutBtn').addEventListener('click', async () => {
+        await window.api.logout();
+        await window.api.navigate('login');
+      });
+    });
+
+    async function loadOverview(role) {
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      let res = await window.api.getTodayOverviewLocation();
+      if (!res.success) res = await window.api.getTodayOverview();
+      if (!res.success) return;
+      latestOverview = res.overview;
+      
+      
+      
+      
+      
+      if (layoutLoaded) renderMetricSlots(currentSlots, role); 
+    }
+    
+    
+    
+    setInterval(async () => { await loadOverview(currentRole); }, 15000);
+    
+    
+    
+    setInterval(() => loadLayout(currentRole), 45000);
+  </script>
+</body>
+</html>

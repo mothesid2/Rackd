@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rackd POS — Activate</title>
+  <link rel="stylesheet" href="../shared.css" />
+  <link rel="stylesheet" href="../shared-ui-kit.css" />
+  <style>
+    body {
+      display: flex; align-items: center; justify-content: center; min-height: 100vh;
+      background: radial-gradient(130% 120% at 50% 22%, #2b313a 0%, #171b21 48%, #0c0e11 100%);
+    }
+    .wrap { width: 400px; }
+    .logo-area { text-align: center; margin-bottom: 20px; padding: 24px 0 6px; }
+    .brand {
+      font-family: 'Tw Cen MT','Century Gothic','Futura','Gill Sans','Segoe UI',sans-serif;
+      font-size: 46px; font-weight: 500; letter-spacing: 6px; line-height: 1;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.45);
+    }
+    .card {
+      background: var(--panel); border-radius: 16px; box-shadow: 0 6px 28px rgba(0,0,0,0.18); padding: 32px;
+    }
+    .card h2 { font-size: 20px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+    .card p.sub { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+    label { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px; }
+    input {
+      width: 100%; padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 10px; font-size: 16px;
+      letter-spacing: 1px; color: var(--ink); background: var(--panel-2); outline: none; text-transform: uppercase;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    input:focus { border-color: var(--accent); background: var(--panel); box-shadow: 0 0 0 3px rgba(176,29,46,0.12); }
+    .btn-activate {
+      width: 100%; padding: 13px; margin-top: 16px; background: linear-gradient(180deg, #2a2f37 0%, #1b1d21 100%);
+      color: var(--panel); border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; transition: filter 0.15s;
+    }
+    .btn-activate:hover { filter: brightness(1.15); }
+    .btn-activate:disabled { opacity: 0.6; cursor: default; }
+    .msg { border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-top: 14px; display: none; }
+    .msg.error { background: var(--bad-dim); color: var(--bad); }
+    .msg.ok { background: var(--good-dim); color: var(--good); }
+    .foot { text-align: center; margin-top: 16px; font-size: 12px; color: rgba(255,255,255,0.4); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo-area">
+      <img src="../../../assets/logo-mark.svg" alt="rackd" style="width:120px;height:auto;display:block;margin:0 auto 8px;filter:drop-shadow(0 6px 16px rgba(0,0,0,0.55))" />
+      <div class="brand"><span style="color:var(--panel)">Rack</span><span style="color:var(--accent);text-shadow:0 0 6px rgba(176,29,46,0.3)">D</span></div>
+    </div>
+
+    
+    <div class="card" id="keyCard">
+      <h2>Activate this register</h2>
+      <p class="sub">Enter your Rackd business key. It links this register to your business, sets your plan, and connects it to the cloud. Use the same key on every register in your business.</p>
+      <label>Business Key</label>
+      <input type="text" id="licenseKey" placeholder="RACKD-XXXX-XXXX" autocomplete="off" spellcheck="false" />
+      <button class="btn-activate" id="activateBtn">Continue</button>
+      <div class="msg error" id="msgError"></div>
+      <div class="msg ok" id="msgOk"></div>
+    </div>
+
+    
+    <div class="card" id="locCard" style="display:none">
+      <h2>Choose this register's location</h2>
+      <p class="sub"><strong>This is permanent.</strong> This register will be locked to the location you pick and used only for that store. To move it later, an owner must reset it remotely.</p>
+      <label>Location</label>
+      <div id="locList" style="display:grid;gap:8px;margin-bottom:4px"></div>
+      <button class="btn-activate" id="lockBtn" disabled>Lock to this location</button>
+      <div class="msg error" id="msgLocError"></div>
+    </div>
+
+    <div class="foot">Need a key? Contact Rackd support.</div>
+  </div>
+
+  <style>
+    .loc-opt { display:flex; align-items:center; gap:10px; padding:12px 14px; border:1.5px solid var(--line); border-radius:10px; background:var(--panel-2); cursor:pointer; font-size:15px; color:var(--ink); transition:border-color .15s, background .15s; }
+    .loc-opt:hover { border-color:var(--accent); background:var(--panel); }
+    .loc-opt.selected { border-color:var(--accent); background:var(--panel); box-shadow:0 0 0 3px rgba(176,29,46,0.12); font-weight:700; }
+    .loc-opt .dot { width:14px; height:14px; border-radius:50%; border:2px solid var(--faint); flex:0 0 auto; }
+    .loc-opt.selected .dot { border-color:var(--accent); background:var(--accent); box-shadow:inset 0 0 0 2px var(--panel); }
+  </style>
+
+  <script src="../shared.js"></script>
+  <script src="../shared-ui-kit.js"></script>
+  <script>
+    const keyEl = document.getElementById('licenseKey');
+    const btn = document.getElementById('activateBtn');
+    const err = document.getElementById('msgError');
+    const ok = document.getElementById('msgOk');
+    const keyCard = document.getElementById('keyCard');
+    const locCard = document.getElementById('locCard');
+    const locList = document.getElementById('locList');
+    const lockBtn = document.getElementById('lockBtn');
+    const locErr = document.getElementById('msgLocError');
+
+    let businessKey = '';
+    let selectedLocation = null;
+
+    function finish(res) {
+      const tier = res.tier ? res.tier.charAt(0).toUpperCase() + res.tier.slice(1) : '';
+      ok.textContent = `Activated${tier ? ' — ' + tier + ' plan' : ''}. Starting…`;
+      ok.style.display = 'block';
+      setTimeout(() => window.api.navigate('login'), 1200);
+    }
+
+    function showLocationPicker(locations) {
+      keyCard.style.display = 'none';
+      locCard.style.display = 'block';
+      locList.innerHTML = '';
+      locations.forEach((loc) => {
+        const el = document.createElement('div');
+        el.className = 'loc-opt';
+        el.innerHTML = '<span class="dot"></span><span></span>';
+        el.querySelector('span:last-child').textContent = loc.name;
+        el.addEventListener('click', () => {
+          selectedLocation = loc.id;
+          [...locList.children].forEach((c) => c.classList.remove('selected'));
+          el.classList.add('selected');
+          lockBtn.disabled = false;
+        });
+        locList.appendChild(el);
+      });
+    }
+
+    async function activate() {
+      const key = keyEl.value.trim();
+      err.style.display = 'none'; ok.style.display = 'none';
+      if (!key) { err.textContent = 'Enter your business key.'; err.style.display = 'block'; return; }
+
+      btn.disabled = true; btn.textContent = 'Checking…';
+      const res = await window.api.licenseActivate(key);
+
+      if (res.success && res.needsLocation) {
+        businessKey = key;
+        showLocationPicker(res.locations || []);
+        return;
+      }
+      if (res.success) { finish(res); return; }
+      err.textContent = res.error || 'Activation failed.';
+      err.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Continue';
+    }
+
+    async function lockLocation() {
+      if (!selectedLocation) return;
+      locErr.style.display = 'none';
+      lockBtn.disabled = true; lockBtn.textContent = 'Locking…';
+      const res = await window.api.licenseSelectLocation(businessKey, selectedLocation);
+      if (res.success) { finish(res); return; }
+      locErr.textContent = res.error || 'Could not lock to that location.';
+      locErr.style.display = 'block';
+      lockBtn.disabled = false; lockBtn.textContent = 'Lock to this location';
+    }
+
+    btn.addEventListener('click', activate);
+    keyEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') activate(); });
+    lockBtn.addEventListener('click', lockLocation);
+    keyEl.focus();
+  </script>
+</body>
+</html>

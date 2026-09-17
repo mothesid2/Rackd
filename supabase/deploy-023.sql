@@ -1,0 +1,83 @@
+
+
+
+
+
+
+create or replace function public.is_manager()
+returns boolean
+language sql
+stable
+as $$
+  select coalesce(auth.jwt() ->> 'kind', 'register') = 'manager';
+$$;
+
+
+drop policy if exists "customers_cloud_select_own" on public.customers_cloud;
+create policy "customers_cloud_select_own" on public.customers_cloud for select to authenticated
+  using (tenant_id = public.current_tenant_id() and (public.is_manager() or location_id = public.current_location_id()));
+
+
+drop policy if exists "inventory_cloud_select_own" on public.inventory_cloud;
+create policy "inventory_cloud_select_own" on public.inventory_cloud for select to authenticated
+  using (tenant_id = public.current_tenant_id() and (public.is_manager() or location_id = public.current_location_id()));
+
+
+drop policy if exists "transactions_cloud_select_own" on public.transactions_cloud;
+create policy "transactions_cloud_select_own" on public.transactions_cloud for select to authenticated
+  using (tenant_id = public.current_tenant_id() and (public.is_manager() or location_id = public.current_location_id()));
+
+
+drop policy if exists "transaction_items_cloud_select_own" on public.transaction_items_cloud;
+create policy "transaction_items_cloud_select_own" on public.transaction_items_cloud for select to authenticated
+  using (tenant_id = public.current_tenant_id() and (public.is_manager() or location_id = public.current_location_id()));
+
+
+drop policy if exists "cash_drawer_sessions_cloud_select_own" on public.cash_drawer_sessions_cloud;
+create policy "cash_drawer_sessions_cloud_select_own" on public.cash_drawer_sessions_cloud for select to authenticated
+  using (tenant_id = public.current_tenant_id() and (public.is_manager() or location_id = public.current_location_id()));
+
+
+drop policy if exists "stock_movements_cloud_select_own" on public.stock_movements_cloud;
+create policy "stock_movements_cloud_select_own" on public.stock_movements_cloud for select to authenticated
+  using (tenant_id = public.current_tenant_id() and (public.is_manager() or location_id = public.current_location_id()));
+
+
+
+
+drop policy if exists "customers_cloud_insert_own" on public.customers_cloud;
+create policy "customers_cloud_insert_own" on public.customers_cloud for insert to authenticated
+  with check (tenant_id = public.current_tenant_id() and (public.is_manager() or location_id = public.current_location_id()));
+drop policy if exists "customers_cloud_update_own" on public.customers_cloud;
+create policy "customers_cloud_update_own" on public.customers_cloud for update to authenticated
+  using      (tenant_id = public.current_tenant_id() and (public.is_manager() or location_id = public.current_location_id()))
+  with check (tenant_id = public.current_tenant_id() and (public.is_manager() or location_id = public.current_location_id()));
+
+
+drop policy if exists "inventory_cloud_insert_own" on public.inventory_cloud;
+create policy "inventory_cloud_insert_own" on public.inventory_cloud for insert to authenticated
+  with check (tenant_id = public.current_tenant_id() and location_id = public.current_location_id());
+drop policy if exists "inventory_cloud_update_own" on public.inventory_cloud;
+create policy "inventory_cloud_update_own" on public.inventory_cloud for update to authenticated
+  using      (tenant_id = public.current_tenant_id() and location_id = public.current_location_id())
+  with check (tenant_id = public.current_tenant_id() and location_id = public.current_location_id());
+
+
+drop policy if exists "transactions_cloud_insert_own" on public.transactions_cloud;
+create policy "transactions_cloud_insert_own" on public.transactions_cloud for insert to authenticated
+  with check (tenant_id = public.current_tenant_id() and location_id = public.current_location_id());
+
+
+drop policy if exists "transaction_items_cloud_insert_own" on public.transaction_items_cloud;
+create policy "transaction_items_cloud_insert_own" on public.transaction_items_cloud for insert to authenticated
+  with check (tenant_id = public.current_tenant_id() and location_id = public.current_location_id());
+
+
+drop policy if exists "cash_drawer_sessions_cloud_insert_own" on public.cash_drawer_sessions_cloud;
+create policy "cash_drawer_sessions_cloud_insert_own" on public.cash_drawer_sessions_cloud for insert to authenticated
+  with check (tenant_id = public.current_tenant_id() and location_id = public.current_location_id());
+
+
+drop policy if exists "stock_movements_cloud_insert_own" on public.stock_movements_cloud;
+create policy "stock_movements_cloud_insert_own" on public.stock_movements_cloud for insert to authenticated
+  with check (tenant_id = public.current_tenant_id() and location_id = public.current_location_id());
