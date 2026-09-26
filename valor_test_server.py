@@ -3,9 +3,7 @@ import json
 from datetime import datetime
 
 PORT = 5000
-HOST = "0.0.0.0"   # listen on ALL interfaces (this PC's IPv4 is 11.11.20.189)
-                   # NOTE: 11.11.20.78 (the engineer's value) is the TERMINAL's IP,
-                   # not this PC's — binding it fails with WinError 10049.
+HOST = "0.0.0.0"
 
 
 def log(msg):

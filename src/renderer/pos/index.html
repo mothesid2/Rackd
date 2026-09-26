@@ -507,6 +507,11 @@
         <label>Amount Tendered ($)</label>
         <input type="text" inputmode="decimal" data-money id="cashTendered" style="font-size:20px;text-align:right" />
       </div>
+      <div style="display:flex;gap:8px;margin-bottom:4px">
+        <button type="button" class="btn btn-gray" style="flex:1;font-size:16px;font-weight:700" onclick="addQuickCash(20)">+$20</button>
+        <button type="button" class="btn btn-gray" style="flex:1;font-size:16px;font-weight:700" onclick="addQuickCash(10)">+$10</button>
+        <button type="button" class="btn btn-gray" style="flex:1;font-size:16px;font-weight:700" onclick="addQuickCash(5)">+$5</button>
+      </div>
       <div id="changeDisplay" style="font-size:20px;font-weight:700;text-align:center;color:var(--good);margin:12px 0;display:none">
         Change: <span id="changeAmount"></span>
       </div>
@@ -1969,9 +1974,6 @@
       if (cart.length === 0) return;
       if (cartRequiresAge() && !saleAgeVerified()) { showToast('Verify the customer’s age — scan their ID', 'warning'); openAttachCustomer(); return; }
       if (isAgeBlocked()) return;
-      
-      
-      window.api.popDrawer('Opened on Cash').catch(() => {});
       const total = Math.max(0, computeTotals().total);
       document.getElementById('cashTotalDisplay').textContent = `Total: ${fmt(total)}`;
       document.getElementById('cashTendered').value = '';
@@ -1979,6 +1981,14 @@
       document.getElementById('completeCashBtn').disabled = true;
       openModal('cashModal');
       setTimeout(() => document.getElementById('cashTendered').focus(), 100);
+    }
+
+    function addQuickCash(amount) {
+      const input = document.getElementById('cashTendered');
+      const current = parseFloat(input.value) || 0;
+      input.value = round2(current + amount).toFixed(2);
+      updateChange();
+      input.focus();
     }
 
     function updateChange() {
@@ -2001,6 +2011,7 @@
       const tendered = parseFloat(document.getElementById('cashTendered').value);
       const change = round2(tendered - total);
 
+      window.api.popDrawer('Opened on Cash').catch(() => {});
       closeModal('cashModal');
       await completeSale('cash', { cash_tendered: tendered, change_given: change });
     }

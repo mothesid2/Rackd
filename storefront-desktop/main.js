@@ -1,16 +1,11 @@
-// Rackd Storefront — desktop wrapper.
-//
-// The storefront is a public WEB app (deployed to Cloudflare Pages). This is a thin
-// Electron shell that loads it in a phone-shaped window — handy for demoing to
-// prospects without opening a browser. The Production build loads the real
-// storefront; the Demo build loads the preview/sandbox deployment and watermarks
-// itself "DEMO". Nothing customer-facing depends on this wrapper.
+
+
 
 const { app, BrowserWindow, shell } = require('electron');
 const cfg = require('./config');
 
 let pkgMeta = {};
-try { pkgMeta = require('./package.json'); } catch { /* ignore */ }
+try { pkgMeta = require('./package.json'); } catch {  }
 const DEMO = process.env.RACKD_DEMO === '1' || pkgMeta.rackdDemo === true;
 const TARGET_URL = DEMO ? (cfg.DEMO_URL || cfg.PROD_URL) : cfg.PROD_URL;
 
@@ -27,7 +22,7 @@ function createWindow() {
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
   win.loadURL(TARGET_URL).catch(() => {});
-  // External links (e.g. Stripe) open in the real browser.
+  
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
   if (DEMO) win.webContents.on('did-finish-load', () => win.webContents.executeJavaScript(BADGE_JS).catch(() => {}));
   return win;

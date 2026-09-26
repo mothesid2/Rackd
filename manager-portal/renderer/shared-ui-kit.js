@@ -1,5 +1,4 @@
 
-
 (function (global) {
   'use strict';
 
@@ -336,5 +335,78 @@
     }
   }
 
-  global.RackdUI = { skeleton, tooltip, cache, optimistic, fadeIn };
+  const clearButtons = (function () {
+    const CLEARABLE = new Set(['text', 'search', 'tel', 'email', 'url', 'number', 'password']);
+    const managed = new Map();
+
+    function eligible(el) {
+      if (el.tagName === 'TEXTAREA') return true;
+      return el.tagName === 'INPUT' && CLEARABLE.has(el.type) && !el.hasAttribute('data-no-clear');
+    }
+
+    function attach(el) {
+      if (managed.has(el) || !eligible(el) || !el.parentElement) return;
+      const parent = el.parentElement;
+      if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ru-clear';
+      btn.tabIndex = -1;
+      btn.setAttribute('aria-label', 'Clear');
+      btn.textContent = '×';
+      btn.addEventListener('mousedown', (e) => e.preventDefault());
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        el.value = '';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.focus();
+        sync(el, btn);
+      });
+      el.insertAdjacentElement('afterend', btn);
+      const pr = parseFloat(getComputedStyle(el).paddingRight) || 0;
+      if (pr < 28) el.style.paddingRight = '28px';
+      managed.set(el, btn);
+      sync(el, btn);
+    }
+
+    function sync(el, btn) {
+      const rect = el.getBoundingClientRect();
+      const active = el.value !== '' && !el.disabled && !el.readOnly && rect.width > 0 && rect.height > 0;
+      if (!active) { btn.classList.remove('ru-on'); return; }
+      const parent = btn.parentElement;
+      const pr = parent.getBoundingClientRect();
+      const top = el.tagName === 'TEXTAREA' ? 6 : (rect.height - 20) / 2;
+      btn.style.left = (rect.right - pr.left - parent.clientLeft + parent.scrollLeft - 26) + 'px';
+      btn.style.top = (rect.top - pr.top - parent.clientTop + parent.scrollTop + top) + 'px';
+      btn.classList.add('ru-on');
+    }
+
+    function scan() {
+      document.querySelectorAll('input, textarea').forEach(attach);
+    }
+
+    function refresh() {
+      managed.forEach((btn, el) => {
+        if (!el.isConnected) { btn.remove(); managed.delete(el); return; }
+        sync(el, btn);
+      });
+    }
+
+    function start() {
+      scan();
+      new MutationObserver(() => { scan(); refresh(); }).observe(document.body, { childList: true, subtree: true });
+      ['input', 'change', 'focusin'].forEach((ev) => document.addEventListener(ev, refresh, true));
+      window.addEventListener('resize', refresh);
+      setInterval(refresh, 300);
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
+
+    return { scan, refresh };
+  })();
+
+  global.RackdUI = { skeleton, tooltip, cache, optimistic, fadeIn, clearButtons };
 })(window);
