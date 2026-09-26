@@ -326,6 +326,29 @@
     .refund-pin-key:active { background: #45494f; }
     .refund-pin-key.confirm { background: #b01d2e; border-color: #b01d2e; }
     .refund-pin-key.confirm:active { background: #921827; }
+    .bill-row { display: flex; gap: 10px; margin: 2px 0 6px; }
+    .bill-btn {
+      --bill-a: #e6efdf; --bill-b: #cfe1c5; --bill-edge: #9db991; --bill-ink: #2c4a25;
+      position: relative; flex: 1; height: 64px; padding: 0; cursor: pointer;
+      border: 1px solid var(--bill-edge); border-radius: 5px; color: var(--bill-ink);
+      background:
+        repeating-radial-gradient(circle at 50% 50%, rgba(255,255,255,.28) 0 2px, transparent 2px 9px),
+        linear-gradient(135deg, var(--bill-a), var(--bill-b));
+      box-shadow: inset 0 0 0 4px rgba(255,255,255,.45), inset 0 0 0 5px var(--bill-edge), 0 1px 2px rgba(0,0,0,.18);
+      font-family: Georgia, 'Times New Roman', serif; font-weight: 700;
+      transition: transform .08s ease, box-shadow .08s ease, filter .08s ease;
+    }
+    .bill-btn::before, .bill-btn::after {
+      content: attr(data-n); position: absolute; font-size: 11px; font-weight: 700; opacity: .7;
+    }
+    .bill-btn::before { top: 9px; left: 11px; }
+    .bill-btn::after { bottom: 9px; right: 11px; }
+    .bill-btn .bill-amt { font-size: 24px; letter-spacing: .3px; }
+    .bill-btn:hover { filter: brightness(1.03); transform: translateY(-1px); box-shadow: inset 0 0 0 4px rgba(255,255,255,.45), inset 0 0 0 5px var(--bill-edge), 0 3px 6px rgba(0,0,0,.2); }
+    .bill-btn:active { transform: translateY(1px); box-shadow: inset 0 0 0 4px rgba(255,255,255,.45), inset 0 0 0 5px var(--bill-edge); }
+    .bill-btn:focus-visible { outline: 2px solid var(--brand, #b01d2e); outline-offset: 2px; }
+    .bill-10 { --bill-a: #f1e9d8; --bill-b: #e2d3b2; --bill-edge: #b9a677; --bill-ink: #5a4519; }
+    .bill-5 { --bill-a: #e9e7ef; --bill-b: #d6d2e3; --bill-edge: #a9a2bf; --bill-ink: #443c66; }
   </style>
 </head>
 <body>
@@ -507,10 +530,10 @@
         <label>Amount Tendered ($)</label>
         <input type="text" inputmode="decimal" data-money id="cashTendered" style="font-size:20px;text-align:right" />
       </div>
-      <div style="display:flex;gap:8px;margin-bottom:4px">
-        <button type="button" class="btn btn-gray" style="flex:1;font-size:16px;font-weight:700" onclick="addQuickCash(20)">+$20</button>
-        <button type="button" class="btn btn-gray" style="flex:1;font-size:16px;font-weight:700" onclick="addQuickCash(10)">+$10</button>
-        <button type="button" class="btn btn-gray" style="flex:1;font-size:16px;font-weight:700" onclick="addQuickCash(5)">+$5</button>
+      <div class="bill-row">
+        <button type="button" class="bill-btn bill-20" data-n="20" aria-label="Add $20" onclick="addQuickCash(20)"><span class="bill-amt">+$20</span></button>
+        <button type="button" class="bill-btn bill-10" data-n="10" aria-label="Add $10" onclick="addQuickCash(10)"><span class="bill-amt">+$10</span></button>
+        <button type="button" class="bill-btn bill-5" data-n="5" aria-label="Add $5" onclick="addQuickCash(5)"><span class="bill-amt">+$5</span></button>
       </div>
       <div id="changeDisplay" style="font-size:20px;font-weight:700;text-align:center;color:var(--good);margin:12px 0;display:none">
         Change: <span id="changeAmount"></span>

@@ -336,12 +336,16 @@
   }
 
   const clearButtons = (function () {
-    const CLEARABLE = new Set(['text', 'search', 'tel', 'email', 'url', 'number', 'password']);
+    const CLEARABLE = new Set(['text', 'search', 'tel', 'email', 'url', 'password']);
+    const MIN_WIDTH = 120;
+    const QTY_HINT = /qty|quantity/i;
     const managed = new Map();
 
     function eligible(el) {
+      if (el.hasAttribute('data-no-clear')) return false;
+      if (QTY_HINT.test(el.id + ' ' + el.name + ' ' + el.className)) return false;
       if (el.tagName === 'TEXTAREA') return true;
-      return el.tagName === 'INPUT' && CLEARABLE.has(el.type) && !el.hasAttribute('data-no-clear');
+      return el.tagName === 'INPUT' && CLEARABLE.has(el.type);
     }
 
     function attach(el) {
@@ -373,11 +377,11 @@
 
     function sync(el, btn) {
       const rect = el.getBoundingClientRect();
-      const active = el.value !== '' && !el.disabled && !el.readOnly && rect.width > 0 && rect.height > 0;
+      const active = el.value !== '' && !el.disabled && !el.readOnly && rect.width >= MIN_WIDTH && rect.height > 0;
       if (!active) { btn.classList.remove('ru-on'); return; }
       const parent = btn.parentElement;
       const pr = parent.getBoundingClientRect();
-      const top = el.tagName === 'TEXTAREA' ? 6 : (rect.height - 20) / 2;
+      const top = el.tagName === 'TEXTAREA' ? 6 : (rect.height - 18) / 2;
       btn.style.left = (rect.right - pr.left - parent.clientLeft + parent.scrollLeft - 26) + 'px';
       btn.style.top = (rect.top - pr.top - parent.clientTop + parent.scrollTop + top) + 'px';
       btn.classList.add('ru-on');

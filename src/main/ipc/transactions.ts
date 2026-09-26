@@ -211,7 +211,7 @@ export function registerTransactionHandlers(): void {
       let sql = `
         SELECT t.*,
           c.first_name || ' ' || c.last_name AS customer_name,
-          u.username AS cashier_name
+          COALESCE(NULLIF(TRIM(u.name), ''), u.username) AS cashier_name
         FROM transactions t
         LEFT JOIN customers c ON t.customer_id = c.id
         LEFT JOIN users u ON t.cashier_id = u.id
@@ -269,7 +269,7 @@ export function registerTransactionHandlers(): void {
       const transaction = db.prepare(`
         SELECT t.*,
           c.first_name || ' ' || c.last_name AS customer_name,
-          u.username AS cashier_name
+          COALESCE(NULLIF(TRIM(u.name), ''), u.username) AS cashier_name
         FROM transactions t
         LEFT JOIN customers c ON t.customer_id = c.id
         LEFT JOIN users u ON t.cashier_id = u.id
