@@ -89,44 +89,42 @@
       gap: 14px;
     }
     .tile {
+      --c1: #28345c; --c2: #131b30; --i1: #4a8bf5; --i2: #1d54b8;
       position: relative; overflow: hidden; cursor: pointer;
-      border: 1px solid rgba(150,170,200,0.16); border-radius: 18px; padding: 20px 22px;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px;
-      background: linear-gradient(165deg, #161f2c 0%, #10161f 100%);
+      border-radius: 18px; padding: 22px 22px;
+      display: flex; flex-direction: column; align-items: flex-start; justify-content: center; text-align: left; gap: 4px;
+      background: linear-gradient(135deg, var(--c1) 0%, var(--c2) 100%);
       box-shadow: 0 10px 22px -12px rgba(0,0,0,0.7);
-      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+      transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
     }
     .tile::before {
-      content: ''; position: absolute; left: 6%; right: 6%; bottom: 10px; height: 34px; pointer-events: none;
-      opacity: 0.06;
-      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='60'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='1'%3E%3Cpath d='M-10 40 C 70 26 120 52 170 40 S 260 26 330 38'/%3E%3Cpath d='M-10 48 C 70 34 120 60 170 48 S 260 34 330 46'/%3E%3C/g%3E%3C/svg%3E") bottom center / 100% auto no-repeat;
+      content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.5; mix-blend-mode: overlay;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='220'%3E%3Cfilter id='w'%3E%3CfeGaussianBlur stdDeviation='7'/%3E%3C/filter%3E%3Cg filter='url(%23w)' fill='none' stroke='%23ffffff' stroke-width='10' stroke-linecap='round'%3E%3Cpath d='M-30,150 C90,100 170,190 270,140 S440,90 470,130' stroke-opacity='0.5'/%3E%3Cpath d='M-30,180 C90,130 170,220 270,170 S440,120 470,160' stroke-opacity='0.3'/%3E%3C/g%3E%3C/svg%3E") right bottom / 85% auto no-repeat;
     }
     .tile > * { position: relative; z-index: 2; }
-    .tile:hover {
-      transform: translateY(-3px);
-      border-color: rgba(150,170,200,0.32);
-      background: linear-gradient(165deg, #1b2534 0%, #131b26 100%);
-      box-shadow: 0 16px 30px -12px rgba(0,0,0,0.8);
-    }
-    .tile:hover .t-ic { filter: brightness(1.1); }
+    .tile:hover { transform: translateY(-2px); filter: brightness(1.08); box-shadow: 0 14px 26px -12px rgba(0,0,0,0.8); }
     .tile:hover .t-arrow { transform: translate(4px, -50%); }
-    .tile:active { transform: translateY(-1px); }
+    .tile:active { transform: translateY(0); }
 
     .tile .t-ic {
-      width: 78px; height: 78px; border-radius: 50%; display: grid; place-items: center; flex: 0 0 auto;
-      background: radial-gradient(circle at 50% 32%, #8c2536 0%, #5e1a27 62%, #3f1119 100%);
-      border: 1px solid rgba(0,0,0,0.35);
-      box-shadow: inset 0 1px 2px rgba(255,255,255,0.16), inset 0 -3px 6px rgba(0,0,0,0.4), 0 6px 14px -4px rgba(0,0,0,0.6);
-      transition: filter 0.18s ease;
+      width: 64px; height: 64px; margin-bottom: 14px; border-radius: 50%; display: grid; place-items: center; flex: 0 0 auto;
+      background: radial-gradient(circle at 32% 28%, var(--i1) 0%, var(--i2) 100%);
+      box-shadow: inset 0 2px 3px rgba(255,255,255,0.4), inset 0 -3px 6px rgba(0,0,0,0.3), 0 4px 10px -3px rgba(0,0,0,0.5);
     }
-    .tile .t-ic svg { width: 34px; height: 34px; color: #e7cd92; }
-    .tile .t-title { font-size: 20px; font-weight: 700; color: #fff; line-height: 1.15; }
-    .tile .t-line { width: 40px; height: 2px; margin: 8px auto; border-radius: 2px; background: linear-gradient(90deg, transparent, #c9a25a, transparent); }
-    .tile .t-sub { font-size: 13px; color: #a3937a; }
-    .tile .t-arrow { position: absolute; top: 50%; right: 18px; transform: translate(0, -50%); color: #d8bd88; opacity: 0.85; transition: transform 0.18s ease; }
+    .tile .t-ic svg { width: 30px; height: 30px; color: #fff; }
+    .tile .t-title { font-size: 22px; font-weight: 700; color: #fff; line-height: 1.2; }
+    .tile .t-sub { font-size: 14px; color: rgba(220,230,250,0.62); }
+    .tile .t-arrow { position: absolute; top: 50%; right: 20px; transform: translate(0, -50%); color: rgba(255,255,255,0.55); transition: transform 0.16s ease; }
     .tile .t-arrow svg { width: 20px; height: 20px; }
 
-    .tile.exit .t-ic { background: radial-gradient(circle at 50% 32%, #9c2c3a 0%, #631d27 62%, #421218 100%); }
+    .tile-receipts { --c1: #28345c; --c2: #131b30; --i1: #4a8bf5; --i2: #1d54b8; }
+    .tile-merchandise { --c1: #38316b; --c2: #191840; --i1: #9a7af5; --i2: #6438d6; }
+    .tile-customer-lookup { --c1: #5c2338; --c2: #2c1220; --i1: #e34f68; --i2: #ad2242; }
+    .tile-timeclock { --c1: #164a44; --c2: #0b2622; --i1: #22c7b0; --i2: #0f8a78; }
+    .tile-pickups { --c1: #47215a; --c2: #21102c; --i1: #b563e0; --i2: #8134c4; }
+    .tile-xzout { --c1: #1a3568; --c2: #0f1c36; --i1: #4a96f2; --i2: #1f66d0; }
+    .tile-settings { --c1: #333b4c; --c2: #1c2029; --i1: #7986a0; --i2: #4b556c; }
+    .tile.exit { --c1: #5c1c28; --c2: #2c0e16; --i1: #e0455a; --i2: #a3202f; }
 
     .fullscreen-btn {
       position: fixed; top: 10px; right: 12px; z-index: 300;
@@ -169,13 +167,13 @@
 
       <button class="tile tile-settings" id="settingsBtn" onclick="navigate('settings')" style="display:none">
         <div class="t-ic"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
-        <div><div class="t-title">Settings</div><div class="t-line"></div><div class="t-sub">Terminal &amp; store config</div></div>
+        <div><div class="t-title">Settings</div><div class="t-sub">Terminal &amp; store config</div></div>
         <span class="t-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
       </button>
 
       <button class="tile exit" id="logoutBtn">
         <div class="t-ic"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>
-        <div><div class="t-title">Log Out</div><div class="t-line"></div><div class="t-sub">End your session</div></div>
+        <div><div class="t-title">Log Out</div><div class="t-sub">End your session</div></div>
       </button>
     </div>
   </div>
@@ -295,7 +293,7 @@
         }
         return `<button class="tile tile-${key}${t.cls ? ' ' + t.cls : ''}" onclick="navigate('${t.target}')">
           <div class="t-ic"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${t.icon}</svg></div>
-          <div><div class="t-title">${t.title}</div><div class="t-line"></div><div class="t-sub">${t.sub}</div></div>
+          <div><div class="t-title">${t.title}</div><div class="t-sub">${t.sub}</div></div>
           <span class="t-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${ARROW}</svg></span>
         </button>`;
       }).join('');
