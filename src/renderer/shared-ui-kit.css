@@ -133,7 +133,7 @@ tr.ru-no-hover:hover td, tr.ru-no-hover:nth-child(even) td { background: transpa
 }
 
 .ru-clear {
-  position: absolute;
+  position: fixed;
   display: none;
   width: 18px;
   height: 18px;
@@ -144,7 +144,7 @@ tr.ru-no-hover:hover td, tr.ru-no-hover:nth-child(even) td { background: transpa
   font: 400 17px/18px system-ui, sans-serif;
   text-align: center;
   cursor: pointer;
-  z-index: 5;
+  z-index: 10002;
 }
 .ru-clear.ru-on { display: block; }
 .ru-clear:hover { color: var(--ru-text); }

@@ -339,77 +339,97 @@
     const CLEARABLE = new Set(['text', 'search', 'tel', 'email', 'url', 'password']);
     const MIN_WIDTH = 120;
     const QTY_HINT = /qty|quantity/i;
-    const managed = new Map();
+    let btn = null;
+    let active = null;
+    let savedPad = '';
+    let focusEl = null;
+    let hoverEl = null;
 
     function eligible(el) {
+      if (!el || el.nodeType !== 1) return false;
       if (el.hasAttribute('data-no-clear')) return false;
-      if (QTY_HINT.test(el.id + ' ' + el.name + ' ' + el.className)) return false;
-      if (el.tagName === 'TEXTAREA') return true;
-      return el.tagName === 'INPUT' && CLEARABLE.has(el.type);
+      if (el.tagName === 'TEXTAREA') return !QTY_HINT.test(el.id + ' ' + el.name + ' ' + el.className);
+      if (el.tagName !== 'INPUT' || !CLEARABLE.has(el.type)) return false;
+      return !QTY_HINT.test(el.id + ' ' + el.name + ' ' + el.className);
     }
 
-    function attach(el) {
-      if (managed.has(el) || !eligible(el) || !el.parentElement) return;
-      const parent = el.parentElement;
-      if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative';
-      const btn = document.createElement('button');
+    function ensureButton() {
+      if (btn) return btn;
+      btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'ru-clear';
       btn.tabIndex = -1;
       btn.setAttribute('aria-label', 'Clear');
-      btn.textContent = '×';
-      btn.addEventListener('mousedown', (e) => e.preventDefault());
+      btn.textContent = '\u00d7';
+      const keepFocus = (e) => e.preventDefault();
+      btn.addEventListener('mousedown', keepFocus);
+      btn.addEventListener('pointerdown', keepFocus);
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (!active) return;
+        const el = active;
         el.value = '';
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
         el.focus();
-        sync(el, btn);
+        place();
       });
-      el.insertAdjacentElement('afterend', btn);
-      const pr = parseFloat(getComputedStyle(el).paddingRight) || 0;
-      if (pr < 28) el.style.paddingRight = '28px';
-      managed.set(el, btn);
-      sync(el, btn);
+      document.body.appendChild(btn);
+      return btn;
     }
 
-    function sync(el, btn) {
-      const rect = el.getBoundingClientRect();
-      const active = el.value !== '' && !el.disabled && !el.readOnly && rect.width >= MIN_WIDTH && rect.height > 0;
-      if (!active) { btn.classList.remove('ru-on'); return; }
-      const parent = btn.parentElement;
-      const pr = parent.getBoundingClientRect();
-      const top = el.tagName === 'TEXTAREA' ? 6 : (rect.height - 18) / 2;
-      btn.style.left = (rect.right - pr.left - parent.clientLeft + parent.scrollLeft - 26) + 'px';
-      btn.style.top = (rect.top - pr.top - parent.clientTop + parent.scrollTop + top) + 'px';
-      btn.classList.add('ru-on');
+    function hideButton() {
+      if (btn) btn.classList.remove('ru-on');
     }
 
-    function scan() {
-      document.querySelectorAll('input, textarea').forEach(attach);
+    function place() {
+      if (!active || !active.isConnected) { release(); return; }
+      const rect = active.getBoundingClientRect();
+      if (active.value === '' || active.disabled || active.readOnly || rect.width < MIN_WIDTH || rect.height <= 0) {
+        hideButton();
+        return;
+      }
+      const b = ensureButton();
+      const top = active.tagName === 'TEXTAREA' ? 6 : (rect.height - 18) / 2;
+      b.style.left = (rect.right - 26) + 'px';
+      b.style.top = (rect.top + top) + 'px';
+      b.classList.add('ru-on');
     }
 
-    function refresh() {
-      managed.forEach((btn, el) => {
-        if (!el.isConnected) { btn.remove(); managed.delete(el); return; }
-        sync(el, btn);
-      });
+    function release() {
+      if (active) active.style.paddingRight = savedPad;
+      active = null;
+      hideButton();
     }
 
-    function start() {
-      scan();
-      new MutationObserver(() => { scan(); refresh(); }).observe(document.body, { childList: true, subtree: true });
-      ['input', 'change', 'focusin'].forEach((ev) => document.addEventListener(ev, refresh, true));
-      window.addEventListener('resize', refresh);
-      setInterval(refresh, 300);
+    function update() {
+      const next = eligible(focusEl) ? focusEl : (eligible(hoverEl) ? hoverEl : null);
+      if (next !== active) {
+        release();
+        if (next) {
+          active = next;
+          savedPad = next.style.paddingRight;
+          const pr = parseFloat(getComputedStyle(next).paddingRight) || 0;
+          if (pr < 28) next.style.paddingRight = '28px';
+        }
+      }
+      place();
     }
 
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
-    else start();
+    document.addEventListener('focusin', (e) => { focusEl = e.target; update(); }, true);
+    document.addEventListener('focusout', () => { focusEl = null; update(); }, true);
+    document.addEventListener('mouseover', (e) => {
+      if (e.target === btn) return;
+      hoverEl = e.target;
+      update();
+    }, true);
+    document.documentElement.addEventListener('mouseleave', () => { hoverEl = null; update(); });
+    document.addEventListener('input', (e) => { if (e.target === active) place(); }, true);
+    document.addEventListener('scroll', () => { if (active) place(); }, true);
+    window.addEventListener('resize', () => { if (active) place(); });
 
-    return { scan, refresh };
+    return { refresh: update };
   })();
 
   global.RackdUI = { skeleton, tooltip, cache, optimistic, fadeIn, clearButtons };
