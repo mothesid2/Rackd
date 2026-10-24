@@ -521,6 +521,21 @@
   </div>
 
   
+  <div class="modal-overlay" id="dropModal" style="display:none">
+    <div class="modal" style="max-width:360px">
+      <button class="modal-close" onclick="closeModal('dropModal')" aria-label="Close">×</button>
+      <div class="modal-title">Cash Drop</div>
+      <div class="form-group">
+        <label>Amount to remove from the drawer ($)</label>
+        <input type="text" inputmode="decimal" data-money id="dropAmount" style="font-size:20px;text-align:right" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="closeModal('dropModal')">Cancel</button>
+        <button class="btn btn-navy" id="dropConfirmBtn" onclick="confirmDrop()">Record Drop</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="cashModal" style="display:none">
     <div class="modal" style="max-width:380px">
       <button class="modal-close" onclick="closeModal('cashModal')" data-tooltip="Close" aria-label="Close">×</button>
@@ -2880,10 +2895,16 @@
     async function recordDrop() {
       const res = await window.api.getDrawerSummary();
       const suggested = res.success ? res.summary.suggested_drop : 0;
-      const input = prompt('Cash drop amount to remove from the drawer:', suggested.toFixed(2));
-      if (input == null) return;
-      const amt = parseFloat(input);
+      const el = document.getElementById('dropAmount');
+      el.value = suggested.toFixed(2);
+      openModal('dropModal');
+      el.focus(); el.select();
+    }
+
+    async function confirmDrop() {
+      const amt = parseFloat(document.getElementById('dropAmount').value);
       if (isNaN(amt) || amt < 0) { showToast('Enter a valid amount', 'warning'); return; }
+      closeModal('dropModal');
       const r = await window.api.recordCashDrop(amt, 'End-of-shift drop');
       showToast(r.success ? `Cash drop of ${fmt(amt)} logged` : (r.error || 'Failed'), r.success ? 'success' : 'error');
       await refreshDrawer();
