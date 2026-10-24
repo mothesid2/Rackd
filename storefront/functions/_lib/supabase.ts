@@ -49,3 +49,67 @@ export async function rpc<T = unknown>(env: Partial<Env>, fn: string, args: Reco
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
 }
+
+// ---------------------------------------------------------------- Storage (private bucket)
+const STORAGE_BUCKET = 'onboarding-docs';
+export { STORAGE_BUCKET };
+
+function storageBase(env: Partial<Env>): string {
+  return `${(env.SUPABASE_URL as string).replace(/\/+$/, '')}/storage/v1`;
+}
+
+function encodePath(path: string): string {
+  return path.split('/').map(encodeURIComponent).join('/');
+}
+
+/** Short-lived (about 2 hours, Supabase default) signed upload token for one exact object path. */
+export async function createSignedUpload(env: Partial<Env>, path: string, fetchImpl: FetchLike = fetch): Promise<{ path: string; token: string }> {
+  requireEnv(env, ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
+  const res = await fetchImpl(`${storageBase(env)}/object/upload/sign/${STORAGE_BUCKET}/${encodePath(path)}`, {
+    method: 'POST',
+    headers: headers(env),
+    body: '{}',
+  });
+  if (!res.ok) throw await toError(res);
+  const data = (await res.json()) as { url?: string; token?: string };
+  const token = data.token ?? (data.url ? new URL(data.url, 'https://x.invalid').searchParams.get('token') : null);
+  if (!token) throw new SupabaseError(502, 'storage', 'no_upload_token');
+  return { path, token };
+}
+
+export interface ObjectProbe {
+  size: number;
+  head: Uint8Array;
+}
+
+/** Reads the first bytes and total size of an uploaded object (service role). Returns null if missing. */
+export async function probeObject(env: Partial<Env>, path: string, fetchImpl: FetchLike = fetch): Promise<ObjectProbe | null> {
+  requireEnv(env, ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
+  const res = await fetchImpl(`${storageBase(env)}/object/${STORAGE_BUCKET}/${encodePath(path)}`, {
+    headers: { ...headers(env), Range: 'bytes=0-15' },
+  });
+  if (res.status === 404 || res.status === 400) return null;
+  if (!res.ok) throw await toError(res);
+  const head = new Uint8Array(await res.arrayBuffer());
+  const range = res.headers.get('Content-Range'); // "bytes 0-15/12345"
+  const total = range ? Number(range.split('/')[1]) : Number(res.headers.get('Content-Length') ?? head.length);
+  return { size: Number.isFinite(total) ? total : head.length, head: head.slice(0, 16) };
+}
+
+export async function deleteObject(env: Partial<Env>, path: string, fetchImpl: FetchLike = fetch): Promise<void> {
+  requireEnv(env, ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
+  await fetchImpl(`${storageBase(env)}/object/${STORAGE_BUCKET}/${encodePath(path)}`, { method: 'DELETE', headers: headers(env) });
+}
+
+/** PostgREST PATCH on a table (service role), filtered by simple equality. */
+export async function restPatch(env: Partial<Env>, table: string, match: Record<string, string>, values: Record<string, unknown>, fetchImpl: FetchLike = fetch): Promise<void> {
+  requireEnv(env, ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
+  if (!/^[a-z_][a-z0-9_]*$/.test(table)) throw new Error('invalid table name');
+  const qs = Object.entries(match).map(([k, v]) => `${encodeURIComponent(k)}=eq.${encodeURIComponent(v)}`).join('&');
+  const res = await fetchImpl(`${(env.SUPABASE_URL as string).replace(/\/+$/, '')}/rest/v1/${table}?${qs}`, {
+    method: 'PATCH',
+    headers: { ...headers(env), Prefer: 'return=minimal' },
+    body: JSON.stringify(values),
+  });
+  if (!res.ok) throw await toError(res);
+}

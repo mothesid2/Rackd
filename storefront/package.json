@@ -10,7 +10,8 @@
     "serve": "npx serve@latest out",
     "lint": "next lint",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "mock": "node tests/e2e/mock-server.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^2.8.0",

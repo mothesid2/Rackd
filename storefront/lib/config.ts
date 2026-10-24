@@ -10,3 +10,7 @@ export const ONLINE_FEE_RATE = 0.05;
 
 export const fmt = (n: number) =>
   '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Cloudflare Turnstile site key (public). Dev fallback is Cloudflare's always-pass test key.
+export const TURNSTILE_SITE_KEY =
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || (process.env.NODE_ENV === 'production' ? '' : '1x00000000000000000000AA');

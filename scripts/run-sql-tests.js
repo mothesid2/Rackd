@@ -15,6 +15,7 @@ const order = [
   'migrations/085_onboarding_functions.sql',
   'migrations/086_provisioning_permits.sql',
   'migrations/087_hardware_seed.sql',
+  'migrations/088_agreement_ensure.sql',
   'tests/onboarding_rls_tests.sql',
 ];
 

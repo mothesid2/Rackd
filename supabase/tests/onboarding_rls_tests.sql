@@ -441,6 +441,20 @@ begin
   raise notice 'PASS 15: permit reminders sent once per expiry date';
 end $$;
 
+-- ================================================================ 16. agreement versions are immutable once published
+do $$
+declare a uuid; b uuid;
+begin
+  perform pg_temp.become('anon', null);
+  perform pg_temp.expect_error('select public.onb_ensure_agreement(''terms_of_service'', ''v9'', ''x'')', '42501', 'anon cannot register agreements');
+  perform pg_temp.become('service_role', jsonb_build_object('role', 'service_role'));
+  a := public.onb_ensure_agreement('terms_of_service', 'v9', repeat('d', 64));
+  b := public.onb_ensure_agreement('terms_of_service', 'v9', repeat('d', 64));
+  if a <> b then raise exception 'FAIL: ensure not idempotent'; end if;
+  perform pg_temp.expect_error('select public.onb_ensure_agreement(''terms_of_service'', ''v9'', repeat(''e'', 64))', 'P0001', 'changed text under same version is refused');
+  raise notice 'PASS 16: agreement versions are idempotent and immutable';
+end $$;
+
 reset role;
 rollback;
 select 'ALL ONBOARDING RLS TESTS PASSED' as result;

@@ -17,6 +17,8 @@ export interface Env {
   PAYMENT_PROCESSOR_CONNECTED?: string;
   SMS_ENABLED?: string;
   DOC_SCAN_HOOK_URL?: string;
+  /** DEV ONLY: returns the email verification code in the create/send-code response. Ignored when STRIPE_LIVE_ENABLED=true. */
+  DEV_RETURN_EMAIL_CODE?: string;
 }
 
 export interface Flags {
@@ -59,4 +61,9 @@ export function requireEnv<K extends keyof Env>(env: Partial<Env>, keys: K[]): a
 
 export function appBaseUrl(env: Partial<Env>): string {
   return (env.APP_BASE_URL?.trim() || 'https://r4ckd.net').replace(/\/+$/, '');
+}
+
+/** True only for local/staging smoke tests; can never be on once live payments are enabled. */
+export function devReturnsEmailCode(env: Partial<Env>): boolean {
+  return on(env.DEV_RETURN_EMAIL_CODE) && !flags(env).stripeLive;
 }
