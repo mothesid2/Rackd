@@ -1,0 +1,12 @@
+drop table if exists public.sms_consents;
+drop table if exists public.agreement_signatures;
+drop table if exists public.agreement_versions;
+drop table if exists public.application_notes;
+drop table if exists public.application_events;
+drop table if exists public.onboarding_licenses;
+alter table if exists public.onboarding_owners drop constraint if exists onboarding_owners_id_document_fk;
+drop table if exists public.onboarding_documents;
+drop table if exists public.onboarding_owners;
+drop table if exists public.onboarding_locations;
+drop table if exists public.onboarding_applications;
+drop function if exists public.onb_touch_updated_at();

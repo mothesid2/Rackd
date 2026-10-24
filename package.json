@@ -27,7 +27,8 @@
     "build:mac": "npm run build:main && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
     "release:mac": "npm run build:mac && node scripts/publish-update.js production",
     "release:mac:staging": "npm run build:mac && node scripts/publish-update.js staging",
-    "postinstall": "electron-rebuild -f"
+    "postinstall": "electron-rebuild -f",
+    "test:sql": "node scripts/run-sql-tests.js"
   },
   "build": {
     "appId": "com.rackd.pos",
@@ -86,6 +87,7 @@
     "@thiagoelg/node-printer": "^0.6.2"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
     "@electron/rebuild": "^3.6.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.8",
