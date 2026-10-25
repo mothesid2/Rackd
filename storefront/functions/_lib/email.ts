@@ -98,3 +98,42 @@ export function resumeLinkEmail(env: Partial<Env>, name: string, magicToken: str
     html: shell(`Welcome back, ${name.split(' ')[0] || 'there'}`, `<p>Pick up where you left off. This link works once and expires in 7 days.</p>${button(url, 'Continue application')}`),
   };
 }
+
+// ---------------------------------------------------------------- hardware order emails
+const usd = (c: number) => (c / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+
+export interface OrderEmailData {
+  id: string;
+  order_number: string;
+  is_test: boolean;
+  items: { name: string; unit_price_cents: number; quantity: number }[];
+  discount_cents: number; shipping_cents: number; tax_cents: number; total_cents: number;
+  address: { full_name: string; line1: string; line2?: string | null; city: string; state: string; zip: string };
+}
+
+function orderTable(o: OrderEmailData): string {
+  const row = (a: string, b: string, bold = false) =>
+    `<tr><td style="padding:4px 0;${bold ? 'font-weight:700;border-top:1px solid #333' : ''}">${a}</td><td align="right" style="padding:4px 0;${bold ? 'font-weight:700;border-top:1px solid #333' : ''}">${b}</td></tr>`;
+  return `<table role="presentation" width="100%" style="font-size:14px;border-collapse:collapse">
+${o.items.map((i) => row(`${i.quantity} × ${escapeHtml(i.name)}`, usd(i.unit_price_cents * i.quantity))).join('')}
+${o.discount_cents > 0 ? row('Bundle discount', `−${usd(o.discount_cents)}`) : ''}
+${row('Shipping', usd(o.shipping_cents))}${row('Sales tax', usd(o.tax_cents))}${row('Total', usd(o.total_cents), true)}</table>`;
+}
+
+export function orderConfirmationEmail(env: Partial<Env>, o: OrderEmailData, emailToken: string): Pick<EmailMessage, 'subject' | 'html'> {
+  const url = `${appBaseUrl(env)}/hardware/order/${o.id}#t=${emailToken}`;
+  const a = o.address;
+  const test = o.is_test ? `<p style="background:#3a1016;border:1px solid #b01d2e;border-radius:8px;padding:10px;font-size:13px"><strong>TEST ORDER.</strong> No real payment was taken and nothing will ship.</p>` : '';
+  return {
+    subject: `${o.is_test ? '[TEST] ' : ''}Rackd order ${o.order_number} confirmed`,
+    html: shell(`Thanks, we got your order`, `${test}<p>Order <strong>${escapeHtml(o.order_number)}</strong> is paid. We will email you again when it ships.</p>${orderTable(o)}
+<p style="font-size:13px;color:#9a9da3;margin-top:16px">Shipping to ${escapeHtml(a.full_name)}, ${escapeHtml(a.line1)}${a.line2 ? ', ' + escapeHtml(a.line2) : ''}, ${escapeHtml(a.city)}, ${escapeHtml(a.state)} ${escapeHtml(a.zip)}</p>${button(url, 'View your order')}`),
+  };
+}
+
+export function adminOrderEmail(o: { order_number: string; total_cents: number; is_test: boolean }, notes: string[]): Pick<EmailMessage, 'subject' | 'html'> {
+  return {
+    subject: `${o.is_test ? '[TEST] ' : ''}Hardware order ${o.order_number} paid (${usd(o.total_cents)})`,
+    html: shell('Hardware order paid', `<p>Order <strong>${escapeHtml(o.order_number)}</strong> was paid.${o.is_test ? ' (Stripe test mode.)' : ''}</p>${notes.length ? `<ul>${notes.map((n) => `<li>${escapeHtml(n)}</li>`).join('')}</ul>` : ''}<p>Open it in the admin console to fulfil.</p>`),
+  };
+}

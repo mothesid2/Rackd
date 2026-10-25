@@ -497,6 +497,83 @@ begin
   raise notice 'PASS 17: hardware orders validated, token-gated and tenant-isolated';
 end $$;
 
+-- ================================================================ 18. payments: idempotent events, mark-paid once, stock
+do $$
+declare
+  addr jsonb := '{"full_name":"Pat","line1":"1 Main","city":"Austin","state":"TX","zip":"78701"}';
+  pid uuid; r1 record; r2 record; j jsonb; stock int; ehash text := repeat('e', 64);
+begin
+  perform pg_temp.become('postgres', null);
+  insert into public.hardware_products (sku, name, category, price_cents, stock_qty) values ('PAY-1', 'Pay test item', 'accessory', 1000, 3) returning id into pid;
+  perform pg_temp.become('anon', null);
+  perform pg_temp.expect_error('select public.hw_event_begin(''evt_x'', ''t'')', '42501', 'anon cannot touch payment events');
+  perform pg_temp.expect_error('select public.hw_mark_paid(gen_random_uuid(), ''s'', ''pi'', 1, 0, false)', '42501', 'anon cannot mark paid');
+  perform pg_temp.become('authenticated', jsonb_build_object('role', 'authenticated', 'tenant_id', '11111111-1111-1111-1111-111111111111'));
+  perform pg_temp.expect_error('select public.hw_mark_paid(gen_random_uuid(), ''s'', ''pi'', 1, 0, false)', '42501', 'authenticated cannot mark paid');
+  perform pg_temp.expect_error('select public.hw_mark_refunded(''pi'', true, null)', '42501', 'authenticated cannot refund');
+
+  perform pg_temp.become('service_role', jsonb_build_object('role', 'service_role'));
+  select * into r1 from public.hw_create_order('a@b.co', null, null, addr, 'g', 2000, 0, 0, 0, 2000, null, true, repeat('1', 64),
+    jsonb_build_array(jsonb_build_object('product_id', pid, 'sku', 'PAY-1', 'name', 'Pay test item', 'unit_price_cents', 1000, 'quantity', 2)));
+  perform public.hw_set_session(r1.order_id, 'cs_1');
+
+  -- webhook event idempotency
+  if public.hw_event_begin('evt_1', 'checkout.session.completed') <> 'new' then raise exception 'FAIL: first sight'; end if;
+  if public.hw_event_begin('evt_1', 'checkout.session.completed') <> 'retry' then raise exception 'FAIL: unfinished event is retryable'; end if;
+  perform public.hw_event_done('evt_1');
+  if public.hw_event_begin('evt_1', 'checkout.session.completed') <> 'done' then raise exception 'FAIL: finished event is done'; end if;
+
+  -- guards
+  perform pg_temp.expect_error(format('select public.hw_mark_paid(%L, ''cs_OTHER'', ''pi_1'', 2000, 0, false)', r1.order_id), 'P0001', 'wrong session refused');
+  perform pg_temp.expect_error(format('select public.hw_mark_paid(%L, ''cs_1'', ''pi_1'', 2000, 0, true)', r1.order_id), 'P0001', 'live event on a test order refused');
+  perform pg_temp.expect_error('select public.hw_mark_paid(gen_random_uuid(), ''cs_1'', ''pi_1'', 2000, 0, false)', 'P0001', 'unknown order refused');
+  select stock_qty into stock from public.hardware_products where id = pid;
+  if stock <> 3 then raise exception 'FAIL: refused calls must not touch stock (%)', stock; end if;
+
+  -- paid once, stock decremented once
+  j := public.hw_mark_paid(r1.order_id, 'cs_1', 'pi_1', 2000, 0, false);
+  if not (j ->> 'changed')::boolean or j ->> 'status' <> 'paid' then raise exception 'FAIL: first mark paid %', j; end if;
+  j := public.hw_mark_paid(r1.order_id, 'cs_1', 'pi_1', 2000, 0, false);
+  if (j ->> 'changed')::boolean then raise exception 'FAIL: second mark paid must be a no-op'; end if;
+  select stock_qty into stock from public.hardware_products where id = pid;
+  if stock <> 1 then raise exception 'FAIL: stock should be 1 after one decrement, got %', stock; end if;
+  perform pg_temp.expect_count(format('select count(*) from public.hardware_orders where id = %L and status = ''paid'' and stripe_payment_intent = ''pi_1'' and paid_at is not null', r1.order_id), 1, 'order paid');
+  perform pg_temp.expect_count(format('select count(*) from public.audit_log where entity_id = %L and action = ''hardware_order.paid''', r1.order_id::text), 1, 'one audit row');
+
+  -- oversold: money was taken, so mark paid but flag it and floor stock at 0
+  select * into r2 from public.hw_create_order('c@d.co', null, null, addr, 'g', 5000, 0, 0, 0, 5000, null, true, repeat('2', 64),
+    jsonb_build_array(jsonb_build_object('product_id', pid, 'sku', 'PAY-1', 'name', 'Pay test item', 'unit_price_cents', 1000, 'quantity', 5)));
+  perform public.hw_set_session(r2.order_id, 'cs_2');
+  j := public.hw_mark_paid(r2.order_id, 'cs_2', 'pi_2', 5000, 0, false);
+  if j -> 'oversold' <> '["PAY-1"]'::jsonb then raise exception 'FAIL: oversold flag %', j; end if;
+  select stock_qty into stock from public.hardware_products where id = pid;
+  if stock <> 0 then raise exception 'FAIL: stock floors at 0, got %', stock; end if;
+  perform pg_temp.expect_count(format('select count(*) from public.hardware_orders where id = %L and notes like ''%%Oversold%%''', r2.order_id), 1, 'oversold noted');
+
+  -- Stripe is the source of truth for what was actually charged (e.g. Stripe Tax)
+  select * into r2 from public.hw_create_order('e@f.co', null, null, addr, 'g', 1000, 0, 0, 0, 1000, null, true, repeat('3', 64),
+    jsonb_build_array(jsonb_build_object('product_id', null, 'sku', 'X', 'name', 'x', 'unit_price_cents', 1000, 'quantity', 1)));
+  j := public.hw_mark_paid(r2.order_id, 'cs_3', 'pi_3', 1083, 83, false);
+  if not (j ->> 'amount_changed')::boolean then raise exception 'FAIL: amount change flagged'; end if;
+  perform pg_temp.expect_count(format('select count(*) from public.hardware_orders where id = %L and total_cents = 1083 and tax_cents = 83', r2.order_id), 1, 'charged amounts recorded');
+
+  -- refunds
+  j := public.hw_mark_refunded('pi_none', true, 'x');
+  if (j ->> 'found')::boolean then raise exception 'FAIL: unknown payment intent'; end if;
+  j := public.hw_mark_refunded('pi_1', false, 'partial $5');
+  perform pg_temp.expect_count(format('select count(*) from public.hardware_orders where id = %L and status = ''paid'' and refund_note like ''%%partial%%''', r1.order_id), 1, 'partial refund leaves status, adds note');
+  j := public.hw_mark_refunded('pi_1', true, 'full');
+  perform pg_temp.expect_count(format('select count(*) from public.hardware_orders where id = %L and status = ''refunded''', r1.order_id), 1, 'full refund flips status');
+
+  -- the emailed token grants the same read access as the browser token; unknown tokens do not
+  perform public.hw_issue_email_token(r1.order_id, ehash);
+  j := public.hw_get_order(r1.order_id, ehash);
+  if j ->> 'order_number' <> r1.order_number then raise exception 'FAIL: email token lookup'; end if;
+  if (public.hw_get_order(r1.order_id, repeat('1', 64))) ->> 'status' <> 'refunded' then raise exception 'FAIL: browser token still works'; end if;
+  perform pg_temp.expect_error(format('select public.hw_get_order(%L, %L)', r1.order_id, repeat('9', 64)), '28000', 'unknown token refused');
+  raise notice 'PASS 18: payments idempotent, stock decremented once, refunds and tokens behave';
+end $$;
+
 reset role;
 rollback;
 select 'ALL ONBOARDING RLS TESTS PASSED' as result;

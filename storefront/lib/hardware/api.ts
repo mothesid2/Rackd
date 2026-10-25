@@ -29,8 +29,9 @@ export interface CheckoutInput {
 }
 export interface CheckoutResult {
   order_id: string; order_number: string; access_token: string; total_cents: number; tax_pending: boolean; test_mode: boolean;
-  /** present once Stripe Checkout is wired (milestone 7) */
+  /** Stripe Checkout URL (hosted payment page). Absent if payments are not configured or Stripe errored. */
   redirect_url?: string;
+  payment_error?: boolean;
 }
 
 export interface OrderDto {
@@ -45,6 +46,7 @@ export interface OrderDto {
 export const hw = {
   checkout: (b: CheckoutInput) => post<CheckoutResult>('checkout', b as unknown as Record<string, unknown>),
   order: (id: string, token: string) => post<OrderDto>('order', { id, token }),
+  pay: (id: string, token: string) => post<{ redirect_url: string }>('pay', { id, token }),
   mode: () => post<{ test_mode: boolean }>('mode', {}),
 };
 
@@ -56,6 +58,11 @@ const MESSAGES: Record<string, string> = {
   email_invalid: 'Enter a valid email address.',
   zip_invalid: 'Enter a 5-digit ZIP code.',
   invalid_token: 'We could not find that order. Use the link from your confirmation email.',
+  not_payable: 'This order can no longer be paid.',
+  already_paid: 'This order is already paid.',
+  payments_not_configured: 'Online payment is not available yet. We will contact you about your order.',
+  stripe_mode_mismatch: 'Online payment is not available right now. Please try again later.',
+  payment_provider_error: 'The payment provider did not respond. Please try again in a moment.',
   server_not_configured: 'Checkout is not available yet. Please try again later.',
 };
 export const hwMessage = (e: unknown) => (e instanceof HwApiError && MESSAGES[e.code]) || 'Something went wrong. Please try again.';

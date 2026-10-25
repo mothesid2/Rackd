@@ -99,6 +99,10 @@ function hwApi(name, b, res) {
       orders.set(id, { id, token, order_number: `HW-${1001 + orders.size}`, status: 'pending', email: b.email, ...price, items: price.lines.map((l) => ({ name: l.name, sku: l.sku, unit_price_cents: l.unit_cents, quantity: l.qty })), address: b.address });
       return json(res, { order_id: id, order_number: orders.get(id).order_number, access_token: token, total_cents: price.total_cents, tax_pending: false, test_mode: true });
     }
+    case 'pay': { const o = orders.get(b.id); if (!o || o.token !== b.token) return json(res, { error: 'invalid_token' }, 401);
+      // emulate Stripe: the webhook lands a few seconds AFTER the customer is redirected back
+      setTimeout(() => { o.status = 'paid'; }, 4000);
+      return json(res, { redirect_url: `/hardware/order/${o.id}?paid=1#t=${o.token}` }); }
     case 'order': { const o = orders.get(b.id); if (!o || o.token !== b.token) return json(res, { error: 'invalid_token' }, 401);
       return json(res, { id: o.id, order_number: o.order_number, status: o.status, email: o.email, subtotal_cents: o.subtotal_cents, discount_cents: o.discount_cents, shipping_cents: o.shipping_cents, tax_cents: o.tax_cents, total_cents: o.total_cents, is_test: true, notes: null, shipping_method: 'ground', carrier: null, tracking_number: null, created_at: new Date().toISOString(), paid_at: null, shipped_at: null, address: { company: null, line2: null, ...o.address }, items: o.items }); }
     default: return json(res, { error: 'not_found' }, 404);

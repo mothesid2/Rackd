@@ -6,6 +6,8 @@ import { HttpError, json } from '../../_lib/http';
 import { LIMITS } from '../../_lib/rateLimit';
 import { safeLog } from '../../_lib/redact';
 import { postJson, str } from '../../_lib/route';
+import { beginPayment, type OrderRow } from '../../_lib/payments';
+import { stripeConfigured } from '../../_lib/stripe';
 import { rpc, rpcAs } from '../../_lib/supabase';
 import { looksLikeToken, randomToken, sha256Hex } from '../../_lib/token';
 
@@ -76,7 +78,23 @@ export const onRequestPost = postJson(async ({ request, env, body }) => {
   });
   safeLog('info', 'hardware order created', { order: rows[0].order_number, total_cents: price.total_cents });
 
+  // Payment is best effort here: if Stripe is not configured or errors, the order still exists and the
+  // order page offers "Pay now" later, so a provider outage never loses the customer's cart.
+  let redirectUrl: string | undefined;
+  let paymentError = false;
+  if (stripeConfigured(env)) {
+    try {
+      const order = await rpc<OrderRow>(env, 'hw_get_order', { p_id: rows[0].order_id, p_token_hash: await sha256Hex(accessToken) });
+      redirectUrl = await beginPayment(env, order, accessToken);
+    } catch (e) {
+      paymentError = true;
+      safeLog('error', 'could not start payment at checkout', e);
+    }
+  }
+
   return {
+    ...(redirectUrl ? { redirect_url: redirectUrl } : {}),
+    ...(paymentError ? { payment_error: true } : {}),
     order_id: rows[0].order_id,
     order_number: rows[0].order_number,
     access_token: accessToken,

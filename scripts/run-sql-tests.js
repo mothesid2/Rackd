@@ -17,6 +17,7 @@ const order = [
   'migrations/087_hardware_seed.sql',
   'migrations/088_agreement_ensure.sql',
   'migrations/089_hardware_orders_rpc.sql',
+  'migrations/090_hardware_payments.sql',
   'tests/onboarding_rls_tests.sql',
 ];
 
