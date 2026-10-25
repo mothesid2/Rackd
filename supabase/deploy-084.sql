@@ -166,7 +166,7 @@ drop policy if exists shipping_addresses_select on public.shipping_addresses;
 create policy shipping_addresses_select on public.shipping_addresses
   for select to authenticated using (
     public.is_platform_admin()
-    or exists (select 1 from public.hardware_orders o where o.shipping_address_id = id
+    or exists (select 1 from public.hardware_orders o where o.shipping_address_id = shipping_addresses.id
                and o.tenant_id is not null and o.tenant_id = public.current_tenant_id()));
 
 drop policy if exists stripe_events_select on public.stripe_events;

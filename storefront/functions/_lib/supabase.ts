@@ -113,3 +113,25 @@ export async function restPatch(env: Partial<Env>, table: string, match: Record<
   });
   if (!res.ok) throw await toError(res);
 }
+
+/** PostgREST GET (service role). `query` is the part after "?", already encoded. */
+export async function restSelect<T = unknown>(env: Partial<Env>, table: string, query: string, fetchImpl: FetchLike = fetch): Promise<T> {
+  requireEnv(env, ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
+  if (!/^[a-z_][a-z0-9_]*$/.test(table)) throw new Error('invalid table name');
+  const res = await fetchImpl(`${(env.SUPABASE_URL as string).replace(/\/+$/, '')}/rest/v1/${table}?${query}`, { headers: headers(env) });
+  if (!res.ok) throw await toError(res);
+  return (await res.json()) as T;
+}
+
+/** Calls an rpc as the end user (their JWT decides the role/tenant); PostgREST verifies the signature. */
+export async function rpcAs<T = unknown>(env: Partial<Env>, jwt: string, fn: string, args: Record<string, unknown> = {}, fetchImpl: FetchLike = fetch): Promise<T> {
+  requireEnv(env, ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
+  if (!/^[a-z_][a-z0-9_]*$/.test(fn)) throw new Error('invalid rpc name');
+  const res = await fetchImpl(`${(env.SUPABASE_URL as string).replace(/\/+$/, '')}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: { ...headers(env), Authorization: `Bearer ${jwt}` },
+    body: JSON.stringify(args),
+  });
+  if (!res.ok) throw await toError(res);
+  return (await res.json()) as T;
+}

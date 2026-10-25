@@ -455,6 +455,48 @@ begin
   raise notice 'PASS 16: agreement versions are idempotent and immutable';
 end $$;
 
+-- ================================================================ 17. hardware order creation and guest lookup
+do $$
+declare r record; j jsonb; items jsonb; addr jsonb := '{"full_name":"Pat Shop","line1":"1 Main","city":"Austin","state":"tx","zip":"78701"}';
+  tokhash text := repeat('f', 64); pid uuid;
+begin
+  select id into pid from public.hardware_products where sku = 'POS-FULL';
+  items := jsonb_build_array(jsonb_build_object('product_id', pid, 'sku', 'POS-FULL', 'name', 'Full POS Station', 'unit_price_cents', 1000, 'quantity', 2));
+
+  perform pg_temp.become('anon', null);
+  perform pg_temp.expect_error('select * from public.hw_get_order(gen_random_uuid(), ''x'')', '42501', 'anon cannot read orders');
+  perform pg_temp.expect_error('select public.hw_order_tenant()', '42501', 'anon cannot call hw_order_tenant');
+  perform pg_temp.become('authenticated', jsonb_build_object('role', 'authenticated', 'tenant_id', '11111111-1111-1111-1111-111111111111'));
+  if public.hw_order_tenant() <> '11111111-1111-1111-1111-111111111111' then raise exception 'FAIL: tenant claim'; end if;
+  perform pg_temp.expect_error('select * from public.hw_create_order(''a@b.co'', null, null, ''{}'', ''g'', 0,0,0,0,0, null, true, ''x'', ''[]'')', '42501', 'authenticated cannot create orders directly');
+
+  perform pg_temp.become('service_role', jsonb_build_object('role', 'service_role'));
+  select * into r from public.hw_create_order('Buyer@Test.dev', null, '11111111-1111-1111-1111-111111111111', addr, 'ground',
+    2000, 200, 1500, 149, 3449, 'leave at dock', true, tokhash, items);
+  if r.order_number !~ '^HW-[0-9]+$' then raise exception 'FAIL: order number %', r.order_number; end if;
+
+  perform pg_temp.expect_error(format('select * from public.hw_create_order(''a@b.co'', null, null, %L::jsonb, ''g'', 2000, 0, 0, 0, 2001, null, true, ''h'', %L::jsonb)', addr, items), 'P0001', 'total mismatch refused');
+  perform pg_temp.expect_error(format('select * from public.hw_create_order(''a@b.co'', null, null, %L::jsonb, ''g'', 1999, 0, 0, 0, 1999, null, true, ''h'', %L::jsonb)', addr, items), 'P0001', 'subtotal mismatch refused');
+  perform pg_temp.expect_error(format('select * from public.hw_create_order(''a@b.co'', null, null, ''{"full_name":"x"}''::jsonb, ''g'', 2000, 0, 0, 0, 2000, null, true, ''h'', %L::jsonb)', items), 'P0001', 'incomplete address refused');
+  perform pg_temp.expect_error('select * from public.hw_create_order(''a@b.co'', null, null, ''{}'', ''g'', 0,0,0,0,0, null, true, ''h'', ''[]'')', 'P0001', 'empty cart refused');
+
+  j := public.hw_get_order(r.order_id, tokhash);
+  if j ->> 'email' <> 'buyer@test.dev' or (j ->> 'total_cents')::int <> 3449 or j #>> '{address,state}' <> 'TX'
+     or jsonb_array_length(j -> 'items') <> 1 or j ? 'access_token_hash' then raise exception 'FAIL: order payload %', j; end if;
+  perform pg_temp.expect_error(format('select public.hw_get_order(%L, %L)', r.order_id, repeat('0', 64)), '28000', 'wrong token refused');
+  perform pg_temp.expect_error(format('select public.hw_get_order(%L, null)', r.order_id), '28000', 'null token refused');
+
+  -- the tenant that placed it can read it through RLS; another tenant cannot
+  perform pg_temp.become('authenticated', jsonb_build_object('role', 'authenticated', 'tenant_id', '11111111-1111-1111-1111-111111111111'));
+  perform pg_temp.expect_count(format('select count(*) from public.hardware_orders where id = %L', r.order_id), 1, 'placing tenant sees its order');
+  perform pg_temp.expect_count(format('select count(*) from public.hardware_order_items where order_id = %L', r.order_id), 1, 'placing tenant sees its items');
+  perform pg_temp.expect_count('select count(*) from public.shipping_addresses', 1, 'placing tenant sees its address');
+  perform pg_temp.become('authenticated', jsonb_build_object('role', 'authenticated', 'tenant_id', '22222222-2222-2222-2222-222222222222'));
+  perform pg_temp.expect_count(format('select count(*) from public.hardware_orders where id = %L', r.order_id), 0, 'other tenant cannot see it');
+  perform pg_temp.expect_count('select count(*) from public.shipping_addresses', 0, 'other tenant cannot see address');
+  raise notice 'PASS 17: hardware orders validated, token-gated and tenant-isolated';
+end $$;
+
 reset role;
 rollback;
 select 'ALL ONBOARDING RLS TESTS PASSED' as result;
