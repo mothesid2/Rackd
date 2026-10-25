@@ -12,7 +12,7 @@ export const newOwner = (first: boolean): OwnerDto => ({
 export function OwnersStep({ draft, ctx }: StepProps) {
   const owners = draft.owners;
   const docs = new Map<string, DocumentDto>(draft.documents.map((d) => [d.id, d]));
-  const replace = (id: string, fn: (o: OwnerDto) => OwnerDto) => ctx.setOwners(owners.map((o) => (o.id === id ? fn(o) : o)));
+  const replace = (id: string, fn: (o: OwnerDto) => OwnerDto) => ctx.setOwners((all) => all.map((o) => (o.id === id ? fn(o) : o)));
   const total = owners.reduce((s, o) => s + (Number(o.ownership_pct) || 0), 0);
 
   return (
@@ -45,7 +45,7 @@ export function OwnersStep({ draft, ctx }: StepProps) {
               <CheckboxField
                 label="This person is the control person"
                 checked={o.is_control_person}
-                onChange={(v) => ctx.setOwners(owners.map((x) => ({ ...x, is_control_person: x.id === o.id ? v : v ? false : x.is_control_person })))}
+                onChange={(v) => ctx.setOwners((all) => all.map((x) => ({ ...x, is_control_person: x.id === o.id ? v : v ? false : x.is_control_person })))}
               />
             </div>
             <div className="mt-3">

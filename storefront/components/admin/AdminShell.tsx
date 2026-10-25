@@ -109,7 +109,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <p className="eyebrow text-accent">Admin console</p>
+        <p className="eyebrow text-red-400">Admin console</p>
         <p className="text-xs text-smoke">{session?.user.email} · <button type="button" className="underline min-h-[44px] px-1" onClick={signOut}>Sign out</button></p>
       </div>
       <nav aria-label="Admin" className="flex flex-wrap gap-x-1 border-b border-line mb-5 -mx-1">

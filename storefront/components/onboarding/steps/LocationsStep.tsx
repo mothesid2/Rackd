@@ -31,7 +31,7 @@ function ExpiryNote({ date }: { date: string | null }) {
 export function LocationsStep({ draft, ctx }: StepProps) {
   const locs = draft.locations;
   const docs = new Map<string, DocumentDto>(draft.documents.map((d) => [d.id, d]));
-  const replace = (id: string, fn: (l: LocationDto) => LocationDto) => ctx.setLocations(locs.map((l) => (l.id === id ? fn(l) : l)));
+  const replace = (id: string, fn: (l: LocationDto) => LocationDto) => ctx.setLocations((all) => all.map((l) => (l.id === id ? fn(l) : l)));
 
   return (
     <div className="grid gap-4">

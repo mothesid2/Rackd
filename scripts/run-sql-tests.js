@@ -20,6 +20,11 @@ const order = [
   'migrations/090_hardware_payments.sql',
   'migrations/091_admin_console.sql',
   'tests/onboarding_rls_tests.sql',
+  // demo seed: create, verify, remove, verify (all in the same scratch database)
+  'seed/onboarding_demo.sql',
+  'tests/seed_demo_check.sql',
+  'seed/onboarding_demo_cleanup.sql',
+  'tests/seed_demo_cleaned_check.sql',
 ];
 
 (async () => {

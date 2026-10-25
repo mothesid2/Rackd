@@ -68,5 +68,5 @@ export function Turnstile({ action, onToken, resetKey = 0 }: { action: string; o
   if (!TURNSTILE_SITE_KEY) {
     return <p role="alert" className="text-sm text-red-400">Bot check is not configured (NEXT_PUBLIC_TURNSTILE_SITE_KEY).</p>;
   }
-  return <div ref={box} aria-label="Bot check" className="min-h-[65px]" />;
+  return <div ref={box} role="group" aria-label="Bot check" className="min-h-[65px]" />;
 }

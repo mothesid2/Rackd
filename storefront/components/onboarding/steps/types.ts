@@ -9,8 +9,9 @@ export interface LegalState {
 
 export interface WizardCtx {
   updateApp: (p: Partial<ApplicationDto>) => void;
-  setLocations: (l: LocationDto[]) => void;
-  setOwners: (o: OwnerDto[]) => void;
+  /** Accepts an updater so two async callbacks (e.g. two uploads finishing together) never overwrite each other. */
+  setLocations: (l: LocationDto[] | ((prev: LocationDto[]) => LocationDto[])) => void;
+  setOwners: (o: OwnerDto[] | ((prev: OwnerDto[]) => OwnerDto[])) => void;
   /** Flushes pending autosave; resolves when the server has the latest rows (needed before uploads). */
   ensureSaved: () => Promise<void>;
   /** Error for a field key, only once the user has touched it or tried to continue. */

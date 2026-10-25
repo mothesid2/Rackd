@@ -48,7 +48,7 @@ function Activate() {
 
   return (
     <div className="max-w-md mx-auto grid gap-3">
-      <div><p className="eyebrow text-accent">Welcome to Rackd</p><h1 className="font-display font-extrabold text-3xl tracking-tight">Create your password</h1></div>
+      <div><p className="eyebrow text-red-400">Welcome to Rackd</p><h1 className="font-display font-extrabold text-3xl tracking-tight">Create your password</h1></div>
       <Card>
         <form onSubmit={submit} className="grid gap-4" noValidate>
           <TextField label="New password" type="password" autoComplete="new-password" required value={pw} onChange={setPw} hint="At least 10 characters." />

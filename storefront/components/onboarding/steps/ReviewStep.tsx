@@ -18,7 +18,7 @@ function Section({ title, step, ctx, children }: { title: string; step: number; 
     <Card>
       <div className="flex items-center justify-between mb-2">
         <h3 className="font-display font-bold text-lg">{title}</h3>
-        <button type="button" className="text-sm underline text-ember hover:text-white min-h-[44px] px-2" onClick={() => ctx.goTo(step)}>
+        <button type="button" className="text-sm underline text-red-400 hover:text-white min-h-[44px] px-2" onClick={() => ctx.goTo(step)}>
           Edit<span className="sr-only"> {STEP_TITLES[step - 1]}</span>
         </button>
       </div>

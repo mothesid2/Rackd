@@ -49,7 +49,7 @@ export default function Compatibility() {
             <legend className="font-display font-bold text-lg mb-1">{g.title}</legend>
             {g.items.map((i) => (
               <CheckboxField key={i.id} checked={!!checked[i.id]} onChange={(v) => setChecked((p) => ({ ...p, [i.id]: v }))}
-                label={<>{i.text}{i.required && <span className="ml-2 text-xs text-ember">required</span>}</>} />
+                label={<>{i.text}{i.required && <span className="ml-2 text-xs text-red-400">required</span>}</>} />
             ))}
           </fieldset>
         </Card>

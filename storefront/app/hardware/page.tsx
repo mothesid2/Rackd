@@ -18,6 +18,8 @@ function ProductCard({ p }: { p: Product }) {
   const cart = useCart();
   const inCart = cart.items.find((i) => i.sku === p.sku)?.qty ?? 0;
   const limit = maxQty(p);
+  // the accessible name starts with the visible text (WCAG 2.5.3) and adds which product it is for
+  const label = limit <= 0 ? 'Out of stock' : inCart >= limit ? 'Limit reached' : inCart ? `Add another (${inCart} in cart)` : 'Add to cart';
   return (
     <Card className="flex flex-col gap-3 !p-3">
       <Link href={`/hardware/product/?sku=${slugOf(p.sku)}`} className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ember rounded-xl">
@@ -29,8 +31,8 @@ function ProductCard({ p }: { p: Product }) {
         <StockBadge product={p} />
       </div>
       <button type="button" className={btnPrimary} disabled={limit <= 0 || inCart >= limit}
-        onClick={() => cartActions.add(p.sku, 1, limit)} aria-label={`Add ${p.name} to cart`}>
-        {limit <= 0 ? 'Out of stock' : inCart >= limit ? 'Limit reached' : inCart ? `Add another (${inCart} in cart)` : 'Add to cart'}
+        onClick={() => cartActions.add(p.sku, 1, limit)} aria-label={`${label}: ${p.name}`}>
+        {label}
       </button>
     </Card>
   );
@@ -86,7 +88,7 @@ export default function HardwareCatalog() {
                 </div>
                 <Link href={`/hardware/build/?bundle=${b.slug}`} className={btnGhost}>Customize</Link>
               </div>
-              <button type="button" className={`${btnPrimary} w-full mt-3`} onClick={() => cartActions.loadBundle(b)} aria-label={`Add ${b.name} to cart`}>Add bundle to cart</button>
+              <button type="button" className={`${btnPrimary} w-full mt-3`} onClick={() => cartActions.loadBundle(b)} aria-label={`Add bundle to cart: ${b.name}`}>Add bundle to cart</button>
             </Card>
           ))}
         </div>

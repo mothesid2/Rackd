@@ -51,7 +51,7 @@ function FileButton({ doc }: { doc: J | undefined }) {
   }
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
-      <button type="button" className="underline text-ember hover:text-white min-h-[44px] px-1 disabled:opacity-50" onClick={open} disabled={busy} aria-label={`View ${doc.original_name ?? 'file'}`}>{busy ? 'Opening…' : 'View file'}</button>
+      <button type="button" className="underline text-red-400 hover:text-white min-h-[44px] px-1 disabled:opacity-50" onClick={open} disabled={busy} aria-label={`View ${doc.original_name ?? 'file'}`}>{busy ? 'Opening…' : 'View file'}</button>
       <span className="text-xs text-smoke">{doc.original_name} · {(doc.size_bytes / 1024).toFixed(0)} KB</span>
       {doc.scan_status !== 'clean' && <span className="text-xs text-amber-300">scan: {doc.scan_status}</span>}
       {err && <ErrorText>{err}</ErrorText>}
@@ -71,7 +71,7 @@ function EinRow({ id, last4 }: { id: string; last4: string | null }) {
   return (
     <span>
       {ein ? <strong className="tabular-nums" aria-live="polite">{ein}</strong> : <span className="tabular-nums">{last4 ? `••-•••${last4}` : 'Not provided'}</span>}{' '}
-      {last4 && !ein && <button type="button" className="underline text-ember text-sm min-h-[44px] px-1" onClick={reveal} disabled={busy}>{busy ? 'Decrypting…' : 'Reveal (logged)'}</button>}
+      {last4 && !ein && <button type="button" className="underline text-red-400 text-sm min-h-[44px] px-1" onClick={reveal} disabled={busy}>{busy ? 'Decrypting…' : 'Reveal (logged)'}</button>}
       {ein && <span className="text-xs text-smoke"> hides again in 30 s</span>}
       {err && <ErrorText>{err}</ErrorText>}
     </span>

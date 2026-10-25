@@ -90,7 +90,7 @@ export default function OrderPage() {
     <div className="grid gap-4">
       {o.is_test && <Notice tone="dev"><strong>Test order.</strong> This order was created in test mode. No real payment is taken and nothing will ship.</Notice>}
       <div>
-        <p className="eyebrow text-accent">Order {o.order_number}</p>
+        <p className="eyebrow text-red-400">Order {o.order_number}</p>
         <h2 className="font-display font-extrabold text-3xl tracking-tight" tabIndex={-1}>{st.title}</h2>
         <p className="text-[15px] mt-1" role="status">{st.body}</p>
       </div>

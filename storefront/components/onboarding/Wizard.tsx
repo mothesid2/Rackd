@@ -147,14 +147,14 @@ export default function Wizard() {
     schedule();
   }, [schedule, setDraftBoth]);
 
-  const setLocations = useCallback((l: LocationDto[]) => {
-    setDraftBoth((d) => ({ ...d, locations: l }));
+  const setLocations = useCallback((l: LocationDto[] | ((prev: LocationDto[]) => LocationDto[])) => {
+    setDraftBoth((d) => ({ ...d, locations: typeof l === 'function' ? l(d.locations) : l }));
     dirty.current.locations = true;
     schedule();
   }, [schedule, setDraftBoth]);
 
-  const setOwners = useCallback((o: OwnerDto[]) => {
-    setDraftBoth((d) => ({ ...d, owners: o }));
+  const setOwners = useCallback((o: OwnerDto[] | ((prev: OwnerDto[]) => OwnerDto[])) => {
+    setDraftBoth((d) => ({ ...d, owners: typeof o === 'function' ? o(d.owners) : o }));
     dirty.current.owners = true;
     schedule();
   }, [schedule, setDraftBoth]);
@@ -189,8 +189,9 @@ export default function Wizard() {
     setStep(n);
     maxRef.current = Math.max(maxRef.current, n);
     updateApp({ current_step: n });
+    schedule(0); // save the new step immediately so "resume" lands here even if the tab closes right away
     window.scrollTo({ top: 0 });
-  }, [updateApp]);
+  }, [updateApp, schedule]);
 
   useEffect(() => { heading.current?.focus(); }, [step, phase]);
 
@@ -260,14 +261,14 @@ export default function Wizard() {
   return (
     <div>
       <div className="mb-5">
-        <p className="eyebrow text-accent">Apply to Rackd</p>
+        <p className="eyebrow text-red-400">Apply to Rackd</p>
         <h1 className="font-display font-extrabold text-3xl tracking-tight">Get started</h1>
       </div>
 
       {phase === 'ready' && draft && (
         <nav aria-label="Application progress" className="mb-6">
           <div
-            role="progressbar" aria-valuemin={1} aria-valuemax={9} aria-valuenow={step}
+            role="progressbar" aria-label="Application progress" aria-valuemin={1} aria-valuemax={9} aria-valuenow={step}
             aria-valuetext={`Step ${step} of 9: ${title}`}
             className="h-2 rounded-full bg-steel overflow-hidden"
           >

@@ -1,6 +1,6 @@
 # Onboarding and Hardware Store: Plan
 
-Status: draft, awaiting confirmation on the open questions at the bottom.
+Status: implemented (milestones 1-12). Decisions taken: admin lives at /admin (Supabase Auth + platform_admins); Resend test sender and Turnstile test keys for dev; Cloudflare Pages git-connected; migrations pasted by hand (deploy-081..091.sql). See the README section "Onboarding, hardware store and admin console" for setup, tests and what is stubbed.
 Date: 2026-10-24. Branch: main (6 commits ahead of origin; unrelated untracked `incident_*.js` scratch files are left alone).
 
 ## 1. What exists today

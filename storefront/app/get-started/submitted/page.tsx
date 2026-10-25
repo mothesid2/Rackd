@@ -61,7 +61,7 @@ export default function SubmittedPage() {
   return (
     <div className="grid gap-4">
       <div>
-        <p className="eyebrow text-accent">Application status</p>
+        <p className="eyebrow text-red-400">Application status</p>
         <h1 className="font-display font-extrabold text-3xl tracking-tight" tabIndex={-1}>{copy.title}</h1>
         {s.legal_name && <p className="text-smoke mt-1">{s.legal_name}</p>}
       </div>

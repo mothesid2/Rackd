@@ -51,7 +51,7 @@ export default function OrdersList() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} className="border-t border-line hover:bg-steel/50">
-                  <th scope="row" className="px-3 py-2 text-left font-semibold whitespace-nowrap"><Link href={`/admin/order/?id=${r.id}`} className="hover:underline">{r.order_number}</Link>{r.is_test && <span className="ml-2 text-xs rounded bg-accent/20 px-1.5 py-0.5 text-ember">TEST</span>}</th>
+                  <th scope="row" className="px-3 py-2 text-left font-semibold whitespace-nowrap"><Link href={`/admin/order/?id=${r.id}`} className="hover:underline">{r.order_number}</Link>{r.is_test && <span className="ml-2 text-xs rounded bg-accent/20 px-1.5 py-0.5 text-red-400">TEST</span>}</th>
                   <td className="px-3 py-2 whitespace-nowrap">{fmtDate(r.created_at)}</td>
                   <td className="px-3 py-2 break-all">{r.email}{(r.tenant_id || r.application_id) && <span className="ml-2 text-xs text-smoke">{r.tenant_id ? 'customer account' : 'applicant'}</span>}</td>
                   <td className="px-3 py-2 tabular-nums">{fmtMoney(r.total_cents)}</td>

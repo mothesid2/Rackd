@@ -40,7 +40,7 @@ export function OperationsStep({ draft, ctx }: StepProps) {
 
       <Card>
         <fieldset aria-describedby={ctx.err('product_mix') ? 'mix-err' : undefined}>
-          <legend className="font-semibold text-sm mb-1">Product mix <span className="text-ember" aria-hidden="true">*</span></legend>
+          <legend className="font-semibold text-sm mb-1">Product mix <span className="text-red-400" aria-hidden="true">*</span></legend>
           <p className="text-xs text-smoke mb-1">Choose everything you sell.</p>
           <div className="grid grid-cols-2 sm:grid-cols-3">
             {PRODUCT_MIX.map((m) => (

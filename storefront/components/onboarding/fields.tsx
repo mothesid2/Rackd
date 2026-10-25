@@ -47,7 +47,7 @@ export function TextField(p: FieldProps) {
   return (
     <div>
       <label htmlFor={id} className="flex items-center gap-1.5 text-sm font-semibold mb-1">
-        <span>{p.label}{p.required && <span className="text-ember" aria-hidden="true"> *</span>}</span>
+        <span>{p.label}{p.required && <span className="text-red-400" aria-hidden="true"> *</span>}</span>
         {p.tip && (
           <Tooltip label={p.tip}>
             <span tabIndex={0} aria-label={p.tip} className="inline-flex w-4 h-4 items-center justify-center rounded-full border border-smoke text-[10px] text-smoke cursor-help">?</span>
@@ -99,7 +99,7 @@ export function SelectField(p: {
   return (
     <div>
       <label htmlFor={id} className="block text-sm font-semibold mb-1">
-        {p.label}{p.required && <span className="text-ember" aria-hidden="true"> *</span>}
+        {p.label}{p.required && <span className="text-red-400" aria-hidden="true"> *</span>}
       </label>
       <select
         id={id}

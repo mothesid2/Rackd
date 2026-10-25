@@ -61,7 +61,7 @@ function OrderDetail() {
           <h1 className="font-display font-extrabold text-3xl tracking-tight">{o.order_number}</h1>
           <p className="text-sm text-smoke">{fmtDateTime(o.created_at)} · {o.email}</p>
         </div>
-        <div className="flex items-center gap-2">{o.is_test && <span className="text-xs rounded bg-accent/20 px-2 py-1 text-ember font-bold">TEST</span>}<StatusBadge status={o.status} /></div>
+        <div className="flex items-center gap-2">{o.is_test && <span className="text-xs rounded bg-accent/20 px-2 py-1 text-red-400 font-bold">TEST</span>}<StatusBadge status={o.status} /></div>
       </div>
       {flash && <div role="status"><Notice>{flash}</Notice></div>}
       {o.is_test && <Notice tone="dev">Stripe test-mode order. No real payment; do not ship.</Notice>}
@@ -92,7 +92,7 @@ function OrderDetail() {
       </div>
 
       <Section title="Payment and fulfilment">
-        <Dl rows={[['Paid', fmtDateTime(o.paid_at)], ['Stripe payment', o.stripe_payment_intent ? <a key="s" className="underline text-ember break-all" href={`${stripeBase}${o.stripe_payment_intent}`} target="_blank" rel="noopener noreferrer">{o.stripe_payment_intent}</a> : null],
+        <Dl rows={[['Paid', fmtDateTime(o.paid_at)], ['Stripe payment', o.stripe_payment_intent ? <a key="s" className="underline text-red-400 break-all" href={`${stripeBase}${o.stripe_payment_intent}`} target="_blank" rel="noopener noreferrer">{o.stripe_payment_intent}</a> : null],
           ['Shipping method', o.shipping_method], ['Carrier', o.carrier], ['Tracking', o.tracking_number], ['Shipped', fmtDateTime(o.shipped_at)], ['Refund and cancel notes', o.refund_note ? <span key="n" className="whitespace-pre-wrap">{o.refund_note}</span> : null]]} />
         <div className="mt-4 grid gap-2">
           <label htmlFor="rnote" className="text-sm font-semibold">Add a manual refund / handling note</label>
