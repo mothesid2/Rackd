@@ -135,3 +135,30 @@ export async function rpcAs<T = unknown>(env: Partial<Env>, jwt: string, fn: str
   if (!res.ok) throw await toError(res);
   return (await res.json()) as T;
 }
+
+/** PostgREST INSERT (service role). */
+export async function restInsert(env: Partial<Env>, table: string, row: Record<string, unknown>, fetchImpl: FetchLike = fetch): Promise<void> {
+  requireEnv(env, ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
+  if (!/^[a-z_][a-z0-9_]*$/.test(table)) throw new Error('invalid table name');
+  const res = await fetchImpl(`${(env.SUPABASE_URL as string).replace(/\/+$/, '')}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: { ...headers(env), Prefer: 'return=minimal' },
+    body: JSON.stringify(row),
+  });
+  if (!res.ok) throw await toError(res);
+}
+
+/** Short-lived signed download URL for one private object. */
+export async function createSignedDownload(env: Partial<Env>, path: string, expiresIn = 60, fetchImpl: FetchLike = fetch): Promise<string> {
+  requireEnv(env, ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
+  const res = await fetchImpl(`${storageBase(env)}/object/sign/${STORAGE_BUCKET}/${encodePath(path)}`, {
+    method: 'POST',
+    headers: headers(env),
+    body: JSON.stringify({ expiresIn }),
+  });
+  if (!res.ok) throw await toError(res);
+  const data = (await res.json()) as { signedURL?: string; signedUrl?: string };
+  const rel = data.signedURL ?? data.signedUrl;
+  if (!rel) throw new SupabaseError(502, 'storage', 'no_signed_url');
+  return rel.startsWith('http') ? rel : `${storageBase(env)}${rel.startsWith('/') ? '' : '/'}${rel}`;
+}

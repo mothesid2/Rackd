@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildCatalog, priceCart } from '../../lib/hardware/pricing.ts';
+import { ADMIN_ID, adminApi, adminRest } from './admin-fixtures.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'out');
 const PORT = Number(process.env.PORT || 3111);
@@ -111,6 +112,14 @@ function hwApi(name, b, res) {
 
 http.createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
+  if (req.method === 'POST' && url.pathname.startsWith('/api/admin/')) {
+    req.on('data', () => {});
+    req.on('end', () => adminApi(url.pathname.split('/').pop(), json, res));
+    return;
+  }
+  if (url.pathname === '/sb/rest/v1/rpc/admin_whoami') return json(res, ADMIN_ID);
+  if (url.pathname === '/sb/rest/v1/rpc/admin_add_note') return json(res, null);
+  if (url.pathname.startsWith('/sb/rest/v1/') && adminRest(url.pathname.split('/').pop(), url, req, res, { json, config, products, bundles })) return;
   if (req.method === 'POST' && url.pathname.startsWith('/api/hardware/')) {
     let raw = '';
     req.on('data', (c) => (raw += c));

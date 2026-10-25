@@ -2,11 +2,11 @@
 // idempotent), because Stripe delivers at-least-once and a crashed attempt is retried.
 
 import { adminOrderEmail, orderConfirmationEmail, sendEmail, type OrderEmailData } from './email';
-import type { Env } from './env';
+import { orderLinkSecret, type Env } from './env';
 import { safeLog } from './redact';
 import { taxModeOf } from './payments';
 import { rpc, type FetchLike } from './supabase';
-import { randomToken, sha256Hex } from './token';
+import { orderEmailToken, sha256Hex } from './token';
 
 export interface StripeEvent {
   id: string;
@@ -42,6 +42,8 @@ async function onSessionPaid(env: Partial<Env>, ev: StripeEvent, fetchImpl?: Fet
     return 'ignored';
   }
 
+  // Resolve secrets BEFORE changing any state: a config error must fail the event while it is still retryable.
+  const linkSecret = orderLinkSecret(env);
   const res = await rpc<{ changed: boolean; order_number: string; is_test: boolean; oversold?: string[]; amount_changed?: boolean }>(env, 'hw_mark_paid', {
     p_order: orderId, p_session: s.id,
     p_payment_intent: typeof s.payment_intent === 'string' ? s.payment_intent : null,
@@ -52,14 +54,15 @@ async function onSessionPaid(env: Partial<Env>, ev: StripeEvent, fetchImpl?: Fet
   if (!res.changed) return 'already_paid';
 
   // A fresh emailed token, so the confirmation link works even if the browser token is long gone.
-  const emailToken = randomToken();
+  const emailToken = await orderEmailToken(linkSecret, orderId);
   const hash = await sha256Hex(emailToken);
   await rpc(env, 'hw_issue_email_token', { p_order: orderId, p_hash: hash }, fetchImpl);
   const order = await rpc<OrderEmailData & { email: string }>(env, 'hw_get_order', { p_id: orderId, p_token_hash: hash }, fetchImpl);
 
-  await sendEmail(env, { to: order.email, ...orderConfirmationEmail(env, order, emailToken) }, fetchImpl);
+  const confirmation = await sendEmail(env, { to: order.email, ...orderConfirmationEmail(env, order, emailToken) }, fetchImpl);
 
   const notes: string[] = [];
+  if (!confirmation.sent) notes.push('The customer confirmation email could not be sent. Contact them with their order link from the admin console.');
   if (res.oversold?.length) notes.push(`Oversold at payment, restock or contact the customer: ${res.oversold.join(', ')}`);
   if (res.amount_changed && (await taxModeOf(env, fetchImpl)) === 'flat') {
     notes.push(`Stripe charged ${usd(order.total_cents)}, which differs from the amount shown at checkout. Check this order.`);

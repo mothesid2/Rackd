@@ -574,6 +574,90 @@ begin
   raise notice 'PASS 18: payments idempotent, stock decremented once, refunds and tokens behave';
 end $$;
 
+-- ================================================================ 19. admin console: whoami, order transitions, invites, config validation
+do $$
+declare
+  admin_claims jsonb := jsonb_build_object('sub', 'aaaaaaaa-1111-1111-1111-111111111111', 'role', 'authenticated');
+  addr jsonb := '{"full_name":"Pat","line1":"1 Main","city":"Austin","state":"TX","zip":"78701"}';
+  pid uuid; r record; j jsonb; stock int; inv jsonb; peek jsonb; app uuid; oldtok text;
+begin
+  perform pg_temp.become('anon', null);
+  perform pg_temp.expect_error('select public.admin_whoami()', '42501', 'anon cannot call admin_whoami');
+  perform pg_temp.expect_error('select public.hw_admin_transition(gen_random_uuid(), ''shipped'', null, ''1Z'', null, null)', '42501', 'anon cannot transition orders');
+  perform pg_temp.become('authenticated', jsonb_build_object('sub', 'bbbbbbbb-2222-2222-2222-222222222222', 'role', 'authenticated'));
+  if public.admin_whoami() is not null then raise exception 'FAIL: non-admin whoami must be null'; end if;
+  perform pg_temp.expect_error('select public.hw_admin_transition(gen_random_uuid(), ''shipped'', null, ''1Z'', null, null)', '42501', 'non-admin cannot transition orders');
+  perform pg_temp.expect_error('select public.onb_reissue_invite(gen_random_uuid(), null)', '42501', 'non-admin cannot reissue invites');
+  perform pg_temp.become('authenticated', admin_claims);
+  if public.admin_whoami() <> 'aaaaaaaa-1111-1111-1111-111111111111' then raise exception 'FAIL: admin whoami'; end if;
+
+  -- order transitions
+  perform pg_temp.become('postgres', null);
+  insert into public.hardware_products (sku, name, category, price_cents, stock_qty) values ('TRN-1', 'Transition item', 'accessory', 1000, 5) returning id into pid;
+  perform pg_temp.become('service_role', jsonb_build_object('role', 'service_role'));
+  select * into r from public.hw_create_order('t@t.co', null, null, addr, 'g', 2000, 0, 0, 0, 2000, null, true, repeat('7', 64),
+    jsonb_build_array(jsonb_build_object('product_id', pid, 'sku', 'TRN-1', 'name', 'Transition item', 'unit_price_cents', 1000, 'quantity', 2)));
+  perform pg_temp.expect_error(format('select public.hw_admin_transition(%L, ''shipped'', ''UPS'', ''1Z999'', null, null)', r.order_id), 'P0001', 'cannot ship an unpaid order');
+  perform public.hw_set_session(r.order_id, 'cs_t');
+  perform public.hw_mark_paid(r.order_id, 'cs_t', 'pi_t', 2000, 0, false);
+  perform pg_temp.expect_error(format('select public.hw_admin_transition(%L, ''shipped'', ''UPS'', '' '', null, null)', r.order_id), 'P0001', 'tracking required to ship');
+  perform pg_temp.expect_error(format('select public.hw_admin_transition(%L, ''refunded'', null, null, null, null)', r.order_id), 'P0001', 'refunded is not an admin transition');
+  j := public.hw_admin_transition(r.order_id, 'fulfilled', null, null, null, 'aaaaaaaa-1111-1111-1111-111111111111');
+  j := public.hw_admin_transition(r.order_id, 'shipped', 'UPS', '1Z999', null, 'aaaaaaaa-1111-1111-1111-111111111111');
+  if j ->> 'to' <> 'shipped' then raise exception 'FAIL: ship'; end if;
+  perform pg_temp.expect_count(format('select count(*) from public.hardware_orders where id = %L and status = ''shipped'' and tracking_number = ''1Z999'' and carrier = ''UPS'' and shipped_at is not null', r.order_id), 1, 'shipped with tracking');
+  perform pg_temp.expect_error(format('select public.hw_admin_transition(%L, ''shipped'', ''UPS'', ''x'', null, null)', r.order_id), 'P0001', 'cannot ship twice');
+  perform pg_temp.expect_error(format('select public.hw_admin_transition(%L, ''cancelled'', null, null, ''oops'', null)', r.order_id), 'P0001', 'cannot cancel a shipped order');
+  perform pg_temp.expect_count(format('select count(*) from public.audit_log where entity_id = %L and action like ''hardware_order.%%'' and actor = ''aaaaaaaa-1111-1111-1111-111111111111''', r.order_id::text), 2, 'fulfil and ship are audited with the admin as actor');
+
+  -- cancel a paid order: restocks, needs a note
+  select * into r from public.hw_create_order('t2@t.co', null, null, addr, 'g', 3000, 0, 0, 0, 3000, null, true, repeat('8', 64),
+    jsonb_build_array(jsonb_build_object('product_id', pid, 'sku', 'TRN-1', 'name', 'Transition item', 'unit_price_cents', 1000, 'quantity', 3)));
+  perform public.hw_set_session(r.order_id, 'cs_t2');
+  perform public.hw_mark_paid(r.order_id, 'cs_t2', 'pi_t2', 3000, 0, false);
+  select stock_qty into stock from public.hardware_products where id = pid;
+  if stock <> 0 then raise exception 'FAIL: stock before cancel is 0, got %', stock; end if;
+  perform pg_temp.expect_error(format('select public.hw_admin_transition(%L, ''cancelled'', null, null, '''', null)', r.order_id), 'P0001', 'cancelling a paid order needs a note');
+  perform public.hw_admin_transition(r.order_id, 'cancelled', null, null, 'customer asked; refund in Stripe', null);
+  select stock_qty into stock from public.hardware_products where id = pid;
+  if stock <> 3 then raise exception 'FAIL: cancel restocks, got %', stock; end if;
+  perform public.hw_admin_note(r.order_id, 'refunded $30 manually', null);
+  perform pg_temp.expect_count(format('select count(*) from public.hardware_orders where id = %L and refund_note like ''%%refunded $30 manually%%'' and refund_note like ''%%Cancelled:%%''', r.order_id), 1, 'notes appended');
+  perform pg_temp.expect_error(format('select public.hw_admin_note(%L, '' '', null)', r.order_id), 'P0001', 'empty note refused');
+
+  -- invites: peek does not consume, reissue rotates, consumed invites cannot be reissued
+  select id into app from public.onboarding_applications where provisioned_tenant_id is not null limit 1;
+  perform pg_temp.become('postgres', null);
+  update public.owner_invites set consumed_at = null where application_id = app;  -- test 11 consumed it
+  perform pg_temp.become('service_role', jsonb_build_object('role', 'service_role'));
+  inv := public.onb_reissue_invite(app, 'aaaaaaaa-1111-1111-1111-111111111111');
+  if inv ->> 'invite_token' !~ '^[0-9a-f]{64}$' or inv ->> 'license_key' !~ '^RACKD-' then raise exception 'FAIL: reissue payload %', inv; end if;
+  peek := public.onb_peek_invite(inv ->> 'invite_token');
+  peek := public.onb_peek_invite(inv ->> 'invite_token');
+  if peek ->> 'email' is null then raise exception 'FAIL: peek twice must still work'; end if;
+  perform pg_temp.expect_error(format('select public.onb_peek_invite(%L)', repeat('0', 64)), '28000', 'bad invite refused');
+  oldtok := inv ->> 'invite_token';
+  inv := public.onb_reissue_invite(app, null);
+  perform pg_temp.expect_error(format('select public.onb_peek_invite(%L)', oldtok), '28000', 'old links stop working after reissue');
+  perform public.onb_redeem_invite(inv ->> 'invite_token');
+  perform pg_temp.expect_error(format('select public.onb_reissue_invite(%L, null)', app), 'P0001', 'activated owners cannot be reissued');
+  perform pg_temp.expect_error('select public.onb_reissue_invite(gen_random_uuid(), null)', 'P0001', 'unknown application refused');
+
+  -- config validation (admin writes through RLS; the trigger rejects values that would break checkout)
+  perform pg_temp.become('authenticated', admin_claims);
+  perform pg_temp.expect_error('update public.app_config set value = ''{"type":"percent","value":150}'' where key = ''online_fee''', 'P0001', 'percent fee over 100 refused');
+  perform pg_temp.expect_error('update public.app_config set value = ''{"type":"weird","value":5}'' where key = ''online_fee''', 'P0001', 'unknown fee type refused');
+  perform pg_temp.expect_error('update public.app_config set value = ''{"type":"flat","value":-1}'' where key = ''online_fee''', 'P0001', 'negative fee refused');
+  perform pg_temp.expect_error('update public.app_config set value = ''{"mode":"flat","rate_pct":99}'' where key = ''hardware_tax''', 'P0001', 'absurd tax rate refused');
+  perform pg_temp.expect_error('update public.app_config set value = ''{"methods":[]}'' where key = ''hardware_shipping''', 'P0001', 'no shipping methods refused');
+  perform pg_temp.expect_error('update public.app_config set value = ''{"methods":[{"id":"g","name":"Ground","cents":10.5}]}'' where key = ''hardware_shipping''', 'P0001', 'fractional shipping cents refused');
+  perform pg_temp.expect_error('update public.app_config set value = jsonb_set(value, ''{model_a,monthly_cents}'', ''-5'') where key = ''plans''', 'P0001', 'negative plan price refused');
+  update public.app_config set value = '{"is_placeholder":false,"type":"flat","value":250,"paid_by":"customer"}' where key = 'online_fee';
+  update public.app_config set value = '{"mode":"stripe_tax","rate_pct":0}' where key = 'hardware_tax';
+  perform pg_temp.expect_count('select count(*) from public.app_config where key = ''online_fee'' and value ->> ''type'' = ''flat''', 1, 'valid config accepted');
+  raise notice 'PASS 19: admin console functions, transitions, invites and config validation';
+end $$;
+
 reset role;
 rollback;
 select 'ALL ONBOARDING RLS TESTS PASSED' as result;

@@ -67,7 +67,7 @@ export async function sendEmail(env: Partial<Env>, msg: EmailMessage, fetchImpl:
 }
 
 // ---------------------------------------------------------------- templates
-function shell(title: string, bodyHtml: string): string {
+export function shell(title: string, bodyHtml: string): string {
   return `<!doctype html><html><body style="margin:0;background:#0c0d0f;font-family:system-ui,sans-serif;color:#f1efec">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="100%" style="max-width:520px;background:#17181b;border-radius:12px;padding:28px">
@@ -77,7 +77,7 @@ function shell(title: string, bodyHtml: string): string {
 </td></tr></table></td></tr></table></body></html>`;
 }
 
-function button(url: string, label: string): string {
+export function button(url: string, label: string): string {
   return `<p><a href="${escapeHtml(url)}" style="display:inline-block;background:#b01d2e;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600">${escapeHtml(label)}</a></p>
 <p style="font-size:12px;color:#9a9da3;word-break:break-all">${escapeHtml(url)}</p>`;
 }

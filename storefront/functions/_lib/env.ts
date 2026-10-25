@@ -17,6 +17,8 @@ export interface Env {
   PAYMENT_PROCESSOR_CONNECTED?: string;
   SMS_ENABLED?: string;
   DOC_SCAN_HOOK_URL?: string;
+  /** Derives the emailed order-link token. Falls back to EIN_ENCRYPTION_KEY when unset. */
+  ORDER_LINK_SECRET?: string;
   /** DEV ONLY: returns the email verification code in the create/send-code response. Ignored when STRIPE_LIVE_ENABLED=true. */
   DEV_RETURN_EMAIL_CODE?: string;
 }
@@ -66,4 +68,11 @@ export function appBaseUrl(env: Partial<Env>): string {
 /** True only for local/staging smoke tests; can never be on once live payments are enabled. */
 export function devReturnsEmailCode(env: Partial<Env>): boolean {
   return on(env.DEV_RETURN_EMAIL_CODE) && !flags(env).stripeLive;
+}
+
+/** Secret that derives emailed order-link tokens. Throws (naming the variable) rather than using an empty key. */
+export function orderLinkSecret(env: Partial<Env>): string {
+  const s = env.ORDER_LINK_SECRET?.trim() || env.EIN_ENCRYPTION_KEY?.trim();
+  if (!s) throw new ConfigError(['ORDER_LINK_SECRET']);
+  return s;
 }

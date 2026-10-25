@@ -47,3 +47,12 @@ export function clientIp(request: Request): string {
 export async function hashIp(ip: string, salt: string | undefined): Promise<string> {
   return (await sha256Hex(`${salt ?? 'rackd-ip'}:${ip}`)).slice(0, 32);
 }
+
+/**
+ * Stable per-order token for links in emails. Derived (HMAC) rather than stored, so every email about
+ * an order (confirmation, shipped) carries the same working link, and only its hash is in the database.
+ */
+export async function orderEmailToken(secret: string, orderId: string): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return toHex(new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(`rackd-hw-order-email:${orderId}`))));
+}

@@ -8,7 +8,7 @@ import { sha256Hex } from '../../functions/_lib/token';
 const SECRET = 'whsec_test_secret';
 const baseEnv = {
   SUPABASE_URL: 'https://p.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'svc', TURNSTILE_SECRET_KEY: 's',
-  STRIPE_SECRET_KEY: 'sk_test_abc', STRIPE_WEBHOOK_SECRET: SECRET, RESEND_API_KEY: 're_x', ADMIN_NOTIFY_EMAIL: 'ops@r4ckd.net', APP_BASE_URL: 'https://r4ckd.net',
+  STRIPE_SECRET_KEY: 'sk_test_abc', STRIPE_WEBHOOK_SECRET: SECRET, ORDER_LINK_SECRET: 'link-secret', RESEND_API_KEY: 're_x', ADMIN_NOTIFY_EMAIL: 'ops@r4ckd.net', APP_BASE_URL: 'https://r4ckd.net',
 };
 const ORDER_ID = '5b7e2f0a-1111-4222-8333-444455556666';
 const TOKEN = 'ab'.repeat(32);
@@ -128,7 +128,7 @@ describe('startPayment', () => {
 });
 
 // ---------------------------------------------------------------- endpoints
-interface Up { rpcs: Record<string, (a: any) => unknown>; rpcCalls: { fn: string; args: any }[]; emails: any[]; stripeCalls: { url: string; init: any }[]; stripeOk: boolean; turnstileOk: boolean }
+interface Up { rpcs: Record<string, (a: any) => unknown>; rpcCalls: { fn: string; args: any }[]; emails: any[]; stripeCalls: { url: string; init: any }[]; stripeOk: boolean; turnstileOk: boolean; failEmailTo?: string }
 let up: Up;
 const orderRow = (over: object = {}) => ({ ...order(), status: 'pending', is_test: true, stripe_session_id: null, ...over });
 
@@ -146,7 +146,7 @@ beforeEach(() => {
       if (!up.stripeOk) return ok({ error: { message: 'boom' } }, 500);
       return url.includes('/coupons') ? ok({ id: 'co_1' }) : ok({ id: 'cs_new', url: 'https://checkout.stripe.com/c/cs_new', status: 'open' });
     }
-    if (url.includes('resend.com')) { up.emails.push(JSON.parse(init.body)); return ok({ id: 'em' }); }
+    if (url.includes('resend.com')) { const b = JSON.parse(init.body); if (up.failEmailTo === b.to) return ok({}, 500); up.emails.push(b); return ok({ id: 'em' }); }
     if (url.includes('/rest/v1/app_config')) return ok([{ value: { mode: 'flat' } }]);
     if (url.includes('/rest/v1/hardware_products')) return ok([{ id: 'p1', sku: 'POS-FULL', name: 'Full POS Station', category: 'station', description: null, price_cents: 100000, specs: {}, images: [], stock_qty: 9, max_per_order: 5, is_placeholder: false }]);
     if (url.includes('/rest/v1/hardware_bundles')) return ok([]);
@@ -333,6 +333,21 @@ describe('stripe webhook', () => {
     const printed = spies.flatMap((s) => s.mock.calls.flat()).join(' ');
     expect(printed).not.toContain('buyer@test.dev');
     expect(printed).not.toMatch(/[0-9a-f]{64}/);
+  });
+
+  it('fails the event BEFORE marking paid when the link secret is missing, so a retry can still send the email', async () => {
+    const { ORDER_LINK_SECRET: _o, ...noLink } = baseEnv;
+    const r = await send(paidEvent(), noLink);
+    expect(r.status).toBe(503);
+    expect(rpcsCalled()).not.toContain('hw_mark_paid');
+    expect(rpcsCalled()).not.toContain('hw_event_done');
+  });
+
+  it('tells the admin when the customer confirmation email could not be sent', async () => {
+    up.failEmailTo = 'buyer@test.dev';
+    expect((await send(paidEvent())).body.outcome).toBe('paid');
+    const admin = up.emails.find((e) => e.to === 'ops@r4ckd.net');
+    expect(admin.html).toContain('confirmation email could not be sent');
   });
 
   it('needs the webhook secret configured', async () => {
