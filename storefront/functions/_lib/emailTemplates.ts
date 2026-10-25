@@ -47,3 +47,38 @@ export function shippedEmail(env: Partial<Env>, o: OrderEmailData, carrier: stri
 <p style="background:#0c0d0f;padding:10px 14px;border-radius:8px">${carrier ? escapeHtml(carrier) + ' · ' : ''}Tracking: <strong>${escapeHtml(tracking)}</strong></p>${button(url, 'View your order')}`),
   };
 }
+
+// ---------------------------------------------------------------- permit expiry reminders
+export interface ReminderItem {
+  location: string;
+  kind: string;
+  number: string | null;
+  expiry: string;
+  daysLeft: number;
+}
+
+const PERMIT_LABEL: Record<string, string> = {
+  tx_ecig: 'Texas E-Cigarette Retailer Permit',
+  tobacco: 'Tobacco / cigarette permit',
+  sales_tax: 'Sales tax permit',
+  tabc: 'TABC permit',
+};
+
+const longDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+
+export function permitReminderEmail(env: Partial<Env>, name: string, bucket: 30 | 7, items: ReminderItem[]): Tpl {
+  const rows = items.map((i) => {
+    const when = i.daysLeft <= 0 ? 'expires today' : i.daysLeft === 1 ? 'expires tomorrow' : `expires in ${i.daysLeft} days`;
+    return `<tr><td style="padding:8px 0;border-top:1px solid #333"><strong>${escapeHtml(PERMIT_LABEL[i.kind] ?? i.kind)}</strong>${i.number ? ` #${escapeHtml(i.number)}` : ''}<br>
+<span style="color:#9a9da3">${escapeHtml(i.location)}</span></td><td align="right" style="padding:8px 0;border-top:1px solid #333;white-space:nowrap">${escapeHtml(longDate(i.expiry))}<br><span style="color:${bucket === 7 ? '#e0293d' : '#9a9da3'}">${when}</span></td></tr>`;
+  }).join('');
+  return {
+    subject: bucket === 7
+      ? `Action needed: ${items.length === 1 ? 'a permit expires' : 'permits expire'} within 7 days`
+      : `Reminder: ${items.length === 1 ? 'a permit expires' : 'permits expire'} within 30 days`,
+    html: shell(`Hi ${first(name)}, a permit is expiring`, `<p>${bucket === 7 ? 'This is your final reminder.' : 'This is an early reminder.'} Please renew with the issuing agency and send us the new certificate by replying to this email.</p>
+<table role="presentation" width="100%" style="font-size:14px;border-collapse:collapse">${rows}</table>
+<p style="font-size:13px;color:#9a9da3;margin-top:16px">Selling age-restricted products with an expired permit can put your business at risk, and Rackd may pause online ordering for a location whose permits have lapsed. This is a reminder only; keeping your permits current is your responsibility. We send this once at 30 days and once at 7 days.</p>
+<p style="font-size:12px;color:#9a9da3">${escapeHtml(appBaseUrl(env))}</p>`),
+  };
+}

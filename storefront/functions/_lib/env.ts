@@ -19,6 +19,8 @@ export interface Env {
   DOC_SCAN_HOOK_URL?: string;
   /** Derives the emailed order-link token. Falls back to EIN_ENCRYPTION_KEY when unset. */
   ORDER_LINK_SECRET?: string;
+  /** Bearer secret the scheduler sends to /api/cron/*. */
+  CRON_SECRET?: string;
   /** DEV ONLY: returns the email verification code in the create/send-code response. Ignored when STRIPE_LIVE_ENABLED=true. */
   DEV_RETURN_EMAIL_CODE?: string;
 }
