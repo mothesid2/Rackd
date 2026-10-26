@@ -74,7 +74,7 @@ async function renderBusinesses() {
   wrap.querySelectorAll('[data-delete-biz]').forEach((btn) => btn.addEventListener('click', async () => {
     const tenantId = btn.dataset.deleteBiz;
     const name = btn.dataset.name;
-    const typed = prompt(`This permanently deletes "${name}" — every location, employee, and kiosk registration under it. This cannot be undone.\n\nType the business name exactly to confirm:`, '');
+    const typed = await askText({ title: 'Delete business', message: `This permanently deletes "${name}" — every location, employee, and kiosk registration under it. This cannot be undone.\n\nType the business name exactly to confirm:`, okLabel: 'Delete' });
     if (typed === null) return;
     if (typed.trim() !== name) { toast('Name did not match — nothing was deleted', true); return; }
     btn.disabled = true; btn.textContent = 'Deleting…';
@@ -85,6 +85,24 @@ async function renderBusinesses() {
     renderBusinesses();
   }));
   for (const b of bizList) loadLocations(b.tenant_id);
+}
+
+// Electron has no window.prompt(); this is the modal replacement. Resolves to the typed string, or null on cancel.
+function askText({ title, message = '', value = '', okLabel = 'OK' }) {
+  return new Promise((resolve) => {
+    const modal = $('askModal'), input = $('askInput'), ok = $('askOk'), cancel = $('askCancel');
+    $('askTitle').textContent = title; $('askMsg').textContent = message;
+    input.value = value; ok.textContent = okLabel;
+    modal.style.display = 'flex'; input.focus(); input.select();
+    const done = (v) => {
+      modal.style.display = 'none';
+      ok.onclick = cancel.onclick = input.onkeydown = null;
+      resolve(v);
+    };
+    ok.onclick = () => done(input.value);
+    cancel.onclick = () => done(null);
+    input.onkeydown = (e) => { if (e.key === 'Enter') done(input.value); else if (e.key === 'Escape') done(null); };
+  });
 }
 
 async function loadLocations(tenantId) {
@@ -106,7 +124,7 @@ async function loadLocations(tenantId) {
     : '<span class="muted">No locations.</span>';
   RackdUI.fadeIn(el);
   el.querySelectorAll('[data-rename]').forEach((btn) => btn.addEventListener('click', async () => {
-    const name = prompt('Rename location', btn.dataset.name);
+    const name = await askText({ title: 'Rename location', value: btn.dataset.name, okLabel: 'Rename' });
     if (!name || name === btn.dataset.name) return;
     const r = await window.owner.renameLocation(btn.dataset.rename, name.trim());
     if (r.success) { toast('Location renamed'); RackdUI.cache.invalidate('owner:locations:' + tenantId); loadLocations(tenantId); } else toast(r.error, true);

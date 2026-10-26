@@ -633,7 +633,7 @@ export function registerXZOutHandlers(): void {
       
       
       
-      const { start: startTs } = businessDayBounds(start, db);
+      const startTs = start === currentBusinessDate(db) ? currentBusinessDayWindow(db).start : businessDayBounds(start, db).start;
       const { end: endTs } = businessDayBounds(end, db);
       const { data, error } = await supabase.rpc('location_period_report_window', { p_start: startTs, p_end: endTs });
       if (error) return { success: false, error: error.message };

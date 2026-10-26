@@ -291,7 +291,7 @@ export function registerProductHandlers(): void {
       const rows = db.prepare(`
         SELECT ti.qty, ti.unit_price, ti.line_total,
                t.id AS txn_id, t.created_at, t.payment_method,
-               u.username AS cashier_name
+               COALESCE(NULLIF(TRIM(u.name), ''), u.username) AS cashier_name
         FROM transaction_items ti
         JOIN transactions t ON t.id = ti.transaction_id
         LEFT JOIN users u ON u.id = t.cashier_id

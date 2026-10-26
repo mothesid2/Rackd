@@ -1,0 +1,9 @@
+drop table if exists public.stripe_events;
+drop table if exists public.hardware_order_items;
+drop table if exists public.hardware_orders;
+drop sequence if exists public.hardware_order_seq;
+drop table if exists public.shipping_addresses;
+drop table if exists public.hardware_bundle_items;
+drop table if exists public.hardware_bundles;
+drop table if exists public.hardware_products;
+drop function if exists public.hw_touch_updated_at();

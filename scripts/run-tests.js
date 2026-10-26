@@ -1122,6 +1122,15 @@ async function main() {
     assert.equal(res.report[0].total_revenue, 60);
   });
 
+  await check('a PIN-only cashier with no username shows her real name, not Unknown (Tammy showed as dashes on receipts)', () => {
+    db.prepare("DELETE FROM transactions").run();
+    db.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, payment_method, payment_status, created_at) VALUES (?, 10, 0, 0, 0, 10, 'cash', 'completed', '2026-08-25T12:00:00.000-05:00')").run(aliceId);
+    db.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, payment_method, payment_status, created_at) VALUES (?, 10, 0, 0, 0, 10, 'cash', 'completed', '2026-08-25T13:00:00.000-05:00')").run(mannyId);
+    const res = computeEmployeePerformance(db, { start_date: '2026-08-25', end_date: '2026-08-25' });
+    const names = res.report.map((r) => r.employee_name).sort();
+    assert.deepEqual(names, ['Alice', 'Manny']);
+  });
+
   await check('a post-midnight, pre-batch sale attributes to exactly one business day here too — not zero, not two', () => {
     db.prepare("DELETE FROM transactions").run();
     db.prepare("INSERT INTO transactions (cashier_id, subtotal, tax_rate, tax_amount, discount_amount, total, payment_method, payment_status, created_at) VALUES (?, 25, 0, 0, 0, 25, 'cash', 'completed', '2026-08-26T02:00:00.000-05:00')").run(aliceId);

@@ -55,6 +55,12 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'This account can’t sign in to the portal.' }, 403);
   }
 
+  // First successful owner sign-in flips an approved onboarding application to "activated"
+  // (idempotent). Best effort: it must never block a login, e.g. before migration 086 is applied.
+  if (emp.role === 'admin') {
+    try { await admin.rpc('onb_mark_activated', { p_tenant: lic.tenant_id }); } catch { /* ignore */ }
+  }
+
   const exp = getNumericDate(TOKEN_TTL_SECONDS);
   const token = await signToken(jwtSecret, {
     role: 'authenticated', aud: 'authenticated', iat: getNumericDate(0), exp,
