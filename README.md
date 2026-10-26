@@ -245,3 +245,19 @@ npm run mock                           # the mock server alone, to click around 
 - Nothing here has been run against a live Supabase, Stripe, Resend or Cloudflare project; the test suites use mocks and an embedded Postgres.
 
 Plan and decisions: `docs/plans/onboarding-hardware.md`.
+
+## Storefront Manager (online storefront admin)
+
+One React module, `packages/storefront-admin`, mounted in three places:
+
+| Host | Mode | How it gets the module |
+| --- | --- | --- |
+| `manage/` (manage.r4ckd.net, shops with no POS) | one location | esbuild bundle of the package source (`cd manage && npm run build`, publish `manage/dist`, copy `config.example.js` to `config.js`) |
+| Manager Portal, "Online Storefront" | one location | IIFE bundle copied to `renderer/vendor` by `scripts/sync-storefront-bundle.js` (runs on `npm run dist`) |
+| Owner Console, "Storefront" | all locations plus business controls | same bundle; token minted by the `admin` edge action `mintOwnerToken` |
+
+- **Inventory:** `inventory_mode` per location. `pos_sync` is read-only price and quantity from the POS; `curated` is a hand-made list.
+- **Payments:** pay at pickup only. `PrepayProvider` is a visible, disabled stub. Stripe is not used for vape or tobacco product payments; the old product-card flow in `storefront-checkout` returns 403 unless `STRIPE_PRODUCT_PAYMENTS_ENABLED=true` (default false).
+- **Fees:** snapshot on each reservation, accrued on pickup, voided on cancel or no-show. Monthly statements: `POST /api/cron/storefront-statements` with `Authorization: Bearer $CRON_SECRET` on the 1st (body `{"period":"2026-09","dry_run":true}` previews without writing or sending). Every-minute job: `POST /api/cron/storefront-jobs` (hold expiry and the email outbox).
+- **Migrations:** `supabase/migrations/092` to `097`, each with `supabase/down/` and `supabase/deploy-09N.sql`. Tests: `npm run test:sql`, `cd packages/storefront-admin && npm test`, `cd storefront && npm test`.
+- **Env:** `MANAGE_BASE_URL`, `STRIPE_PRODUCT_PAYMENTS_ENABLED`, `PAYMENT_PROCESSOR_CONNECTED`, `SMS_ENABLED`, `STRIPE_LIVE_ENABLED` (all default false). Redeploy the `admin`, `staff-login` and `storefront-checkout` edge functions after applying the migrations.
