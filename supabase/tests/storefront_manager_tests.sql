@@ -795,6 +795,52 @@ begin
   raise notice 'PASS 13: no card path';
 end $$;
 
+-- ================================================================ 14. outbox worker
+do $$
+declare t1 uuid := '11111111-1111-1111-1111-111111111111'; lb uuid := 'aaaaaaaa-0000-0000-0000-0000000000b1'; r uuid; c record; n integer; item uuid;
+begin
+  perform pg_temp.become('postgres', null);
+  perform pg_temp.wipe();
+  delete from public.storefront_outbox;
+  update public.storefront_customers set email = 'cora@test.dev' where id = 'c1000000-0000-0000-0000-000000000001';
+  update public.locations set email = ' shop@t1.dev ' where id = lb;
+  select id into item from public.storefront_items where name = 'Unlimited';
+  perform pg_temp.become('authenticated', pg_temp.cust('c1000000-0000-0000-0000-000000000001'));
+  r := (public.create_reservation(lb, jsonb_build_array(jsonb_build_object('item_id', item, 'qty', 1))) ->> 'id')::uuid;
+  perform pg_temp.become('authenticated', pg_temp.ck('manager', t1, 'e0000000-0000-0000-0000-00000000000b'));
+  perform pg_temp.expect_error('select * from public.sf_outbox_claim(10)', '42501', 'managers cannot drain the outbox');
+  perform pg_temp.expect_error('select public.sf_outbox_done(1, true)', '42501', 'managers cannot mark sent');
+  perform public.sf_reservation_ready(r);
+  perform pg_temp.become('service_role', jsonb_build_object('role', 'service_role'));
+  select count(*) into n from public.sf_outbox_claim(10);
+  if n <> 2 then raise exception 'FAIL: expected 2 pending notifications (new, ready), got %', n; end if;
+  select * into c from public.storefront_outbox where kind = 'new_reservation';
+  if c.attempts <> 1 then raise exception 'FAIL: claiming counts an attempt'; end if;
+  select * into c from public.sf_outbox_claim(10) where kind = 'new_reservation';
+  if c.payload ->> 'shop_email' <> 'shop@t1.dev' or c.payload -> 'reservation' ->> 'code' is null then raise exception 'FAIL: payload %', c.payload; end if;
+  if c.audience <> 'shop' then raise exception 'FAIL: audience'; end if;
+  perform public.sf_outbox_done(c.id, true);
+  select * into c from public.sf_outbox_claim(10) where kind = 'ready';
+  if c.payload ->> 'customer_email' <> 'cora@test.dev' or c.audience <> 'customer' then raise exception 'FAIL: customer payload %', c.payload; end if;
+  perform public.sf_outbox_done(c.id, false, 'resend 500');
+  perform pg_temp.become('postgres', null);
+  perform pg_temp.expect_count('select count(*) from public.storefront_outbox where sent_at is null and last_error = ''resend 500''', 1, 'failure recorded, still pending');
+  perform pg_temp.expect_count('select count(*) from public.storefront_outbox where sent_at is not null', 1, 'sent one');
+  update public.storefront_outbox set attempts = 5 where sent_at is null;
+  perform pg_temp.become('service_role', jsonb_build_object('role', 'service_role'));
+  select count(*) into n from public.sf_outbox_claim(10);
+  if n <> 0 then raise exception 'FAIL: rows over the attempt cap are not retried forever'; end if;
+  -- shop email falls back to the business contact when the location has none
+  perform pg_temp.become('postgres', null);
+  update public.locations set email = null where id = lb;
+  insert into public.licenses (license_key, tenant_id, kind, name, contact_email) values ('RACKD-TEST-TEST-TEST', t1, 'business', 'Fallback Biz', 'owner@t1.dev');
+  insert into public.storefront_outbox (reservation_id, tenant_id, location_id, kind, audience) values (r, t1, lb, 'new_reservation', 'shop');
+  perform pg_temp.become('service_role', jsonb_build_object('role', 'service_role'));
+  select * into c from public.sf_outbox_claim(10);
+  if c.payload ->> 'shop_email' <> 'owner@t1.dev' then raise exception 'FAIL: fallback shop email %', c.payload; end if;
+  raise notice 'PASS 14: outbox worker';
+end $$;
+
 reset role;
 rollback;
 select 'ALL STOREFRONT MANAGER TESTS PASSED' as result;

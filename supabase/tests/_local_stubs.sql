@@ -88,3 +88,6 @@ create table if not exists public.storefront_customers (
 create table if not exists public.storefront_products (
   id uuid primary key default gen_random_uuid(), tenant_id uuid not null, location_id uuid not null, barcode text not null,
   is_visible boolean not null default false, override_price numeric(12,2), created_at timestamptz not null default now());
+alter table public.locations add column if not exists email text;
+alter table public.licenses add column if not exists contact_email text;
+alter table public.storefront_customers add column if not exists email text;

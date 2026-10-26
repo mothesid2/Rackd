@@ -21,6 +21,8 @@ export interface Env {
   ORDER_LINK_SECRET?: string;
   /** Bearer secret the scheduler sends to /api/cron/*. */
   CRON_SECRET?: string;
+  /** Where shop notification emails link to. Defaults to https://manage.r4ckd.net. */
+  MANAGE_BASE_URL?: string;
   /** DEV ONLY: returns the email verification code in the create/send-code response. Ignored when STRIPE_LIVE_ENABLED=true. */
   DEV_RETURN_EMAIL_CODE?: string;
 }
