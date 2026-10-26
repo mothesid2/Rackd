@@ -57,3 +57,34 @@ create table if not exists public.locations (
   is_storefront_enabled boolean not null default false,
   address text, zip text, phone text
 );
+
+-- ---- pieces of the existing POS/storefront schema that migrations 092+ depend on (real definitions: 001, 005, 015, 029, 031, 037, 066)
+alter table public.locations add column if not exists timezone text not null default 'America/Chicago';
+
+create or replace function public.set_updated_at() returns trigger language plpgsql as
+$$ begin new.updated_at = now(); return new; end; $$;
+create or replace function public.current_location_id() returns uuid language sql stable as
+$$ select nullif(auth.jwt() ->> 'location_id', '')::uuid $$;
+create or replace function public.block_mutation() returns trigger language plpgsql as
+$$ begin raise exception 'permission_override_log is append-only; % is not allowed', tg_op; end; $$;
+
+create table if not exists public.employees_cloud (
+  uid uuid not null, tenant_id uuid not null, location_id uuid, username text, name text, role text,
+  is_active boolean not null default true, primary key (tenant_id, uid));
+create table if not exists public.employee_permissions_cloud (
+  uid uuid not null, tenant_id uuid not null, location_id uuid, employee_uid uuid not null, permission_key text not null,
+  is_granted boolean not null default false, updated_at timestamptz not null default now(), primary key (tenant_id, uid));
+create table if not exists public.permission_override_log_cloud (
+  uid uuid primary key, tenant_id uuid not null, location_id uuid, at timestamptz, acting_employee_uid uuid, acting_employee_name text,
+  action_attempted text, required_permission text, authorizing_manager_uid uuid, authorizing_manager_name text,
+  was_approved boolean not null default false, event_type text not null default 'override');
+create trigger trg_override_log_immutable before update or delete on public.permission_override_log_cloud
+  for each row execute function public.block_mutation();
+create table if not exists public.inventory_cloud (
+  id bigint generated always as identity, tenant_id uuid not null, location_id uuid, barcode text, name text, category text,
+  price numeric(12,2), quantity integer not null default 0, updated_at timestamptz not null default now(), primary key (tenant_id, id));
+create table if not exists public.storefront_customers (
+  id uuid primary key, first_name text, last_name text, age_verified boolean not null default false, age_verified_at timestamptz);
+create table if not exists public.storefront_products (
+  id uuid primary key default gen_random_uuid(), tenant_id uuid not null, location_id uuid not null, barcode text not null,
+  is_visible boolean not null default false, override_price numeric(12,2), created_at timestamptz not null default now());

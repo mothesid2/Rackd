@@ -19,7 +19,11 @@ const order = [
   'migrations/089_hardware_orders_rpc.sql',
   'migrations/090_hardware_payments.sql',
   'migrations/091_admin_console.sql',
+  'migrations/092_storefront_manager_core.sql',
+  'migrations/093_storefront_reservations.sql',
+  'migrations/094_storefront_backfill.sql',
   'tests/onboarding_rls_tests.sql',
+  'tests/storefront_manager_tests.sql',
   // demo seed: create, verify, remove, verify (all in the same scratch database)
   'seed/onboarding_demo.sql',
   'tests/seed_demo_check.sql',
