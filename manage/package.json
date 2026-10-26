@@ -1,0 +1,14 @@
+{
+  "name": "@rackd/manage",
+  "version": "0.1.0",
+  "private": true,
+  "description": "manage.r4ckd.net: standalone Storefront Manager for shops that only use the online storefront (no Rackd POS).",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@rackd/storefront-admin": "file:../packages/storefront-admin"
+  }
+}
