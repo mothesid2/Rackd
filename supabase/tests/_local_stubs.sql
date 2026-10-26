@@ -91,3 +91,5 @@ create table if not exists public.storefront_products (
 alter table public.locations add column if not exists email text;
 alter table public.licenses add column if not exists contact_email text;
 alter table public.storefront_customers add column if not exists email text;
+create or replace function storage.foldername(name text) returns text[] language sql immutable as $$ select (string_to_array(name, '/'))[1:greatest(array_length(string_to_array(name, '/'), 1) - 1, 0)] $$;
+grant insert on storage.objects to authenticated;

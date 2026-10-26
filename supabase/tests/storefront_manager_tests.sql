@@ -841,6 +841,84 @@ begin
   raise notice 'PASS 14: outbox worker';
 end $$;
 
+-- ================================================================ 15. UI read helpers
+do $$
+declare t1 uuid := '11111111-1111-1111-1111-111111111111'; t2 uuid := '22222222-2222-2222-2222-222222222222';
+  la uuid := 'aaaaaaaa-0000-0000-0000-0000000000a1'; lb uuid := 'aaaaaaaa-0000-0000-0000-0000000000b1';
+  owner jsonb := pg_temp.ck('owner', t1); adm jsonb := pg_temp.ck('manager', t1, 'e0000000-0000-0000-0000-00000000000a');
+  mgr jsonb := pg_temp.ck('manager', t1, 'e0000000-0000-0000-0000-00000000000b'); deny jsonb := pg_temp.ck('manager', t1, 'e0000000-0000-0000-0000-00000000000c');
+  mgr2 jsonb := pg_temp.ck('manager', t2, 'e0000000-0000-0000-0000-00000000000d'); j jsonb; n integer; row record;
+begin
+  perform pg_temp.become('postgres', null);
+  update public.inventory_cloud set price = 10.00, quantity = 5 where barcode = 'BC1';
+  perform pg_temp.become('authenticated', mgr);
+  j := public.sf_my_permissions();
+  if (j ->> 'view')::boolean is not true or (j ->> 'settings_edit')::boolean or (j ->> 'owner')::boolean or (j ->> 'manage_staff')::boolean then raise exception 'FAIL: manager permissions %', j; end if;
+  perform pg_temp.become('authenticated', adm);
+  j := public.sf_my_permissions();
+  if not ((j ->> 'admin')::boolean and (j ->> 'fees_view')::boolean and (j ->> 'manage_staff')::boolean) then raise exception 'FAIL: admin permissions %', j; end if;
+  perform pg_temp.become('authenticated', owner);
+  if not (public.sf_my_permissions() ->> 'owner')::boolean then raise exception 'FAIL: owner'; end if;
+  perform pg_temp.become('authenticated', pg_temp.cust('c1000000-0000-0000-0000-000000000001'));
+  j := public.sf_my_permissions();
+  if (j ->> 'view')::boolean or (j ->> 'owner')::boolean then raise exception 'FAIL: customers have nothing %', j; end if;
+  perform pg_temp.become('anon', null);
+  perform pg_temp.expect_error('select public.sf_my_permissions()', '42501', 'anon');
+
+  -- items list: POS data resolved, read-only flag, tenant guard
+  perform pg_temp.become('authenticated', mgr);
+  select * into row from public.sf_items_list(la) where pos_product_id = 'BC1';
+  if row.name <> 'POS Juice' or row.price <> 10.00 or row.qty <> 5 or not row.read_only or row.pos_missing then raise exception 'FAIL: POS item resolved %', row; end if;
+  select * into row from public.sf_items_list(lb) where name = 'Curated Mango';
+  if row.read_only or row.source <> 'curated' then raise exception 'FAIL: curated item editable'; end if;
+  perform pg_temp.become('postgres', null);
+  delete from public.inventory_cloud where barcode = 'BC1';
+  perform pg_temp.become('authenticated', mgr);
+  if not (select pos_missing from public.sf_items_list(la) where pos_product_id = 'BC1') then raise exception 'FAIL: removed POS product flagged'; end if;
+  perform pg_temp.become('postgres', null);
+  insert into public.inventory_cloud (tenant_id, location_id, barcode, name, category, price, quantity) values (t1, la, 'BC1', 'POS Juice', 'eliquid', 10.00, 5);
+  perform pg_temp.become('authenticated', mgr2);
+  perform pg_temp.expect_error(format('select * from public.sf_items_list(%L)', la), '42501', 'other tenant cannot list items');
+  perform pg_temp.become('anon', null);
+  perform pg_temp.expect_error(format('select * from public.sf_items_list(%L)', la), '42501', 'anon cannot list items');
+
+  -- POS picker
+  perform pg_temp.become('authenticated', mgr);
+  select count(*) into n from public.sf_pos_products(la, 'glass');
+  if n <> 1 then raise exception 'FAIL: POS search by name, got %', n; end if;
+  if not (select already_added from public.sf_pos_products(la, 'BC1')) then raise exception 'FAIL: already_added flag'; end if;
+  select count(*) into n from public.sf_pos_products(la, null);
+  if n <> 2 then raise exception 'FAIL: POS list, got %', n; end if;
+  perform pg_temp.become('authenticated', deny);
+  perform pg_temp.expect_error(format('select * from public.sf_pos_products(%L)', la), '42501', 'picker needs items.edit');
+  perform pg_temp.become('authenticated', mgr2);
+  perform pg_temp.expect_error(format('select * from public.sf_pos_products(%L)', la), '42501', 'other tenant');
+
+  -- staff list: owner/admin only, effective permissions equal sf_can
+  perform pg_temp.become('authenticated', mgr);
+  perform pg_temp.expect_error('select public.sf_staff_list()', '42501', 'plain managers cannot see the permission editor');
+  perform pg_temp.become('authenticated', adm);
+  j := public.sf_staff_list();
+  if jsonb_array_length(j) <> 3 then raise exception 'FAIL: only this tenant admins and managers (3), got %', jsonb_array_length(j); end if;
+  perform pg_temp.expect_count('select 1', 1, 'noop');
+  if (select (e -> 'permissions' ->> 'storefront.items.edit')::boolean from jsonb_array_elements(j) e where e ->> 'username' = 'deny') then raise exception 'FAIL: explicit revoke shown'; end if;
+  if (select (e -> 'permissions' ->> 'storefront.settings.edit')::boolean from jsonb_array_elements(j) e where e ->> 'username' = 'mgr') then raise exception 'FAIL: default-off shown as on'; end if;
+  if not (select (e -> 'permissions' ->> 'storefront.fees.view')::boolean from jsonb_array_elements(j) e where e ->> 'username' = 'adm') then raise exception 'FAIL: admin has everything'; end if;
+  if not (select (e ->> 'locked')::boolean from jsonb_array_elements(j) e where e ->> 'username' = 'adm') then raise exception 'FAIL: admin locked'; end if;
+  perform pg_temp.become('authenticated', mgr2);
+  perform pg_temp.expect_error('select public.sf_staff_list()', '42501', 'other tenant manager');
+
+  -- storefront photo upload policy: owner tokens may write only into their own tenant folder
+  perform pg_temp.become('postgres', null);
+  insert into storage.buckets (id, name, public) values ('product-images', 'product-images', true) on conflict (id) do nothing;
+  perform pg_temp.become('authenticated', owner);
+  insert into storage.objects (bucket_id, name) values ('product-images', t1::text || '/storefront/a.jpg');
+  perform pg_temp.expect_error(format('insert into storage.objects (bucket_id, name) values (''product-images'', %L)', t2::text || '/storefront/a.jpg'), '42501', 'owner cannot write into another tenant folder');
+  perform pg_temp.become('anon', null);
+  perform pg_temp.expect_error(format('insert into storage.objects (bucket_id, name) values (''product-images'', %L)', t1::text || '/storefront/b.jpg'), '42501', 'anon cannot upload');
+  raise notice 'PASS 15: UI read helpers';
+end $$;
+
 reset role;
 rollback;
 select 'ALL STOREFRONT MANAGER TESTS PASSED' as result;
