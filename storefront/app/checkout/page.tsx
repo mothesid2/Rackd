@@ -7,7 +7,8 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 import { supabase, callFn } from '@/lib/supabase';
 import { useCart } from '@/lib/cart';
 import { fmt, STRIPE_PUBLISHABLE_KEY, ONLINE_FEE_RATE } from '@/lib/config';
-import { useInvalidateOrders } from '@/lib/queries';
+import { useInvalidateOrders, useStoreMenu } from '@/lib/queries';
+import { ReservationCheckout } from '@/components/storefront/ReservationCheckout';
 
 const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
@@ -22,6 +23,7 @@ export default function Checkout() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [taxRate, setTaxRate] = useState(0);
+  const menu = useStoreMenu(cart.locationId || '');
 
   useEffect(() => { (async () => {
     const { data: { session } } = await supabase().auth.getSession();
@@ -58,6 +60,7 @@ export default function Checkout() {
       const d = (e as any).data || {};
       if (d.error === 'age_verification_required') setError('Your age isn’t verified. Verify it on your Account page, then retry.');
       else if (d.error === 'insufficient_stock' || d.error === 'item_unavailable') setError(`An item just went out of stock (${d.barcode}). Remove it and try again.`);
+      else if (d.error === 'product_payments_disabled') setError('Online card payment is not available. Please contact the shop to order.');
       else setError((e as Error).message);
     }
     setBusy(false);
@@ -65,10 +68,13 @@ export default function Checkout() {
 
   if (cart.count === 0) return <div><h1 className="text-2xl font-extrabold mb-2">Checkout</h1><p className="text-neutral-500">Your cart is empty.</p></div>;
 
-  if (signedIn === null) return <p className="text-neutral-400">Loading…</p>;
+  if (signedIn === null || menu.isLoading) return <p className="text-neutral-400">Loading…</p>;
 
   if (!signedIn) return <Gate msg="Please sign in to check out." />;
   if (!verified) return <Gate msg="You must verify your age (21+) before checking out." />;
+
+  // Shops on the Storefront Manager take pay-at-pickup reservations: no card, no Stripe.
+  if (menu.data?.mode === 'reserve' && menu.data.info) return <ReservationCheckout info={menu.data.info} />;
 
   return (
     <div className="grid gap-4">

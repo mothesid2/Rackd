@@ -22,6 +22,7 @@ const order = [
   'migrations/092_storefront_manager_core.sql',
   'migrations/093_storefront_reservations.sql',
   'migrations/094_storefront_backfill.sql',
+  'migrations/095_storefront_outbox_worker.sql',
   'tests/onboarding_rls_tests.sql',
   'tests/storefront_manager_tests.sql',
   // demo seed: create, verify, remove, verify (all in the same scratch database)
