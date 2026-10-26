@@ -9,13 +9,19 @@
   <style>
     
     :root {
-      --ink: #1c1f24; --charcoal-1: #2f343c; --charcoal-2: #23272d; --charcoal-3: #1c2026;
-      --accent: #b01d2e; --accent-bright: #c8283a; --muted: #8a9099; --line: rgba(0,0,0,0.07);
-      --go: #1f7a3d; --go-bright: #279449;
+      --ink: #eaf0ff; --muted: #8fa3c8; --line: rgba(120,150,220,0.16);
+      --accent: #c8283a; --accent-bright: #e0364a;
+      --smoke: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27520%27%20height%3D%27300%27%3E%3Cfilter%20id%3D%27s%27%20x%3D%270%27%20y%3D%270%27%20width%3D%27100%25%27%20height%3D%27100%25%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.0035%200.009%27%20numOctaves%3D%273%27%20seed%3D%2711%27%20result%3D%27n%27%2F%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.012%27%20numOctaves%3D%272%27%20seed%3D%273%27%20result%3D%27d%27%2F%3E%3CfeDisplacementMap%20in%3D%27n%27%20in2%3D%27d%27%20scale%3D%2795%27%20xChannelSelector%3D%27R%27%20yChannelSelector%3D%27G%27%20result%3D%27w%27%2F%3E%3CfeColorMatrix%20in%3D%27w%27%20type%3D%27matrix%27%20values%3D%270%200%200%200%200.86%20%200%200%200%200%200.92%20%200%200%200%200%201%20%200%200%200%201.7%20-0.62%27%2F%3E%3CfeGaussianBlur%20stdDeviation%3D%273%27%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%27100%25%27%20height%3D%27100%25%27%20filter%3D%27url(%23s)%27%2F%3E%3C%2Fsvg%3E");
     }
-    body { overflow: hidden; }
+    html, body { background: #05080f; background-image: none; }
+    body {
+      overflow: hidden;
+      background:
+        radial-gradient(900px 520px at 12% -8%, rgba(38,84,190,0.28), transparent 62%),
+        radial-gradient(760px 480px at 100% 110%, rgba(90,30,120,0.22), transparent 60%),
+        linear-gradient(180deg, #080d1a 0%, #05080f 55%, #03050a 100%);
+    }
 
-    
     .launcher {
       height: calc(100vh - 44px);
       display: flex;
@@ -24,37 +30,57 @@
       padding: 18px 26px 16px;
     }
 
-    
     .lch-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
     .stat {
-      background: #fff; border: 1px solid var(--line); border-radius: 14px;
+      position: relative; overflow: hidden;
+      background: linear-gradient(180deg, rgba(24,38,72,0.92) 0%, rgba(11,19,40,0.94) 100%);
+      border: 1px solid var(--line); border-radius: 14px;
       padding: 14px 18px; display: flex; align-items: center; gap: 14px;
-      box-shadow: 0 1px 0 rgba(0,0,0,0.03), 0 8px 22px -14px rgba(0,0,0,0.25);
+      box-shadow: 0 10px 26px -14px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.09);
     }
-    .stat .ic { width: 46px; height: 46px; border-radius: 12px; flex: 0 0 auto; display: grid; place-items: center; }
+    .stat::before {
+      content: ''; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(180deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.02) 42%, transparent 43%);
+    }
+    .stat > * { position: relative; }
+    .stat .ic {
+      width: 46px; height: 46px; border-radius: 12px; flex: 0 0 auto; display: grid; place-items: center; color: #fff;
+      box-shadow: inset 0 1px 1px rgba(255,255,255,0.35), inset 0 -3px 6px rgba(0,0,0,0.3), 0 4px 10px -3px rgba(0,0,0,0.6);
+    }
     .stat .ic svg { width: 24px; height: 24px; }
-    .stat.revenue .ic { background: rgba(70,160,90,0.12); color: #2f8f4e; }
-    .stat.profit  .ic { background: rgba(176,29,46,0.10); color: var(--accent); }
-    .stat.sales   .ic { background: rgba(40,60,90,0.10);  color: #2f4d7a; }
+    .stat.revenue .ic { background: linear-gradient(150deg, #23a05c 0%, #0f5a33 100%); }
+    .stat.profit  .ic { background: linear-gradient(150deg, #d4304f 0%, #8a1830 100%); }
+    .stat.sales   .ic { background: linear-gradient(150deg, #4a52e0 0%, #262d9c 100%); }
     .stat .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-    .stat .val { font-size: 25px; font-weight: 800; color: var(--ink); line-height: 1.05; font-variant-numeric: tabular-nums; }
+    .stat .val { font-size: 25px; font-weight: 800; color: #fff; line-height: 1.05; font-variant-numeric: tabular-nums; }
 
-    
+    @keyframes smoke-drift { from { transform: translate3d(-5%, 0, 0); } to { transform: translate3d(5%, -3%, 0); } }
+
     .new-sale {
+      position: relative; overflow: hidden;
       display: flex; align-items: center; justify-content: center; gap: 12px;
-      width: 100%; height: 66px; border: none; border-radius: 14px; cursor: pointer;
+      width: 100%; height: 66px; border: 1px solid rgba(120,170,255,0.35); border-radius: 14px; cursor: pointer;
       color: #fff; font-size: 21px; font-weight: 800; letter-spacing: 0.4px;
-      background:
-        repeating-linear-gradient(0deg, transparent 0 3px, rgba(255,255,255,0.05) 3px 4px, transparent 4px 9px, rgba(255,255,255,0.03) 9px 10px),
-        linear-gradient(180deg, var(--go-bright) 0%, var(--go) 52%, #14512a 100%);
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.22);
-      text-shadow: 0 1px 3px rgba(0,0,0,0.28); transition: filter 0.14s, transform 0.1s;
+      background: linear-gradient(180deg, #2f6df0 0%, #1b4fc6 48%, #10318a 100%);
+      box-shadow: 0 8px 22px -8px rgba(30,90,230,0.55), 0 2px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -2px 0 rgba(0,0,0,0.25);
+      text-shadow: 0 1px 3px rgba(0,0,0,0.4); transition: filter 0.14s, transform 0.1s;
     }
+    .new-sale::before {
+      content: ''; position: absolute; inset: -20% -10%; pointer-events: none; opacity: 0.38; mix-blend-mode: screen;
+      -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 30%, #000 70%, transparent 100%);
+      mask-image: linear-gradient(180deg, transparent 0%, #000 30%, #000 70%, transparent 100%);
+      background: var(--smoke) center / 100% 240% no-repeat;
+      animation: smoke-drift 22s ease-in-out infinite alternate;
+    }
+    .new-sale::after {
+      content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+      background: linear-gradient(180deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.08) 46%, transparent 47%);
+    }
+    .new-sale > * { position: relative; z-index: 2; }
     .new-sale svg { width: 27px; height: 27px; }
-    .new-sale:hover { filter: brightness(1.08); transform: translateY(-1px); }
+    .new-sale:hover { filter: brightness(1.1); transform: translateY(-1px); }
     .new-sale:active { filter: brightness(0.94); transform: translateY(0); }
 
-    
     .tile-grid {
       flex: 1; min-height: 0;
       display: grid;
@@ -63,40 +89,43 @@
       gap: 14px;
     }
     .tile {
+      --c1: #28345c; --c2: #131b30; --i1: #4a8bf5; --i2: #1d54b8;
       position: relative; overflow: hidden; cursor: pointer;
-      border: none; border-radius: 18px; padding: 20px 22px;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 14px;
-      
-      background:
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='150'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.045' stroke-width='1.2'%3E%3Cpath d='M-10 110 C 70 88 120 132 170 110 S 260 88 330 108'/%3E%3Cpath d='M-10 124 C 70 102 120 146 170 124 S 260 102 330 122'/%3E%3Cpath d='M-10 96 C 70 74 120 118 170 96 S 260 74 330 94'/%3E%3C/g%3E%3C/svg%3E") bottom center / 100% auto no-repeat,
-        linear-gradient(180deg, var(--charcoal-1) 0%, var(--charcoal-2) 52%, var(--charcoal-3) 100%);
-      box-shadow: 0 6px 18px -8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.28);
-      transition: transform 0.12s ease, box-shadow 0.12s ease;
+      border-radius: 18px; padding: 22px 22px;
+      display: flex; flex-direction: column; align-items: flex-start; justify-content: center; text-align: left; gap: 4px;
+      background: linear-gradient(135deg, var(--c1) 0%, var(--c2) 100%);
+      box-shadow: 0 10px 22px -12px rgba(0,0,0,0.7);
+      transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
     }
-    .tile:hover { transform: translateY(-3px); box-shadow: 0 16px 32px -10px rgba(0,0,0,0.6); }
-    .tile:active { transform: translateY(-1px); }
-    
-    .tile .t-ic {
-      width: 88px; height: 88px; border-radius: 50%; display: grid; place-items: center; flex: 0 0 auto;
-      background: radial-gradient(circle at 50% 34%, #86212f 0%, #591a24 56%, #431520 100%);
-      box-shadow: inset 0 1px 2px rgba(255,255,255,0.16), inset 0 -2px 5px rgba(0,0,0,0.35);
+    .tile::before {
+      content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.5; mix-blend-mode: overlay;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='220'%3E%3Cfilter id='w'%3E%3CfeGaussianBlur stdDeviation='7'/%3E%3C/filter%3E%3Cg filter='url(%23w)' fill='none' stroke='%23ffffff' stroke-width='10' stroke-linecap='round'%3E%3Cpath d='M-30,150 C90,100 170,190 270,140 S440,90 470,130' stroke-opacity='0.5'/%3E%3Cpath d='M-30,180 C90,130 170,220 270,170 S440,120 470,160' stroke-opacity='0.3'/%3E%3C/g%3E%3C/svg%3E") right bottom / 85% auto no-repeat;
     }
-    .tile .t-ic svg { width: 42px; height: 42px; color: #e7cd92; }
-    .tile .t-title { position: relative; display: inline-block; font-size: 21px; font-weight: 700; color: #fff; line-height: 1.15; padding-bottom: 9px; }
-    .tile .t-title::after { content: ''; position: absolute; left: 50%; transform: translateX(-50%); bottom: 0; width: 38px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, #e7cd92, #b98f3e); }
-    .tile .t-sub { font-size: 13px; color: rgba(255,255,255,0.58); margin-top: 8px; }
-    .tile .t-arrow { position: absolute; top: 50%; right: 18px; transform: translateY(-50%); color: #e7cd92; opacity: 0.75; }
-    .tile .t-arrow svg { width: 22px; height: 22px; }
-    
-    .tile.exit {
-      background:
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='150'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.05' stroke-width='1.2'%3E%3Cpath d='M-10 110 C 70 88 120 132 170 110 S 260 88 330 108'/%3E%3Cpath d='M-10 124 C 70 102 120 146 170 124 S 260 102 330 122'/%3E%3C/g%3E%3C/svg%3E") bottom center / 100% auto no-repeat,
-        linear-gradient(180deg, #5f2327 0%, #4a1a1e 52%, #3a1417 100%);
-    }
-    .tile.exit .t-ic { background: radial-gradient(circle at 50% 34%, #9a2a33 0%, #6d1e26 56%, #4d1620 100%); }
-    .tile.exit .t-ic svg { color: #f0d9a6; }
+    .tile > * { position: relative; z-index: 2; }
+    .tile:hover { transform: translateY(-2px); filter: brightness(1.08); box-shadow: 0 14px 26px -12px rgba(0,0,0,0.8); }
+    .tile:hover .t-arrow { transform: translate(4px, -50%); }
+    .tile:active { transform: translateY(0); }
 
-    
+    .tile .t-ic {
+      width: 64px; height: 64px; margin-bottom: 14px; border-radius: 50%; display: grid; place-items: center; flex: 0 0 auto;
+      background: radial-gradient(circle at 32% 28%, var(--i1) 0%, var(--i2) 100%);
+      box-shadow: inset 0 2px 3px rgba(255,255,255,0.4), inset 0 -3px 6px rgba(0,0,0,0.3), 0 4px 10px -3px rgba(0,0,0,0.5);
+    }
+    .tile .t-ic svg { width: 30px; height: 30px; color: #fff; }
+    .tile .t-title { font-size: 22px; font-weight: 700; color: #fff; line-height: 1.2; }
+    .tile .t-sub { font-size: 14px; color: rgba(220,230,250,0.62); }
+    .tile .t-arrow { position: absolute; top: 50%; right: 20px; transform: translate(0, -50%); color: rgba(255,255,255,0.55); transition: transform 0.16s ease; }
+    .tile .t-arrow svg { width: 20px; height: 20px; }
+
+    .tile-receipts { --c1: #28345c; --c2: #131b30; --i1: #4a8bf5; --i2: #1d54b8; }
+    .tile-merchandise { --c1: #38316b; --c2: #191840; --i1: #9a7af5; --i2: #6438d6; }
+    .tile-customer-lookup { --c1: #5c2338; --c2: #2c1220; --i1: #e34f68; --i2: #ad2242; }
+    .tile-timeclock { --c1: #164a44; --c2: #0b2622; --i1: #22c7b0; --i2: #0f8a78; }
+    .tile-pickups { --c1: #47215a; --c2: #21102c; --i1: #b563e0; --i2: #8134c4; }
+    .tile-xzout { --c1: #1a3568; --c2: #0f1c36; --i1: #4a96f2; --i2: #1f66d0; }
+    .tile-settings { --c1: #333b4c; --c2: #1c2029; --i1: #7986a0; --i2: #4b556c; }
+    .tile.exit { --c1: #5c1c28; --c2: #2c0e16; --i1: #e0455a; --i2: #a3202f; }
+
     .fullscreen-btn {
       position: fixed; top: 10px; right: 12px; z-index: 300;
       background: rgba(27,30,34,0.78); border: 1px solid rgba(255,255,255,0.14); border-radius: 5px;
@@ -106,13 +135,16 @@
     .fullscreen-btn:hover { background: rgba(176,29,46,0.9); color: #fff; }
     .fullscreen-btn svg { width: 15px; height: 15px; }
 
+    .status-bar { background: linear-gradient(180deg, #0a1020 0%, #05080f 100%); border-top: 1px solid rgba(120,150,220,0.14); }
+    .status-bar .status-role, .status-bar .status-time { color: #7fb0ff; }
+
     @media (max-height: 760px) { .tile .t-ic { width: 68px; height: 68px; } .tile .t-ic svg { width: 34px; height: 34px; } .tile .t-title { font-size: 19px; } .new-sale { height: 56px; } .tile { padding: 14px 18px; gap: 10px; } }
-    @media (prefers-reduced-motion: reduce) { .tile, .new-sale { transition: none; } }
+    @media (prefers-reduced-motion: reduce) { .tile, .new-sale { transition: none; } .tile::before, .new-sale::before { animation: none; } }
 
     
     @keyframes skel-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
-    .stat.skeleton .ic { background: rgba(0,0,0,0.06); }
-    .skel-bar { border-radius: 5px; background: rgba(0,0,0,0.08); animation: skel-pulse 1.3s ease-in-out infinite; }
+    .stat.skeleton .ic { background: rgba(255,255,255,0.08); box-shadow: none; }
+    .skel-bar { border-radius: 5px; background: rgba(255,255,255,0.1); animation: skel-pulse 1.3s ease-in-out infinite; }
     .skel-bar-lbl { width: 64px; height: 9px; margin-bottom: 8px; }
     .skel-bar-val { width: 88px; height: 19px; }
     @media (prefers-reduced-motion: reduce) { .skel-bar { animation: none; } }
@@ -133,7 +165,7 @@
     <div class="tile-grid">
       <div id="dynTiles" style="display:contents"></div>
 
-      <button class="tile" id="settingsBtn" onclick="navigate('settings')" style="display:none">
+      <button class="tile tile-settings" id="settingsBtn" onclick="navigate('settings')" style="display:none">
         <div class="t-ic"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
         <div><div class="t-title">Settings</div><div class="t-sub">Terminal &amp; store config</div></div>
         <span class="t-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
@@ -259,7 +291,7 @@
           if (t.menuKey && currentMenuAccess[t.menuKey] === false) return '';
           if (t.requiresViewReports && !currentCanViewReports) return '';
         }
-        return `<button class="tile${t.cls ? ' ' + t.cls : ''}" onclick="navigate('${t.target}')">
+        return `<button class="tile tile-${key}${t.cls ? ' ' + t.cls : ''}" onclick="navigate('${t.target}')">
           <div class="t-ic"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${t.icon}</svg></div>
           <div><div class="t-title">${t.title}</div><div class="t-sub">${t.sub}</div></div>
           <span class="t-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${ARROW}</svg></span>

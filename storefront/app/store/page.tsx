@@ -26,6 +26,8 @@ function StoreInner() {
   const { data, isLoading } = useStoreMenu(locationId);
   const storeName = data?.store?.name || '';
   const menu = data?.menu || [];
+  const reserve = data?.mode === 'reserve';
+  const closed = reserve && data?.info ? !data.info.accepting : false;
 
   
   
@@ -54,6 +56,16 @@ function StoreInner() {
       <h1 className="font-display font-extrabold text-3xl tracking-tight mb-5 mt-1">{storeName || 'Menu'}</h1>
 
 
+      {closed && (
+        <div role="status" className="mb-4 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm">
+          <strong>{data?.info?.paused ? 'Online orders are paused.' : 'This shop is not taking online orders right now.'}</strong>{' '}
+          {data?.info?.pause_reason || 'You can still browse the menu.'}
+        </div>
+      )}
+      {reserve && !closed && data?.info?.pickup_instructions && (
+        <p className="mb-4 text-sm text-smoke">Pickup: {data.info.pickup_instructions}</p>
+      )}
+
       {loading ? (
         <div className="grid gap-3">{[0, 1, 2].map((i) => <SkeletonMenuRow key={i} />)}</div>
       ) : menu.length === 0 ? (
@@ -63,7 +75,7 @@ function StoreInner() {
         <div className="grid gap-3 fade-in">
           {menu.map((it) => {
             const inCart = qtyInCart(it.barcode);
-            const canAdd = it.stock_status !== 'out' && inCart < it.available;
+            const canAdd = !closed && it.stock_status !== 'out' && inCart < Math.min(it.available, data?.info?.max_qty_per_item ?? 999);
             const out = it.stock_status === 'out';
             return (
               <div key={it.barcode} className={`bg-white rounded-2xl border border-black/10 shadow-tag p-4 flex items-center gap-3 ${out ? 'opacity-60' : ''}`}>
@@ -85,7 +97,7 @@ function StoreInner() {
                   <div className="mt-1.5 flex items-center gap-2.5">
                     <span className="price text-accent text-lg">{fmt(it.price)}</span>
 
-                    <StockPill status={it.stock_status} />
+                    <StockPill status={it.stock_status} soldOut={reserve} />
 
                   </div>
 
@@ -109,7 +121,7 @@ function StoreInner() {
 
                 ) : (
                   <button className="px-4 py-2.5 rounded-xl bg-ink text-white text-sm font-semibold hover:bg-char transition-colors disabled:opacity-30"
-                    disabled={out}
+                    disabled={out || closed}
                     onClick={() => cart.add({ barcode: it.barcode, name: it.name, price: it.price })}>Add</button>
 
                 )}
@@ -147,14 +159,14 @@ function StoreInner() {
   );
 }
 
-function StockPill({ status }: { status: 'in' | 'low' | 'out' }) {
+function StockPill({ status, soldOut }: { status: 'in' | 'low' | 'out'; soldOut?: boolean }) {
   
   
   
   const map = {
     in: { t: 'In stock', c: 'bg-green-600/10 text-green-800' },
     low: { t: 'Low stock', c: 'bg-amber-500/15 text-amber-800' },
-    out: { t: 'Out of stock', c: 'bg-red-600/10 text-red-700' },
+    out: { t: soldOut ? 'Sold out' : 'Out of stock', c: 'bg-red-600/10 text-red-700' },
   } as const;
   const s = map[status];
   return <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${s.c}`}>{s.t}</span>;

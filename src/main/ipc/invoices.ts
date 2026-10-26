@@ -15,7 +15,7 @@ export function registerInvoiceHandlers(): void {
     try {
       const db = getDb();
       let sql = `
-        SELECT i.*, u.username AS received_by_name
+        SELECT i.*, COALESCE(NULLIF(TRIM(u.name), ''), u.username) AS received_by_name
         FROM invoices i
         LEFT JOIN users u ON i.received_by = u.id
         WHERE 1=1
@@ -45,7 +45,7 @@ export function registerInvoiceHandlers(): void {
     try {
       const db = getDb();
       const invoice = db.prepare(`
-        SELECT i.*, u.username AS received_by_name
+        SELECT i.*, COALESCE(NULLIF(TRIM(u.name), ''), u.username) AS received_by_name
         FROM invoices i
         LEFT JOIN users u ON i.received_by = u.id
         WHERE i.id = ?

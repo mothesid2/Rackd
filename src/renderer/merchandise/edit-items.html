@@ -169,18 +169,30 @@
     let dirtyRows = new Set();
     let categoryOptions = []; 
 
+    let productsLoaded = false;
+    let categoriesLoaded = false;
+    let filterTimer = null;
+
+    function maybeBuild() {
+      if (productsLoaded && categoriesLoaded) buildTable();
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       loadProducts();
       loadCategoryOptions();
       ['filterBarcode', 'filterName', 'filterCategory', 'filterVendor'].forEach(id =>
-        document.getElementById(id).addEventListener('input', renderTable));
+        document.getElementById(id).addEventListener('input', () => {
+          clearTimeout(filterTimer);
+          filterTimer = setTimeout(applyFilters, 120);
+        }));
       document.getElementById('saveAllBtn').addEventListener('click', saveAll);
     });
 
     async function loadCategoryOptions() {
       const res = await window.api.categoryNames();
       categoryOptions = (res.success && res.names) || [];
-      renderTable();
+      categoriesLoaded = true;
+      maybeBuild();
     }
 
     
@@ -202,29 +214,34 @@
       const res = await window.api.getProducts();
       if (!res.success) { showToast(res.error, 'error'); return; }
       products = res.products;
-      renderTable();
+      productsLoaded = true;
+      maybeBuild();
     }
 
-    function renderTable() {
+    function applyFilters() {
       const qBarcode = document.getElementById('filterBarcode').value.trim().toLowerCase();
       const qName = document.getElementById('filterName').value.trim().toLowerCase();
       const qCategory = document.getElementById('filterCategory').value.trim().toLowerCase();
       const qVendor = document.getElementById('filterVendor').value.trim().toLowerCase();
 
-      const filtered = products.filter(p =>
-        (!qBarcode || (p.barcode || '').toLowerCase().includes(qBarcode)) &&
-        (!qName || (p.name || '').toLowerCase().includes(qName)) &&
-        (!qCategory || (p.category || '').toLowerCase().includes(qCategory)) &&
-        (!qVendor || (p.vendor || '').toLowerCase().includes(qVendor))
-      );
-
-      const tbody = document.getElementById('editBody');
-      if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:24px">No products found</td></tr>';
-        return;
+      const rows = document.getElementById('editBody').rows;
+      let visible = 0;
+      for (let i = 0; i < products.length; i++) {
+        const p = products[i];
+        const show =
+          (!qBarcode || (p.barcode || '').toLowerCase().includes(qBarcode)) &&
+          (!qName || (p.name || '').toLowerCase().includes(qName)) &&
+          (!qCategory || (p.category || '').toLowerCase().includes(qCategory)) &&
+          (!qVendor || (p.vendor || '').toLowerCase().includes(qVendor));
+        rows[i].style.display = show ? '' : 'none';
+        if (show) visible++;
       }
+      document.getElementById('noResultsRow').style.display = visible ? 'none' : '';
+    }
 
-      tbody.innerHTML = filtered.map(p => `
+    function buildTable() {
+      const tbody = document.getElementById('editBody');
+      tbody.innerHTML = products.map(p => `
         <tr data-id="${p.id}" class="${dirtyRows.has(p.id) ? 'dirty' : ''}">
           <td><input type="text" data-field="barcode" value="${esc(p.barcode || '')}" onchange="markDirty(${p.id})" /></td>
           <td><input type="text" data-field="name" value="${esc(p.name)}" onchange="markDirty(${p.id})" /></td>
@@ -242,7 +259,9 @@
             <button class="save-row-btn" style="background:var(--loyalty)" onclick="openVariants(${p.id}, '${esc(p.name).replace(/'/g,"\\'")}')">Variants</button>
           </td>
         </tr>
-      `).join('');
+      `).join('') +
+        '<tr id="noResultsRow" style="display:none"><td colspan="12" style="text-align:center;color:var(--muted);padding:24px">No products found</td></tr>';
+      applyFilters();
     }
 
     function markDirty(id) {

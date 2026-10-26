@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Minimal scoped reset (instead of Tailwind preflight) */
+.rsm-root { color: #f1efec; font-family: 'Instrument Sans', system-ui, sans-serif; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+.rsm-root *, .rsm-root *::before, .rsm-root *::after { box-sizing: border-box; }
+.rsm-root button, .rsm-root input, .rsm-root select, .rsm-root textarea { font: inherit; color: inherit; }
+.rsm-root button { cursor: pointer; background: none; border: 0; padding: 0; }
+.rsm-root button:disabled { cursor: not-allowed; }
+.rsm-root h1, .rsm-root h2, .rsm-root h3, .rsm-root p, .rsm-root ul, .rsm-root ol, .rsm-root dl, .rsm-root dd { margin: 0; padding: 0; }
+.rsm-root ul, .rsm-root ol { list-style: none; }
+.rsm-root table { border-collapse: collapse; }
+.rsm-root :focus-visible { outline: 2px solid #e0293d; outline-offset: 2px; }
+@keyframes rsm-skel { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
+.rsm-root .skel { background: linear-gradient(90deg, rgba(241,239,236,.05) 25%, rgba(241,239,236,.10) 50%, rgba(241,239,236,.05) 75%); background-size: 200% 100%; animation: rsm-skel 1.4s ease-in-out infinite; border-radius: 8px; }
+@keyframes rsm-flash { 0%,100% { background: rgba(224,41,61,.0) } 50% { background: rgba(224,41,61,.35) } }
+.rsm-root .flash { animation: rsm-flash 0.8s ease-in-out 3; }
+@media (prefers-reduced-motion: reduce) { .rsm-root .skel, .rsm-root .flash { animation: none; } }

@@ -3,6 +3,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import bcrypt from 'https://esm.sh/bcryptjs@2.4.3';
+import { create, getNumericDate } from 'https://deno.land/x/djwt@v3.0.2/mod.ts';
 import { rateLimited, clientIp } from '../_shared/rateLimit.ts';
 
 function json(body: unknown, status = 200): Response {
@@ -227,6 +228,24 @@ Deno.serve(async (req: Request) => {
       
       
       
+      // Short-lived business-scoped token (kind 'owner') so the Owner Console can run the shared Storefront Manager
+      // module against one business. It can do everything sf_can allows an owner; it is not a service key.
+      case 'mintOwnerToken': {
+        const tenantId = (body.tenant_id as string)?.trim();
+        if (!tenantId) return json({ error: 'tenant_id required' }, 400);
+        const jwtSecret = Deno.env.get('JWT_SECRET');
+        if (!jwtSecret) return json({ error: 'function not configured' }, 500);
+        const { data: lic } = await admin.from('licenses').select('tenant_id, active, tier, features').eq('tenant_id', tenantId).limit(1).maybeSingle();
+        if (!lic) return json({ error: 'business not found' }, 404);
+        const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(jwtSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+        const exp = getNumericDate(60 * 60);
+        const token = await create({ alg: 'HS256', typ: 'JWT' }, {
+          role: 'authenticated', aud: 'authenticated', iat: getNumericDate(0), exp,
+          tenant_id: tenantId, location_id: null, kind: 'owner', tier: lic.tier, features: lic.features ?? [],
+        }, key);
+        return json({ token, expires_at: new Date(exp * 1000).toISOString() });
+      }
+
       case 'locations': {
         const tenantId = (body.tenant_id as string)?.trim();
         if (!tenantId) return json({ error: 'tenant_id required' }, 400);

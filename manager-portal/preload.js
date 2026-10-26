@@ -44,4 +44,5 @@ contextBridge.exposeInMainWorld('portal', {
   setMenuItem: (args) => ipcRenderer.invoke('portal:setMenuItem', args),
   orders: (args) => ipcRenderer.invoke('portal:orders', args),
   orderStatus: (args) => ipcRenderer.invoke('portal:orderStatus', args),
+  storefrontSession: () => ipcRenderer.invoke('portal:storefrontSession'),
 });

@@ -12,6 +12,14 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
 
+  // LEGACY CARD PATH (vape/tobacco products paid by card through Stripe Connect). Rackd's rule: Stripe is for Rackd's
+  // own charges only, so this stays OFF unless STRIPE_PRODUCT_PAYMENTS_ENABLED is exactly "true". Checked before
+  // anything is created, so a disabled deployment never reserves stock or touches Stripe. New storefronts reserve
+  // for pay-at-pickup through the create_reservation RPC instead (no card, no Stripe).
+  if ((Deno.env.get('STRIPE_PRODUCT_PAYMENTS_ENABLED') ?? '').trim().toLowerCase() !== 'true') {
+    return json({ error: 'product_payments_disabled' }, 403);
+  }
+
   if (rateLimited(clientIp(req), IP_LIMIT, IP_WINDOW_MS)) return json({ error: 'Too many requests. Try again shortly.' }, 429);
 
   const url = Deno.env.get('SUPABASE_URL')!;

@@ -133,7 +133,7 @@ export function computeEmployeePerformance(db: ReturnType<typeof getDb>, opts?: 
       
       const base = db.prepare(`
         SELECT t.cashier_id AS employee_id,
-               COALESCE(u.username, 'Unknown') AS employee_name,
+               COALESCE(NULLIF(TRIM(u.name), ''), u.username, 'Unknown') AS employee_name,
                COUNT(*) AS total_transactions,
                COALESCE(SUM(t.total), 0) AS total_revenue,
                SUM(CASE WHEN t.total < 0 THEN 1 ELSE 0 END) AS voids_count,

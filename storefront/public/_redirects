@@ -1,0 +1,3 @@
+# Static export cannot have runtime dynamic routes. /hardware/order/<id> is served by the order page shell,
+# which reads the id from the path and the access token from the URL fragment.
+/hardware/order/*  /hardware/order-view/  200

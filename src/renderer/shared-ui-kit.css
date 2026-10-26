@@ -133,19 +133,18 @@ tr.ru-no-hover:hover td, tr.ru-no-hover:nth-child(even) td { background: transpa
 }
 
 .ru-clear {
-  position: absolute;
+  position: fixed;
   display: none;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
-  background: var(--ru-border);
-  color: var(--ru-text-muted);
-  font: 700 14px/20px system-ui, sans-serif;
+  background: none;
+  color: var(--ru-text-faint);
+  font: 400 17px/18px system-ui, sans-serif;
   text-align: center;
   cursor: pointer;
-  z-index: 5;
+  z-index: 10002;
 }
 .ru-clear.ru-on { display: block; }
-.ru-clear:hover { background: var(--ru-text-faint); color: #fff; }
+.ru-clear:hover { color: var(--ru-text); }
