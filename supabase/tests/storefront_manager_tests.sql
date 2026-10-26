@@ -919,6 +919,65 @@ begin
   raise notice 'PASS 15: UI read helpers';
 end $$;
 
+-- ================================================================ 16. bulk item operations
+do $$
+declare t1 uuid := '11111111-1111-1111-1111-111111111111'; la uuid := 'aaaaaaaa-0000-0000-0000-0000000000a1'; lb uuid := 'aaaaaaaa-0000-0000-0000-0000000000b1';
+  mgr jsonb := pg_temp.ck('manager', t1, 'e0000000-0000-0000-0000-00000000000b'); deny jsonb := pg_temp.ck('manager', t1, 'e0000000-0000-0000-0000-00000000000c');
+  mgr2 jsonb := pg_temp.ck('manager', '22222222-2222-2222-2222-222222222222', 'e0000000-0000-0000-0000-00000000000d');
+  ids uuid[]; j jsonb; n integer; one uuid; copy uuid;
+begin
+  perform pg_temp.become('postgres', null);
+  perform pg_temp.wipe();
+  delete from public.storefront_items where location_id = lb;
+  insert into public.storefront_items (tenant_id, location_id, source, name, price, sort_order) values
+    (t1, lb, 'curated', 'Bulk A', 1, 10), (t1, lb, 'curated', 'Bulk B', 2, 20), (t1, lb, 'curated', 'Bulk C', 3, 30);
+  select array_agg(id order by sort_order) into ids from public.storefront_items where location_id = lb;
+  one := ids[1];
+
+  perform pg_temp.become('authenticated', mgr);
+  n := public.sf_bulk_set_status(ids, 'sold_out');
+  if n <> 3 then raise exception 'FAIL: bulk status changed %', n; end if;
+  if public.sf_bulk_set_status(ids, 'sold_out') <> 0 then raise exception 'FAIL: no-op changes nothing'; end if;
+  perform pg_temp.expect_msg(format('select public.sf_bulk_set_status(%L, ''gone'')', ids), 'status_invalid', 'bad status');
+  perform pg_temp.become('authenticated', mgr2);
+  if public.sf_bulk_set_status(ids, 'hidden') <> 0 then raise exception 'FAIL: another tenant cannot change my items'; end if;
+  perform pg_temp.become('authenticated', deny);
+  perform pg_temp.expect_error(format('select public.sf_bulk_set_status(%L, ''hidden'')', ids), '42501', 'needs items.edit');
+  perform pg_temp.expect_error(format('select public.sf_reorder_items(%L, %L)', lb, ids), '42501', 'reorder needs items.edit');
+  perform pg_temp.expect_error(format('select public.sf_duplicate_item(%L)', one), '42501', 'duplicate needs items.edit');
+  perform pg_temp.expect_error(format('select public.sf_import_items(%L, ''[]'')', lb), '42501', 'import needs items.edit');
+
+  perform pg_temp.become('authenticated', mgr);
+  perform public.sf_reorder_items(lb, array[ids[3], ids[1], ids[2]]);
+  if (select array_agg(id order by sort_order) from public.storefront_items where location_id = lb) <> array[ids[3], ids[1], ids[2]] then raise exception 'FAIL: reorder'; end if;
+  perform pg_temp.become('authenticated', mgr2);
+  perform public.sf_reorder_items(lb, array[ids[1], ids[2], ids[3]]);
+  perform pg_temp.become('authenticated', mgr);
+  if (select array_agg(id order by sort_order) from public.storefront_items where location_id = lb) <> array[ids[3], ids[1], ids[2]] then raise exception 'FAIL: other tenant reorder'; end if;
+
+  copy := public.sf_duplicate_item(one);
+  if not exists (select 1 from public.storefront_items where id = copy and name = 'Bulk A (copy)' and status = 'hidden' and price = 1) then raise exception 'FAIL: duplicate is a hidden copy'; end if;
+  perform pg_temp.expect_msg(format('select public.sf_duplicate_item(%L)', (select id from public.storefront_items where location_id = la limit 1)), 'pos_items_cannot_be_duplicated', 'POS items are unique per product');
+  perform pg_temp.expect_msg(format('select public.sf_duplicate_item(%L)', gen_random_uuid()), 'item_not_found', 'unknown item');
+
+  -- CSV import: good rows in, bad rows reported with their row number
+  j := public.sf_import_items(lb, '[{"name":"Imported 1","brand":"BrandX","flavor":"Mint","size":"60ml","price":"19.99","qty":"4"},
+                                   {"name":"","price":"5"},
+                                   {"name":"Bad price","price":"abc"},
+                                   {"name":"Neg qty","price":"5","qty":"-2"},
+                                   {"name":"Frac qty","price":"5","qty":"1.5"},
+                                   {"name":"Imported 2","price":"7","qty":""},
+                                   {"name":"Too dear","price":"100000"}]');
+  if (j ->> 'inserted')::int <> 2 or jsonb_array_length(j -> 'errors') <> 5 then raise exception 'FAIL: import summary %', j; end if;
+  if (select count(*) from jsonb_array_elements(j -> 'errors') e where (e ->> 'row')::int in (2, 3, 4, 5, 7)) <> 5 then raise exception 'FAIL: error row numbers %', j; end if;
+  if not exists (select 1 from public.storefront_items where name = 'Imported 1' and price = 19.99 and qty = 4 and brand = 'BrandX' and status = 'available') then raise exception 'FAIL: imported item'; end if;
+  if not exists (select 1 from public.storefront_items where name = 'Imported 2' and qty is null) then raise exception 'FAIL: blank qty means unlimited'; end if;
+  perform pg_temp.expect_msg(format('select public.sf_import_items(%L, ''[]'')', la), 'import_needs_curated_mode', 'POS-sync locations import from the POS, not CSV');
+  perform pg_temp.expect_error(format('select public.sf_import_items(%L, ''[]'')', 'aaaaaaaa-0000-0000-0000-0000000000c1'), '42501', 'another tenant location');
+  perform pg_temp.expect_msg(format('select public.sf_import_items(%L, %L::jsonb)', lb, (select jsonb_agg(jsonb_build_object('name', 'x', 'price', 1)) from generate_series(1, 501))), 'too_many_rows', 'row cap');
+  raise notice 'PASS 16: bulk item operations';
+end $$;
+
 reset role;
 rollback;
 select 'ALL STOREFRONT MANAGER TESTS PASSED' as result;
