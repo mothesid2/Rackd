@@ -118,6 +118,11 @@ ipcMain.handle('owner:activate', async (_e, { secret } = {}) => {
 ipcMain.handle('owner:businesses', async () => wrap(() => callAdmin('list')));
 ipcMain.handle('owner:createBusiness', async (_e, payload) => wrap(() => callAdmin('createBusiness', payload || {})));
 ipcMain.handle('owner:deleteBusiness', async (_e, tenantId) => wrap(() => callAdmin('deleteBusiness', { tenant_id: tenantId })));
+// Short-lived business-scoped token for the shared Storefront Manager module (kept in the renderer's memory only).
+ipcMain.handle('owner:storefrontSession', async (_e, tenantId) => wrap(async () => {
+  const t = await callAdmin('mintOwnerToken', { tenant_id: tenantId });
+  return { token: t.token, expires_at: t.expires_at, supabaseUrl: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY, tenantId };
+}));
 ipcMain.handle('owner:locations', async (_e, tenantId) => wrap(() => callAdmin('locations', { tenant_id: tenantId })));
 ipcMain.handle('owner:addLocation', async (_e, tenantId, name, address, zip) => wrap(() => callAdmin('addLocation', { tenant_id: tenantId, name, address, zip })));
 ipcMain.handle('owner:renameLocation', async (_e, locationId, name) => wrap(() => callAdmin('renameLocation', { location_id: locationId, name })));

@@ -69,12 +69,29 @@ function switchTab(tab) {
   render();
 }
 
+let sfHandle = null;
+async function renderOnlineStorefront() {
+  view.innerHTML = '<div class="spin">Loading…</div>';
+  const [sess, locs] = await Promise.all([window.portal.storefrontSession(), window.portal.locations()]);
+  if (curTab !== 'onlinesf') return;
+  if (!sess.success || !locs.success) { view.innerHTML = '<div class="card muted">' + String(sess.error || locs.error || 'Could not open the storefront manager.').replace(/[<>&]/g, '') + '</div>'; return; }
+  if (!window.RackdStorefront) { view.innerHTML = '<div class="card muted">Storefront module missing from this build.</div>'; return; }
+  view.innerHTML = '<div id="sfMount"></div>';
+  sfHandle = window.RackdStorefront.mount(document.getElementById('sfMount'), {
+    mode: 'location', supabaseUrl: sess.supabaseUrl, anonKey: sess.anonKey, tenantId: sess.tenantId, token: sess.token,
+    locations: (locs.locations || []).map((l) => ({ id: l.id, name: l.name })), initialLocation: currentStoreId || undefined,
+    onToast: (text, tone) => toast(text, tone === 'error'),
+  });
+}
+
 function render() {
+  if (sfHandle) { sfHandle.unmount(); sfHandle = null; }
   if (orderTimer) { clearInterval(orderTimer); orderTimer = null; }
   if (curTab === 'dashboard') return renderDashboard();
   if (curTab === 'inventory') return renderInventory();
   if (curTab === 'customers') return renderCustomers();
   if (curTab === 'storefront') return renderStorefront();
+  if (curTab === 'onlinesf') return renderOnlineStorefront();
   if (curTab === 'orders') return renderOrders();
   if (curTab === 'rebates') return renderRebates();
   if (curTab === 'staff') return renderStaff();

@@ -30,3 +30,7 @@ supabase/.temp/
 
 # Local development notes — not part of the shipped app
 handoff.md
+
+# Storefront Manager bundle copies (built from packages/storefront-admin by scripts/sync-storefront-bundle.js)
+owner-console/renderer/vendor/
+manager-portal/renderer/vendor/

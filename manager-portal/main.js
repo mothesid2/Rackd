@@ -167,6 +167,14 @@ ipcMain.handle('portal:clearBusiness', () => {
   portalStore.businessKey = null; savePortalStore();
   return { success: true };
 });
+// Hands the signed-in manager's own token to the shared Storefront Manager module. Permissions are enforced by the
+// database for this user (sf_can), not by the UI.
+ipcMain.handle('portal:storefrontSession', () => {
+  try {
+    requireAuth();
+    return { success: true, token, expires_at: new Date(session.exp * 1000).toISOString(), tenantId: session.tenant_id, supabaseUrl: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY };
+  } catch (e) { return { success: false, error: String(e.message || e) }; }
+});
 ipcMain.handle('portal:session', () => ({ success: true, session, currentLocationId }));
 
 

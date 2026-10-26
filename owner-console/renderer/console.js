@@ -621,9 +621,36 @@ async function renderBusinessDetail() {
 }
 
 
-const TABS = { business: renderBusinessDetail, businesses: renderBusinesses, orders: renderOrders, publish: renderPublish };
+let storefrontHandle = null;
+async function renderStorefront() {
+  if (storefrontHandle) { storefrontHandle.unmount(); storefrontHandle = null; }
+  if (!currentTenant) { view.innerHTML = '<div class="card muted">No businesses yet — create one first.</div>'; return; }
+  const tenant = currentTenant;
+  view.innerHTML = '<div class="spin">Loading…</div>';
+  const [sess, locs] = await Promise.all([window.owner.storefrontSession(tenant), window.owner.locations(tenant)]);
+  if (tenant !== currentTenant || currentTab !== 'storefront') return;
+  if (!sess.success || !locs.success) { view.innerHTML = `<div class="card muted">${esc(sess.error || locs.error || 'Could not open the storefront manager.')}</div>`; return; }
+  if (!window.RackdStorefront) { view.innerHTML = '<div class="card muted">Storefront module missing from this build.</div>'; return; }
+  view.innerHTML = '<div id="sfMount"></div>';
+  let current = sess;
+  const getToken = async () => {
+    if (Date.parse(current.expires_at) - Date.now() < 120000) {
+      const n = await window.owner.storefrontSession(tenant);
+      if (n.success) current = n;
+    }
+    return current.token;
+  };
+  storefrontHandle = window.RackdStorefront.mount($('sfMount'), {
+    mode: 'business', supabaseUrl: sess.supabaseUrl, anonKey: sess.anonKey, tenantId: tenant, getToken,
+    locations: (locs.locations || []).map((l) => ({ id: l.id, name: l.name })),
+    onToast: (text, tone) => toast(text, tone === 'error'),
+  });
+}
+
+const TABS = { business: renderBusinessDetail, businesses: renderBusinesses, orders: renderOrders, storefront: renderStorefront, publish: renderPublish };
 function switchTab(tab) {
   currentTab = tab;
+  if (storefrontHandle && tab !== 'storefront') { storefrontHandle.unmount(); storefrontHandle = null; }
   document.querySelectorAll('.navbtn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   (TABS[tab] || renderBusinessDetail)();
 }
@@ -705,7 +732,7 @@ $('rConfirm').addEventListener('click', async () => {
 });
 
 
-$('bizSelect').addEventListener('change', (e) => { currentTenant = e.target.value; if (['business', 'orders'].includes(currentTab)) switchTab(currentTab); });
+$('bizSelect').addEventListener('change', (e) => { currentTenant = e.target.value; if (['business', 'orders', 'storefront'].includes(currentTab)) switchTab(currentTab); });
 document.querySelectorAll('.navbtn').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
 (async () => {

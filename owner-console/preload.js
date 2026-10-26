@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('owner', {
   cancelReset: (tenantId, machineId) => ipcRenderer.invoke('owner:cancelReset', tenantId, machineId),
 
   onlineOrders: (tenantId) => ipcRenderer.invoke('owner:onlineOrders', tenantId),
+  storefrontSession: (tenantId) => ipcRenderer.invoke('owner:storefrontSession', tenantId),
 
   staff: (tenantId) => ipcRenderer.invoke('owner:staff', tenantId),
   setStaffPermission: (payload) => ipcRenderer.invoke('owner:setStaffPermission', payload),
