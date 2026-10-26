@@ -293,6 +293,10 @@ contextBridge.exposeInMainWorld('api', {
 
   
   storefrontQueue: () => ipcRenderer.invoke('storefront:queue'),
+  storefrontReservations: () => ipcRenderer.invoke('storefront:reservations'),
+  storefrontStageReservation: (args: object) => ipcRenderer.invoke('storefront:stageReservation', args),
+  storefrontTakeStaged: () => ipcRenderer.invoke('storefront:takeStaged'),
+  storefrontLinkSale: (args: object) => ipcRenderer.invoke('storefront:linkSale', args),
   storefrontAdvance: (args: object) => ipcRenderer.invoke('storefront:advance', args),
   storefrontCompletePickup: (args: object) => ipcRenderer.invoke('storefront:completePickup', args),
   recordAppliedRebates: (txnId: number, list: object[]) => ipcRenderer.invoke('rebates:recordApplied', txnId, list),

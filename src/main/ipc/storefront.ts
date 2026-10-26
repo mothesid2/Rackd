@@ -53,7 +53,67 @@ interface OrderRow {
   online_order_items?: { name: string; qty: number }[];
 }
 
+// Reservations (Storefront Manager). The cashier loads one into the normal POS cart and takes payment at the register
+// like any sale, so it stays in X/Z. After the sale completes the POS links reservation -> sale (pos_link_reservation_sale).
+interface StagedReservation { id: string; code: string; customer_name: string | null; lines: { barcode: string | null; name: string; category: string | null; qty: number; unit_price: number }[] }
+let staged: StagedReservation | null = null;
+
 export function registerStorefrontHandlers(): void {
+  ipcMain.handle('storefront:reservations', async () => {
+    const sb = getSupabase();
+    if (!sb) return { success: false, error: 'Cloud not configured' };
+    const { data, error } = await sb
+      .from('reservations')
+      .select('id, code, customer_name, status, subtotal, fee_amount, total, hold_expires_at, created_at, reservation_items(item_id, name, category, qty, unit_price, is_removed)')
+      .in('status', ['new', 'confirmed', 'ready'])
+      .order('created_at', { ascending: true });
+    if (error) return { success: false, error: error.message };
+    return { success: true, reservations: data || [] };
+  });
+
+  ipcMain.handle('storefront:stageReservation', async (_e, args: { id: string }) => {
+    const sb = getSupabase();
+    if (!sb) return { success: false, error: 'Cloud not configured' };
+    if (!getCurrentSession()?.userId) return { success: false, error: 'Sign in before loading a pickup.' };
+    const { data: r, error } = await sb.from('reservations')
+      .select('id, code, customer_name, status, reservation_items(item_id, name, category, qty, unit_price, is_removed)')
+      .eq('id', args?.id).maybeSingle();
+    if (error || !r) return { success: false, error: error?.message || 'Reservation not found' };
+    if (!['new', 'confirmed', 'ready'].includes((r as { status: string }).status)) return { success: false, error: 'This reservation is already closed.' };
+    const rows = ((r as { reservation_items: { item_id: string | null; name: string; category: string | null; qty: number; unit_price: number; is_removed: boolean }[] }).reservation_items || []).filter((i) => !i.is_removed);
+    const ids = rows.map((i) => i.item_id).filter((x): x is string => !!x);
+    const barcodes = new Map<string, string | null>();
+    if (ids.length) {
+      const { data: its } = await sb.from('storefront_items').select('id, pos_product_id').in('id', ids);
+      for (const it of (its as { id: string; pos_product_id: string | null }[]) || []) barcodes.set(it.id, it.pos_product_id);
+    }
+    staged = {
+      id: (r as { id: string }).id, code: (r as { code: string }).code, customer_name: (r as { customer_name: string | null }).customer_name,
+      lines: rows.map((i) => ({ barcode: (i.item_id && barcodes.get(i.item_id)) || null, name: i.name, category: i.category, qty: i.qty, unit_price: Number(i.unit_price) })),
+    };
+    return { success: true };
+  });
+
+  // The POS page picks the staged reservation up once, when it opens.
+  ipcMain.handle('storefront:takeStaged', () => { const s = staged; staged = null; return { success: true, reservation: s }; });
+
+  ipcMain.handle('storefront:linkSale', async (_e, args: { reservation_id: string; sale_id: string | number }) => {
+    const sb = getSupabase();
+    if (!sb) return { success: false, error: 'Cloud not configured' };
+    const session = getCurrentSession();
+    if (!session?.userId) return { success: false, error: 'No employee is signed in.' };
+    const emp = getEmployee(getDb(), session.userId);
+    if (!emp) return { success: false, error: 'Could not resolve the signed-in employee.' };
+    const { error } = await sb.rpc('pos_link_reservation_sale', {
+      p_id: args?.reservation_id, p_sale: String(args?.sale_id ?? ''), p_employee_uid: emp.uid, p_employee_name: emp.name,
+    });
+    if (error) {
+      if (/invalid_transition/.test(error.message)) return { success: false, error: 'This reservation was already closed.' };
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  });
+
   
   ipcMain.handle('storefront:queue', async () => {
     const sb = getSupabase();

@@ -955,6 +955,7 @@
   <script>
     
     let cart = [];
+    let pendingReservation = null; // { id, code }: a Storefront reservation loaded into this sale
     let attachedCustomer = null;
     let lastCompletedTxnId = null;
     let taxRate = 0.0825;
@@ -1012,6 +1013,7 @@
       
       loadRebateEngine();
       loadGroupPromoEngine();
+      loadStagedReservation();
 
       
       const sessRes = await window.api.getSession();
@@ -1359,6 +1361,28 @@
       note.style.display = 'block';
     }
 
+    // Pickups tab -> "Ring up in POS": the reservation's lines become an ordinary cart. Prices are the register's current
+    // prices (the cashier sees any difference); lines without a POS barcode are rung as department items at the
+    // reserved price. Payment, tax and the age check are the normal checkout; the sale then closes the reservation.
+    async function loadStagedReservation() {
+      let staged = null;
+      try { const r = await window.api.storefrontTakeStaged(); staged = r && r.success ? r.reservation : null; } catch { return; }
+      if (!staged) return;
+      cart = [];
+      for (const l of staged.lines) {
+        let product = null;
+        if (l.barcode) { const p = await window.api.getProductByBarcode(l.barcode); product = p && p.success ? p.product : null; }
+        if (product) { for (let n = 0; n < l.qty; n++) addToCart(product); continue; }
+        cart.push({
+          product_id: null, variant_id: null, name: l.name, category: l.category || 'Online order', qty: l.qty,
+          unit_price: l.unit_price, line_total: l.unit_price * l.qty, stock_qty: 9999, age_restricted: 0, misc: true, is_taxable: true, pricing_group_uid: null,
+        });
+      }
+      pendingReservation = { id: staged.id, code: staged.code };
+      renderCart();
+      showToast(`Reservation ${staged.code} loaded. Check ID, then take payment.`, 'success');
+    }
+
     function addMiscItem() {
       const price = parseFloat(document.getElementById('miscPrice').value);
       if (isNaN(price)) { showToast('Enter a price', 'warning'); return; }
@@ -1435,6 +1459,7 @@
 
     
     function renderCart() {
+      if (!cart.length) pendingReservation = null; // an emptied cart abandons the loaded reservation
       const tbody = document.getElementById('cartBody');
       const emptyCart = document.getElementById('emptyCart');
       const tableEl = document.getElementById('cartTable');
@@ -2289,6 +2314,14 @@
 
       lastCompletedTxnId = res.id;
       const isRefund = total < 0;
+
+      // A Storefront reservation was rung up as this sale: link it (also accrues the reservation fee, closes the order).
+      if (pendingReservation && !isRefund) {
+        const link = await window.api.storefrontLinkSale({ reservation_id: pendingReservation.id, sale_id: res.id });
+        if (link.success) showToast(`Reservation ${pendingReservation.code} marked picked up`, 'success');
+        else showToast(`Sale saved, but reservation ${pendingReservation.code} could not be closed: ${link.error}. Close it in the Storefront Manager.`, 'warning');
+        pendingReservation = null;
+      }
 
       
       
