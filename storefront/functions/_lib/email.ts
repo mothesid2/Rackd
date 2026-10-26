@@ -11,6 +11,8 @@ export interface EmailMessage {
   subject: string;
   html: string;
   text?: string;
+  /** Base64 file contents (Resend attachments). */
+  attachments?: { filename: string; content: string }[];
 }
 
 export interface SendResult {
@@ -52,6 +54,7 @@ export async function sendEmail(env: Partial<Env>, msg: EmailMessage, fetchImpl:
         subject: msg.subject,
         html: msg.html,
         text: msg.text ?? stripTags(msg.html),
+        ...(msg.attachments?.length ? { attachments: msg.attachments } : {}),
       }),
     });
     if (!res.ok) {
